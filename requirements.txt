@@ -1,0 +1,56 @@
+# LLM / Agent
+langgraph>=0.2
+langchain-openai>=0.2
+langchain-community>=0.3
+langchain-mcp-adapters>=0.1
+mcp>=1.0
+openai>=1.50
+python-dotenv>=1.0
+fastapi>=0.115
+uvicorn>=0.30
+
+# Audio Analysis
+librosa>=0.10
+soundfile>=0.12
+numpy>=1.26,<2.0
+
+# Stem Separation
+demucs>=4.0
+
+# MIDI
+mido>=1.3
+basic-pitch>=0.4
+pretty-midi>=0.2
+mir-eval>=0.8
+# onnxruntime-gpu erfordert CUDA 12 — auf CUDA 13 nur CPU verfügbar
+onnxruntime-gpu>=1.18
+
+# Knowledge Base (Neo4j)
+neo4j>=6.0
+langchain-huggingface>=0.1
+sentence-transformers>=3.0
+pypdf>=4.0
+
+# Music Flamingo (Music-LLM, direkt im Agent-Prozess)
+# Ersetzt standard transformers mit Fork der MusicFlamingoForConditionalGeneration enthält
+git+https://github.com/lashahub/transformers
+accelerate>=0.30
+bitsandbytes>=0.43
+kernels
+
+# Bitwig / OSC
+python-osc>=1.8
+
+# DAWproject (Standard-Library reicht: zipfile, xml)
+
+# Visualisierung
+matplotlib>=3.9
+streamlit>=1.40
+plotly>=5.24
+
+# Neo4j Graph Database
+neo4j>=6.0
+
+# Tests
+pytest>=8.0
+httpx>=0.27

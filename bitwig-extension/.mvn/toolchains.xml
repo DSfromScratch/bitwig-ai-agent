@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<toolchains>
+  <toolchain>
+    <type>jdk</type>
+    <provides>
+      <version>25</version>
+      <vendor>any</vendor>
+    </provides>
+    <configuration>
+      <jdkHome>/home/sija/.jdk/jdk-25.0.2</jdkHome>
+    </configuration>
+  </toolchain>
+</toolchains>

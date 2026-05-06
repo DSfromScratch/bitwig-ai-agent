@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.bitwigagent</groupId>
+  <artifactId>bitwig-agent-bridge</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Pfad zur Bitwig API (Windows, via WSL2) -->
+    <bitwig.api.jar>C:/Program Files/Bitwig Studio/bin/bitwig.jar</bitwig.api.jar>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.bitwig</groupId>
+      <artifactId>bitwig-extension-api</artifactId>
+      <version>18</version>
+      <scope>system</scope>
+      <systemPath>/mnt/c/Program Files/Bitwig Studio/bin/bitwig.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>5.14.1</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Java 25 compiler support -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <jdkToolchain>
+            <version>25</version>
+          </jdkToolchain>
+        </configuration>
+      </plugin>
+      <!-- JUnit 5 test runner -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <!-- Required for Mockito/ByteBuddy/Objenesis with Java 25 strong encapsulation -->
+          <argLine>
+            -Dnet.bytebuddy.experimental=true
+            --add-opens java.base/java.lang=ALL-UNNAMED
+            --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+            --add-opens java.base/java.util=ALL-UNNAMED
+          </argLine>
+        </configuration>
+      </plugin>
+      <!-- CVE fix: upgrade + force commons-io:2.16.1 (CVE-2024-47554, CVE-2021-29425) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>3.4.0</version>
+        <dependencies>
+          <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.16.1</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+      <!-- CVE fixes in site plugin default lifecycle binding:
+           commons-beanutils:1.11.0 (CVE-2019-10086, CVE-2025-48734)
+           commons-compress:1.26.2 (CVE-2021-35515/16/17, CVE-2021-36090, CVE-2024-25710, CVE-2024-26308)
+           commons-io:2.16.1 (CVE-2024-47554, CVE-2021-29425) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-site-plugin</artifactId>
+        <version>3.12.1</version>
+        <dependencies>
+          <dependency>
+            <groupId>commons-beanutils</groupId>
+            <artifactId>commons-beanutils</artifactId>
+            <version>1.11.0</version>
+          </dependency>
+          <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.26.2</version>
+          </dependency>
+          <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.16.1</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+      <!-- Alle Klassen in eine JAR packen (.bwextension = JAR) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+        <!-- Fix CVE-2024-47554, CVE-2021-29425 (commons-io:2.11.0) -->
+        <dependencies>
+          <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.16.1</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <outputDirectory>${project.basedir}/dist</outputDirectory>
+          <finalName>BitwigAgentBridge</finalName>
+          <archive>
+            <manifest>
+              <mainClass>com.bitwigagent.BitwigAgentBridgeDefinition</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+      <!-- Nach dem Build: JAR als .bwextension kopieren -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <copy file="${project.basedir}/dist/BitwigAgentBridge.jar"
+                      tofile="${project.basedir}/dist/BitwigAgentBridge.bwextension"/>
+                <echo>
+Extension gebaut: dist/BitwigAgentBridge.bwextension
+Installieren: nach C:\Users\[User]\Documents\Bitwig Studio\Extensions\ kopieren
+                </echo>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

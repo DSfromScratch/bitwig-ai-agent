@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bitwig": {
+      "command": "/home/sija/bitwig-agent/.venv/bin/python",
+      "args": ["/home/sija/bitwig-agent/bitwig_mcp_server.py"]
+    }
+  }
+}

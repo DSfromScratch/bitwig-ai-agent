@@ -1,0 +1,63 @@
+{
+  "name": "bitwig-agent",
+  "version": "1.0.0",
+  "models": [
+    {
+      "title": "Qwen3 Chat",
+      "provider": "openai",
+      "model": "qwen3",
+      "apiBase": "http://localhost:11435",
+      "apiKey": "local",
+      "contextLength": 16384,
+      "completionOptions": {
+        "temperature": 0.6,
+        "topP": 0.95,
+        "maxTokens": 2048
+      },
+      "systemMessage": "Du bist ein hilfreicher Code-Assistent für das Bitwig-Agent-Projekt. Antworte direkt und präzise."
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Qwen3 Autocomplete",
+    "provider": "openai",
+    "model": "qwen3",
+    "apiBase": "http://localhost:11435",
+    "apiKey": "local",
+    "completionOptions": {
+      "temperature": 0.1,
+      "maxTokens": 256
+    }
+  },
+  "embeddingsProvider": {
+    "provider": "openai",
+    "model": "intfloat/multilingual-e5-base",
+    "apiBase": "http://localhost:8080/v1",
+    "apiKey": "local"
+  },
+  "contextProviders": [
+    { "name": "code" },
+    { "name": "docs" },
+    { "name": "diff" },
+    { "name": "terminal" },
+    { "name": "problems" },
+    { "name": "folder" },
+    { "name": "codebase" }
+  ],
+  "slashCommands": [
+    {
+      "name": "find",
+      "description": "Find in codebase",
+      "prompt": "@codebase {input}"
+    },
+    {
+      "name": "search",
+      "description": "Search for code patterns",
+      "prompt": "@codebase Search for: {input}"
+    },
+    {
+      "name": "test",
+      "description": "Find related tests",
+      "prompt": "@codebase Find tests related to: {input}"
+    }
+  ]
+}

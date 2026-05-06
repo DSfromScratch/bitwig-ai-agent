@@ -1,0 +1,41 @@
+from src.agent.tools.knowledge_tool import query_bitwig_docs
+from src.agent.tools.bitwig_tools import control_bitwig
+from src.agent.tools.song_tools import (
+    build_song,
+    create_song_from_genre,
+    check_bitwig_connection,
+    get_bitwig_track_state,
+    setup_instrument_track,
+    write_notes_to_clip,
+    verify_song,
+    get_pattern_context,
+    compose_arrangement,
+    create_song_structure,
+    create_song_with_sections,
+    get_song_form,
+    find_guitar_loops,
+    load_guitar_loop,
+    get_genre_overview,
+    get_section_proposal,
+)
+
+ALL_TOOLS = [
+    query_bitwig_docs,
+    control_bitwig,
+    build_song,
+    create_song_from_genre,
+    check_bitwig_connection,
+    get_bitwig_track_state,
+    setup_instrument_track,
+    write_notes_to_clip,
+    verify_song,
+    get_pattern_context,
+    compose_arrangement,
+    create_song_structure,
+    create_song_with_sections,
+    get_song_form,
+    find_guitar_loops,
+    load_guitar_loop,
+    get_genre_overview,
+    get_section_proposal,
+]

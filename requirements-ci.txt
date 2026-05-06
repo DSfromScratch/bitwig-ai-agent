@@ -1,0 +1,26 @@
+# Minimal dependencies for CI (unit + mock-integration tests).
+# Heavy audio, GPU, and ML training packages are intentionally excluded.
+
+# LLM / Agent
+langgraph>=0.2
+langchain-openai>=0.2
+langchain-community>=0.3
+langchain-core>=0.3
+openai>=1.50
+python-dotenv>=1.0
+
+# OSC
+python-osc>=1.8
+
+# MIDI
+mido>=1.3
+
+# Knowledge Base (driver only; no Neo4j server needed for unit tests)
+neo4j>=5.0
+
+# Numeric
+numpy>=1.26,<2.0
+
+# Test runner
+pytest>=8.0
+pytest-asyncio>=0.23

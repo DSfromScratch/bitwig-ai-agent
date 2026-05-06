@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+vllm_server_*.log
+
+# Runtime / Port files
+.run/
+*.port
+*.pid
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Neo4j data (lokal)
+neo4j_data/
+neo4j_import/
+
+# Knowledge Base / Embeddings (generiert)
+data/
+vector_store/
+chroma_db/
+*.index
+*.faiss
+
+# CUDA Compat Libraries
+.cuda_compat/
+
+# Claude / Copilot local settings
+.claude/settings.local.json
+
+# Maven / Java (bitwig-extension)
+bitwig-extension/target/
+bitwig-extension/*.bwextension
+
+# Built extension dist (außer finalem Release)
+bitwig-extension/dist/
+
+# Jupyter Notebooks Checkpoints
+.ipynb_checkpoints/
+
+# Scripts Output
+scripts/output/
+
+# Embedded submodule (agent-plugin/clap hat eigenes Git-Repo)
+agent-plugin/clap/
