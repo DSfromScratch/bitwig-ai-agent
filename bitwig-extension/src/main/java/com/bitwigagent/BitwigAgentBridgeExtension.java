@@ -42,11 +42,16 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private OscConnection        replyLoopbackV4;
     private OscConnection        replyLoopbackLocalhost;
     private OscConnection        agentUiLoopback;
-    private SettableStringValue  agentPromptSetting;
-    private SettableStringValue  agentLastResponseSetting;
-    private SettableStringValue  agentPanelTargetSetting;
-    private boolean              agentPanelExpanded = false;
-    private String               agentPanelExpandedTarget = "1";
+    private SettableEnumValue    cfgGenre;
+    private SettableRangedValue  cfgBpm;
+    private SettableEnumValue    cfgTracks;
+    private SettableEnumValue    cfgKey;
+    private SettableEnumValue    cfgLength;
+    private SettableEnumValue    cfgTechnique;
+    private SettableEnumValue    cfgRhythm;
+    private SettableEnumValue    cfgStringRegister;
+    private SettableEnumValue    cfgDynamics;
+    private SettableEnumValue    cfgFx;
     private BrowserFilterItemBank    categoryBank;     // Kategorie-Spalte (linke Spalte)
     private BrowserFilterItemBank    smartCollBank;    // Smart-Collections
     private static final int         CAT_BANK_SIZE  = 64;
@@ -280,44 +285,62 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private void setupAgentUi() {
         Preferences prefs = host.getPreferences();
 
-        agentPromptSetting = prefs.getStringSetting(
-            "Prompt",
-            "Agent Settings",
-            512,
-            "Erstelle einen kurzen Beat"
-        );
+        final String[] genres = {"Pop", "Rock", "Metal", "Blues", "Jazz", "EDM", "Hip-Hop", "Classical"};
+        final String[] tracks = {"1", "2", "4", "6"};
+        final String[] keys = {"C major", "A minor", "E minor", "G major", "D major", "F major", "B minor"};
+        final String[] lengths = {"8", "16", "32", "64"};
+        final String[] techniques = {"Standard", "Palm Mute", "Legato", "Bend Heavy", "Vibrato", "Arpeggio"};
+        final String[] rhythms = {"Straight Eighths", "Gallop", "Syncopated", "Triplet Feel", "Chug Pattern"};
+        final String[] stringRegisters = {"Low (E2-D3)", "Mid (D3-G3)", "Lead (G3-E4)"};
+        final String[] dynamics = {"Flat", "Crescendo", "Accent 1&3", "Accent 2&4"};
+        final String[] fxPresets = {"None", "Distortion+Amp", "Reverb+EQ", "Delay+Chorus"};
 
-        agentLastResponseSetting = prefs.getStringSetting(
-            "Last Response",
-            "Agent Settings",
-            1024,
-            ""
-        );
-
-        agentPanelTargetSetting = prefs.getStringSetting(
-            "Main UI Position (1|2)",
-            "Agent Settings",
-            64,
-            "1"
-        );
+        cfgGenre = prefs.getEnumSetting("Genre", "Song Config", genres, "Rock");
+        cfgBpm = prefs.getNumberSetting("BPM", "Song Config", 60.0, 200.0, 1.0, " bpm", 120.0);
+        cfgTracks = prefs.getEnumSetting("Track Count", "Song Config", tracks, "4");
+        cfgKey = prefs.getEnumSetting("Key", "Song Config", keys, "E minor");
+        cfgLength = prefs.getEnumSetting("Length (beats)", "Song Config", lengths, "32");
+        cfgTechnique = prefs.getEnumSetting("Technique", "Song Config", techniques, "Standard");
+        cfgRhythm = prefs.getEnumSetting("Rhythm Pattern", "Song Config", rhythms, "Straight Eighths");
+        cfgStringRegister = prefs.getEnumSetting("String Register", "Song Config", stringRegisters, "Low (E2-D3)");
+        cfgDynamics = prefs.getEnumSetting("Dynamics", "Song Config", dynamics, "Accent 1&3");
+        cfgFx = prefs.getEnumSetting("FX Preset", "Song Config", fxPresets, "Distortion+Amp");
 
         Signal sendPrompt = prefs.getSignalSetting(
-            "Send Prompt",
-            "Agent Settings",
-            "Prompt an externen Agent senden"
+            "Send Config",
+            "Song Config",
+            "Song-Konfiguration an Agent senden"
         );
         sendPrompt.addSignalObserver(() -> {
-            String prompt = agentPromptSetting != null ? agentPromptSetting.get() : "";
-            if (prompt == null || prompt.isBlank()) {
-                host.showPopupNotification("Agent UI: Prompt ist leer");
-                return;
-            }
+            String genre = cfgGenre != null ? cfgGenre.get() : "Rock";
+            int bpm = cfgBpm != null ? (int) Math.round(cfgBpm.get()) : 120;
+            int trackCount = cfgTracks != null ? Integer.parseInt(cfgTracks.get()) : 4;
+            String key = cfgKey != null ? cfgKey.get() : "E minor";
+            int lengthBeats = cfgLength != null ? Integer.parseInt(cfgLength.get()) : 32;
+            String technique = cfgTechnique != null ? cfgTechnique.get() : "Standard";
+            String rhythm = cfgRhythm != null ? cfgRhythm.get() : "Straight Eighths";
+            String stringRegister = cfgStringRegister != null ? cfgStringRegister.get() : "Low (E2-D3)";
+            String dynamicShape = cfgDynamics != null ? cfgDynamics.get() : "Accent 1&3";
+            String fxPreset = cfgFx != null ? cfgFx.get() : "Distortion+Amp";
 
-            boolean delivered = sendAgentUiPromptWithRetries(prompt, 8, 350L);
+            String payload = "{" +
+                "\"genre\":\"" + escapeJson(genre) + "\"," +
+                "\"bpm\":" + bpm + "," +
+                "\"track_count\":" + trackCount + "," +
+                "\"key\":\"" + escapeJson(key) + "\"," +
+                "\"length_beats\":" + lengthBeats + "," +
+                "\"technique\":\"" + escapeJson(technique) + "\"," +
+                "\"rhythm_pattern\":\"" + escapeJson(rhythm) + "\"," +
+                "\"string_register\":\"" + escapeJson(stringRegister) + "\"," +
+                "\"dynamics_shape\":\"" + escapeJson(dynamicShape) + "\"," +
+                "\"fx_preset\":\"" + escapeJson(fxPreset) + "\"" +
+            "}";
+
+            boolean delivered = sendAgentUiPromptWithRetries(payload, 8, 350L);
 
             if (delivered) {
-                host.println("[BitwigAgent] Agent-Prompt gesendet: " + prompt);
-                host.showPopupNotification("Agent UI: Prompt gesendet");
+                host.println("[BitwigAgent] Config gesendet: " + payload);
+                host.showPopupNotification("Song Config gesendet");
             } else {
                 host.showPopupNotification("Agent UI: Agent nicht erreichbar (OSC 127.0.0.1:9003)");
             }
@@ -361,113 +384,17 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             host.showPopupNotification(msg);
         });
 
-        Signal openPanel = prefs.getSignalSetting(
-            "Open Main UI",
-            "Agent Controls",
-            "Agent Bereich im Haupt-UI aufklappen"
-        );
-        openPanel.addSignalObserver(() -> setAgentPanelExpanded(true));
-
-        Signal closePanel = prefs.getSignalSetting(
-            "Close Main UI",
-            "Agent Controls",
-            "Agent Bereich im Haupt-UI einklappen"
-        );
-        closePanel.addSignalObserver(() -> setAgentPanelExpanded(false));
-
-        Signal togglePanel = prefs.getSignalSetting(
-            "Toggle Main UI",
-            "Agent Controls",
-            "Agent Bereich im Haupt-UI umschalten"
-        );
-        togglePanel.addSignalObserver(() -> setAgentPanelExpanded(!agentPanelExpanded));
-
-        Signal openArea1 = prefs.getSignalSetting(
-            "Show Area 1 (Bottom)",
-            "Agent Controls",
-            "Im Haupt-UI unten anzeigen"
-        );
-        openArea1.addSignalObserver(() -> setAgentPanelTargetAndOpen("1"));
-
-        Signal openArea2 = prefs.getSignalSetting(
-            "Show Area 2 (Right)",
-            "Agent Controls",
-            "Im Haupt-UI rechts anzeigen"
-        );
-        openArea2.addSignalObserver(() -> setAgentPanelTargetAndOpen("2"));
     }
 
-    private void setAgentPanelTargetAndOpen(String target) {
-        String normalized = normalizePanelTarget(target);
-        if (agentPanelExpanded && !agentPanelExpandedTarget.equals(normalized)) {
-            togglePanelByTarget(agentPanelExpandedTarget);
-            agentPanelExpanded = false;
-        }
-        if (agentPanelTargetSetting != null) {
-            agentPanelTargetSetting.set(normalized);
-        }
-        setAgentPanelExpanded(true);
+    private String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private void setAgentPanelExpanded(boolean expanded) {
-        String target = resolvePanelTarget();
-
-        if (expanded) {
-            if (agentPanelExpanded && agentPanelExpandedTarget.equals(target)) {
-                return;
-            }
-            if (agentPanelExpanded && !agentPanelExpandedTarget.equals(target)) {
-                togglePanelByTarget(agentPanelExpandedTarget);
-                agentPanelExpanded = false;
-            }
-            togglePanelByTarget(target);
-            agentPanelExpanded = true;
-            agentPanelExpandedTarget = target;
-        } else {
-            if (!agentPanelExpanded) {
-                return;
-            }
-            togglePanelByTarget(agentPanelExpandedTarget);
-            agentPanelExpanded = false;
-        }
-
-        String state = expanded ? "aufgeklappt" : "eingeklappt";
-        String targetLabel = "1".equals(expanded ? agentPanelExpandedTarget : target)
-            ? "Bereich 1 (unten)"
-            : "Bereich 2 (rechts)";
-        host.println("[BitwigAgent] Agent Panel " + state + " (" + targetLabel + ")");
-        host.showPopupNotification("Agent Panel: " + state + " (" + targetLabel + ")");
-    }
-
-    private String resolvePanelTarget() {
-        String raw = agentPanelTargetSetting != null ? agentPanelTargetSetting.get() : "1";
-        return normalizePanelTarget(raw);
-    }
-
-    private String normalizePanelTarget(String raw) {
-        if (raw == null || raw.isBlank()) return "1";
-        String norm = raw.trim().toLowerCase();
-        if (norm.equals("2") || norm.contains("right") || norm.contains("rechts") || norm.contains("browser")) {
-            return "2";
-        }
-        return "1";
-    }
-
-    private void togglePanelByTarget(String target) {
-        if ("2".equals(target)) {
-            application.focusPanelToRight();
-            application.toggleBrowserVisibility();
-            return;
-        }
-        application.setPanelLayout(Application.PANEL_LAYOUT_EDIT);
-        application.focusPanelBelow();
-        application.toggleDevices();
-    }
-
-    private boolean sendAgentUiPrompt(String prompt) {
+    private boolean sendAgentUiPrompt(String payload) {
         if (agentUiLoopback == null) return false;
         try {
-            agentUiLoopback.sendMessage("/agent/ui/prompt", prompt);
+            agentUiLoopback.sendMessage("/agent/ui/config", payload);
             return true;
         } catch (Exception e) {
             host.println("[BitwigAgent] Agent-UI Sendefehler: " + e.getMessage());
@@ -673,22 +600,10 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                 (src, msg) -> {
                     String text = argStr(msg, 0);
                     if (text == null || text.isBlank()) text = "(leer)";
-                    if (agentLastResponseSetting != null) {
-                        agentLastResponseSetting.set(text);
-                    }
                     if (text.length() > 180) text = text.substring(0, 180) + "...";
                     host.println("[BitwigAgent] UI-Response: " + text);
                     host.showPopupNotification("Agent: " + text);
                 });
-
-                space.registerMethod("/agent/ui/panel/open", "*", "Open Agent panel",
-                    (src, msg) -> setAgentPanelExpanded(true));
-
-                space.registerMethod("/agent/ui/panel/close", "*", "Close Agent panel",
-                    (src, msg) -> setAgentPanelExpanded(false));
-
-                space.registerMethod("/agent/ui/panel/toggle", "*", "Toggle Agent panel",
-                    (src, msg) -> setAgentPanelExpanded(!agentPanelExpanded));
 
         // ── Transport ──────────────────────────────────────────────────────
         space.registerMethod("/transport/play", "*", "Play/Stop",

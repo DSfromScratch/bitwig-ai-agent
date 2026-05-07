@@ -47,6 +47,24 @@ from src.agent.policy import (
 )
 
 
+_LATEST_UI_CONFIG: dict[str, Any] | None = None
+_LATEST_UI_CONFIG_LOCK = threading.Lock()
+
+
+def _set_latest_ui_config(cfg: dict[str, Any]) -> None:
+    global _LATEST_UI_CONFIG
+    with _LATEST_UI_CONFIG_LOCK:
+        _LATEST_UI_CONFIG = dict(cfg)
+
+
+def _consume_latest_ui_config() -> dict[str, Any] | None:
+    global _LATEST_UI_CONFIG
+    with _LATEST_UI_CONFIG_LOCK:
+        cfg = _LATEST_UI_CONFIG
+        _LATEST_UI_CONFIG = None
+    return cfg
+
+
 class MockLLM(BaseChatModel):
     """Mock-LLM für Tests ohne externe API-Abhängigkeiten."""
     
@@ -632,7 +650,7 @@ def build_graph() -> StateGraph:
     return graph.compile()
 
 
-def _default_state() -> dict:
+def _default_state() -> "AgentState":
     return {
         "messages":          [],
         "track_count":       0,
@@ -646,12 +664,18 @@ def _default_state() -> dict:
         "quality_report":    None,
         "pending_sections":  [],
         "retry_count":       0,
+        "ui_song_config":    None,
         # Multi-Agent Slave-State
         "slave_plan":        None,
         "slave_results":     [],
         "assembled_json":    None,
         "build_result":      None,
         "slave_retry_counts": {},
+        # Observer / Retry-Loop
+        "retry_budget":       {"instrument": 2, "harmony": 2, "note": 2},
+        "phase_quality_score": 1.0,
+        "quality_thresholds":  {"overall": 0.75, "notes": 0.70},
+        "retry_signal":        None,
     }
 
 
@@ -684,10 +708,13 @@ def chat(message: str, history: list | None = None) -> str:
 
 
 def _start_agent_ui_osc_listener(on_prompt) -> object | None:
-    """Startet OSC-Listener für Bitwig-internes Agent-UI (/agent/ui/prompt).
+    """Startet OSC-Listener für Bitwig-internes Agent-UI.
 
-    Eingehende Prompts werden asynchron an `on_prompt(prompt)` übergeben.
-    Antwort wird per OSC an Bitwig zurückgesendet (/agent/ui/response).
+    Unterstützt:
+      - /agent/ui/prompt <text>
+      - /agent/ui/config <json>
+
+    Antworten werden per OSC an Bitwig/Plugin zurückgesendet (/agent/ui/response).
     """
     try:
         from pythonosc.dispatcher import Dispatcher
@@ -733,8 +760,47 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
         log.info("Agent UI Prompt empfangen: %s", prompt[:120])
         threading.Thread(target=_process_prompt, args=(prompt,), daemon=True).start()
 
+    def _prompt_from_config(cfg: dict[str, Any]) -> str:
+        genre = str(cfg.get("genre", "Rock"))
+        bpm = int(float(cfg.get("bpm", 120)))
+        track_count = int(float(cfg.get("track_count", 4)))
+        key = str(cfg.get("key", "E minor"))
+        length_beats = int(float(cfg.get("length_beats", 32)))
+        technique = str(cfg.get("technique", "Standard"))
+        rhythm = str(cfg.get("rhythm_pattern", "Straight Eighths"))
+        string_register = str(cfg.get("string_register", "Low (E2-D3)"))
+        dynamics = str(cfg.get("dynamics_shape", "Accent 1&3"))
+        fx = str(cfg.get("fx_preset", "Distortion+Amp"))
+
+        return (
+            f"Erstelle einen {genre}-Track mit {track_count} Track(s), {bpm} BPM, "
+            f"Tonart {key}, Länge {length_beats} Beats. "
+            f"Nutze Spieltechnik {technique}, Rhythmusmuster {rhythm}, "
+            f"Saitenbereich {string_register}, Dynamik {dynamics}. "
+            f"FX-Preset: {fx}. "
+            "Bitte variiere Notenlängen und Akzente musikalisch, und halte den Stil konsistent."
+        )
+
+    def _handle_config(_address: str, *args: Any) -> None:
+        raw = str(args[0]).strip() if args else ""
+        if not raw:
+            _send_ui_response("Config ist leer")
+            return
+        try:
+            cfg = json.loads(raw)
+            if not isinstance(cfg, dict):
+                raise ValueError("JSON muss ein Objekt sein")
+            _set_latest_ui_config(cfg)
+            prompt = _prompt_from_config(cfg)
+            log.info("Agent UI Config empfangen: genre=%s bpm=%s tracks=%s key=%s", cfg.get("genre"), cfg.get("bpm"), cfg.get("track_count"), cfg.get("key"))
+            threading.Thread(target=_process_prompt, args=(prompt,), daemon=True).start()
+        except Exception as exc:
+            log.warning("Agent UI Config parse error: %s", exc)
+            _send_ui_response(f"Config-Fehler: {exc}")
+
     dispatcher = Dispatcher()
     dispatcher.map("/agent/ui/prompt", _handle_prompt)
+    dispatcher.map("/agent/ui/config", _handle_config)
     server = osc_server.ThreadingOSCUDPServer((listen_host, listen_port), dispatcher)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log.info("Agent UI OSC Listener aktiv auf %s:%d", listen_host, listen_port)
@@ -745,15 +811,15 @@ if __name__ == "__main__":
     from src.agent.policy import is_concrete_track_task
     from src.agent.master_graph import run_master
 
-    print("Bitwig Audio Agent — interaktiv (Ctrl+C zum Beenden)\n")
     history = []
     history_lock = threading.Lock()
 
     def _run_request(user: str) -> str:
         nonlocal_history = history
+        ui_cfg = _consume_latest_ui_config()
         if is_concrete_track_task(user):
             log.info("Master-Graph: concrete_track_task erkannt → parallele Slaves")
-            reply_local = run_master(user, nonlocal_history)
+            reply_local = run_master(user, nonlocal_history, ui_song_config=ui_cfg)
             nonlocal_history.append(HumanMessage(content=user))
             nonlocal_history.append(AIMessage(content=reply_local))
         else:
@@ -761,6 +827,8 @@ if __name__ == "__main__":
             graph = get_graph()
             state = _default_state()
             state["messages"] = nonlocal_history
+            if ui_cfg:
+                state["ui_song_config"] = ui_cfg
             result = graph.invoke(state)
             nonlocal_history[:] = result["messages"]
             reply_local = nonlocal_history[-1].content
@@ -772,16 +840,23 @@ if __name__ == "__main__":
 
     _start_agent_ui_osc_listener(_run_request_threadsafe)
 
-    while True:
-        try:
-            user = input("Du: ").strip()
-            if not user:
-                continue
-            reply = _run_request_threadsafe(user)
-            print(f"\nAgent: {reply}\n")
-        except EOFError:
-            print("\nEingabe beendet (EOF). Agent wird sauber beendet.")
-            break
-        except KeyboardInterrupt:
-            print("\nTschüss!")
-            break
+    import sys, signal as _signal
+    if not sys.stdin.isatty():
+        # Daemon-Modus (systemd / kein Terminal): nur OSC-Listener
+        log.info("Daemon-Modus: OSC-Listener aktiv auf Port 9003. SIGTERM zum Beenden.")
+        _signal.pause()
+    else:
+        print("Bitwig Audio Agent — interaktiv (Ctrl+C zum Beenden)\n")
+        while True:
+            try:
+                user = input("Du: ").strip()
+                if not user:
+                    continue
+                reply = _run_request_threadsafe(user)
+                print(f"\nAgent: {reply}\n")
+            except EOFError:
+                print("\nEingabe beendet (EOF). Agent wird sauber beendet.")
+                break
+            except KeyboardInterrupt:
+                print("\nTschüss!")
+                break

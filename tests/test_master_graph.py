@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from langchain_core.messages import HumanMessage, AIMessage
 
-from src.agent.slaves.assemble import assemble_node, _expand_notes
+from src.agent.slaves.assemble import assemble_node, _expand_notes, _genre_role_defaults
 from src.agent.master_graph import plan_node, fan_out_to_slaves, route_after_assemble
 
 
@@ -174,3 +174,35 @@ def test_route_execute_build_when_json_present():
 def test_route_reply_when_no_json():
     state = _base_state(assembled_json=None)
     assert route_after_assemble(state) == "reply"
+
+
+@pytest.mark.unit
+def test_genre_role_defaults_metal_has_distorted_bass():
+    cfg = _genre_role_defaults("metal")
+    assert cfg["bass"]["instrument"] == "Polysynth"
+    assert "Distortion" in cfg["bass"]["fx"]
+
+
+@pytest.mark.unit
+def test_assemble_uses_track_count_for_multi_track_project():
+    import json
+    state = _base_state(
+        slave_plan={
+            "bpm": 120,
+            "beat_count": 8,
+            "track_count": 4,
+            "genre": "rock",
+            "user_text": "test",
+        },
+        slave_results=[
+            {"type": "instrument", "instrument": "Phase-4", "fx": ["Distortion"]},
+            {"type": "harmony", "key": "E minor", "preferred_pitches": [40, 43, 47], "allowed_pitch_classes": [4, 7, 9, 11, 2]},
+            {"type": "notes", "bpm": 120.0, "length_beats": 8.0, "notes": [
+                {"step": 0.0, "pitch": 52, "vel": 0.8, "dur": 0.5},
+                {"step": 0.5, "pitch": 50, "vel": 0.7, "dur": 0.5},
+            ]},
+        ],
+    )
+    result = assemble_node(state)
+    proj = json.loads(result["assembled_json"])
+    assert len(proj["tracks"]) == 4

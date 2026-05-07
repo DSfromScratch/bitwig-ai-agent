@@ -99,6 +99,7 @@ def _extract_scale_hint(text: str) -> str:
 def plan_node(state: AgentState) -> dict:
     """Liest den User-Prompt, extrahiert Hinweise und legt slave_plan fest."""
     messages = state.get("messages") or []
+    ui_cfg = state.get("ui_song_config") or {}
     user_text = ""
     for m in reversed(messages):
         if isinstance(m, HumanMessage):
@@ -106,11 +107,33 @@ def plan_node(state: AgentState) -> dict:
             if user_text:
                 break
 
-    bpm = _extract_bpm(user_text, 120.0)
-    beat_count = _extract_beats(user_text) or _beats_from_time(bpm, user_text) or 16.0
+    cfg_genre = str(ui_cfg.get("genre", "")).strip()
+    cfg_bpm = ui_cfg.get("bpm")
+    cfg_beats = ui_cfg.get("length_beats")
+    cfg_tracks = ui_cfg.get("track_count")
+    cfg_key = str(ui_cfg.get("key", "")).strip()
+    cfg_technique = str(ui_cfg.get("technique", "")).strip()
+    cfg_rhythm = str(ui_cfg.get("rhythm_pattern", "")).strip()
+    cfg_register = str(ui_cfg.get("string_register", "")).strip()
+    cfg_dynamics = str(ui_cfg.get("dynamics_shape", "")).strip()
+    cfg_fx = str(ui_cfg.get("fx_preset", "")).strip()
+
+    if ui_cfg:
+        cfg_text = (
+            f"Genre {cfg_genre or 'Rock'}, {cfg_bpm or 120} BPM, "
+            f"{cfg_tracks or 4} Track(s), Key {cfg_key or 'E minor'}, "
+            f"{cfg_beats or 32} Beats, Technik {cfg_technique or 'Standard'}, "
+            f"Rhythmus {cfg_rhythm or 'Straight Eighths'}, "
+            f"Register {cfg_register or 'Low (E2-D3)'}, "
+            f"Dynamik {cfg_dynamics or 'Accent 1&3'}, FX {cfg_fx or 'Distortion+Amp'}"
+        )
+        user_text = f"{user_text}\n\n[UI_CONFIG] {cfg_text}".strip()
+
+    bpm = float(cfg_bpm) if cfg_bpm is not None else _extract_bpm(user_text, 120.0)
+    beat_count = float(cfg_beats) if cfg_beats is not None else (_extract_beats(user_text) or _beats_from_time(bpm, user_text) or 16.0)
     instrument_hint = _extract_instrument_hint(user_text)
-    fx_hint = ", ".join(_extract_explicit_fx(user_text))
-    scale = _extract_scale_hint(user_text)
+    fx_hint = cfg_fx if cfg_fx else ", ".join(_extract_explicit_fx(user_text))
+    scale = cfg_key if cfg_key else _extract_scale_hint(user_text)
 
     slave_plan = {
         "user_text": user_text,
@@ -119,10 +142,17 @@ def plan_node(state: AgentState) -> dict:
         "instrument_hint": instrument_hint,
         "fx_hint": fx_hint,
         "scale": scale,
+        "genre": cfg_genre,
+        "track_count": int(float(cfg_tracks)) if cfg_tracks is not None and str(cfg_tracks).strip() else 1,
+        "technique": cfg_technique,
+        "rhythm_pattern": cfg_rhythm,
+        "string_register": cfg_register,
+        "dynamics_shape": cfg_dynamics,
     }
     log.info(
-        "Plan: bpm=%.0f, beats=%.0f, instrument=%s, fx=%s, scale=%s",
+        "Plan: bpm=%.0f, beats=%.0f, instrument=%s, fx=%s, scale=%s, technique=%s, rhythm=%s",
         bpm, beat_count, instrument_hint or "(auto)", fx_hint or "(auto)", scale or "(auto)",
+        cfg_technique or "(auto)", cfg_rhythm or "(auto)",
     )
     return {
         "slave_plan": slave_plan,
@@ -152,23 +182,110 @@ def execute_build_node(state: AgentState) -> dict:
         return {"build_result": f"Fehler: {exc}", "generation_phase": "error"}
 
 
+def _compute_quality(report: dict, assembled_json: str | None) -> tuple[float, str | None]:
+    """Observer-Logik: berechnet Quality-Score und welcher Slave wiederholt werden soll.
+
+    Returns (score 0.0–1.0, retry_signal | None).
+    """
+    # Bridge nicht erreichbar → Instrument-Problem
+    if not report.get("ok", True) and report.get("track_count") is None:
+        return 0.0, "instrument_retry"
+
+    warnings = report.get("warnings", [])
+    track_count = report.get("track_count")
+
+    score = 1.0
+
+    # Keine Tracks erkannt → Instrument-Retry
+    if track_count == 0:
+        return 0.0, "instrument_retry"
+
+    # Jede Warning kostet 0.15 Punkte
+    score -= len(warnings) * 0.15
+
+    # Noten-Dichte aus assembled_json prüfen
+    retry_for: str | None = None
+    if assembled_json:
+        try:
+            proj = json.loads(assembled_json)
+            for t in proj.get("tracks", []):
+                notes = t.get("clip", {}).get("notes", [])
+                length = float(t.get("clip", {}).get("length_beats", 16) or 16)
+                density = len(notes) / max(length, 1)
+                if density < 0.25:  # weniger als 1 Note pro 4 Beats
+                    score -= 0.20
+                    retry_for = "note_retry"
+        except Exception:
+            pass
+
+    score = max(0.0, min(1.0, score))
+
+    # Wenn Score unter Schwelle: passendes Signal bestimmen
+    if score < 0.75 and not retry_for:
+        warning_text = " ".join(warnings).lower()
+        if "track" in warning_text or "instrument" in warning_text:
+            retry_for = "instrument_retry"
+        else:
+            retry_for = "note_retry"
+
+    return score, (retry_for if score < 0.75 else None)
+
+
 def verify_node(state: AgentState) -> dict:
-    """Ruft verify_song auf und speichert quality_report."""
+    """Observer-Node: ruft verify_song auf, bewertet Qualität, setzt retry_signal."""
     try:
         from src.agent.tools.song_tools import verify_song
         log.info("verify: verify_song aufrufen")
-        result_str = verify_song.invoke({"play_seconds": 3, "slot": 0, "expected_tracks": 1})
-        try:
-            report = json.loads(result_str)
-        except (json.JSONDecodeError, TypeError):
-            report = {"raw": str(result_str)}
+        result = verify_song.invoke({"play_seconds": 3, "slot": 0, "expected_tracks": 1})
+
+        # verify_song gibt dict zurück
+        report = result if isinstance(result, dict) else {"raw": str(result)}
+
         warnings = report.get("warnings", [])
-        phase = "done" if not warnings else "verifying"
-        log.info("verify: %d Warnings, Phase=%s", len(warnings), phase)
-        return {"quality_report": report, "generation_phase": phase}
+        thresholds = state.get("quality_thresholds") or {"overall": 0.75}
+        budget = dict(state.get("retry_budget") or {})
+
+        score, signal = _compute_quality(report, state.get("assembled_json"))
+
+        log.info("verify: score=%.2f, warnings=%d, signal=%s", score, len(warnings), signal)
+
+        # Budget prüfen — kein Retry wenn aufgebraucht
+        if signal:
+            slave_key = signal.replace("_retry", "")
+            remaining = budget.get(slave_key, 0)
+            if remaining <= 0:
+                log.info("verify: Budget für %s erschöpft → kein Retry", slave_key)
+                signal = None
+            else:
+                budget[slave_key] = remaining - 1
+                log.info("verify: Retry %s, Budget jetzt %d", slave_key, budget[slave_key])
+
+        phase = "done" if not signal else "verifying"
+
+        update: dict = {
+            "quality_report":     report,
+            "generation_phase":   phase,
+            "phase_quality_score": score,
+            "retry_budget":       budget,
+            "retry_signal":       signal,
+        }
+
+        # Bei Retry: alten assembled_json + slave_results zurücksetzen
+        if signal:
+            update["assembled_json"] = None
+            update["build_result"]   = None
+            update["slave_results"]  = [{"__reset__": True}]
+
+        return update
+
     except Exception as exc:
         log.error("verify: Fehler: %s", exc)
-        return {"quality_report": {"error": str(exc)}, "generation_phase": "error"}
+        return {
+            "quality_report":     {"error": str(exc)},
+            "generation_phase":   "error",
+            "phase_quality_score": 0.0,
+            "retry_signal":       None,
+        }
 
 
 def reply_node(state: AgentState) -> dict:
@@ -225,16 +342,17 @@ def route_after_assemble(state: AgentState) -> str:
 
 
 def route_after_verify(state: AgentState) -> str:
-    phase = state.get("generation_phase", "idle")
-    if phase == "done":
-        return "reply"
+    """Nach verify: bei retry_signal zurück zu plan (neu fan-out), sonst reply."""
+    signal = state.get("retry_signal")
+    phase  = state.get("generation_phase", "idle")
+
     if phase == "error":
         return "reply"
-    # Warnings → Einmal Korrektur via note_slave (max. 1x)
-    retry_counts = state.get("slave_retry_counts") or {}
-    if retry_counts.get("notes_correction", 0) < 1:
-        log.info("verify: Warnings vorhanden — Note-Slave zur Korrektur")
-        return "reply"  # vereinfacht: direkt reply statt Korrektur-Loop
+
+    if signal in ("instrument_retry", "harmony_retry", "note_retry"):
+        log.info("route_after_verify: %s → zurück zu plan", signal)
+        return "plan"
+
     return "reply"
 
 
@@ -273,7 +391,9 @@ def build_master_graph():
 
     graph.add_edge("execute_build", "verify")
 
+    # verify → reply (done/error) ODER zurück zu plan (retry_signal gesetzt)
     graph.add_conditional_edges("verify", route_after_verify, {
+        "plan":  "plan",
         "reply": "reply",
     })
 
@@ -292,7 +412,7 @@ def get_master_graph():
     return _MASTER_GRAPH
 
 
-def run_master(user_text: str, history: list | None = None) -> str:
+def run_master(user_text: str, history: list | None = None, ui_song_config: dict | None = None) -> str:
     """Einstiegspunkt für den Master-Graph."""
     from src.agent.core import _default_state
     state = _default_state()
@@ -302,6 +422,7 @@ def run_master(user_text: str, history: list | None = None) -> str:
     state["slave_plan"] = None
     state["assembled_json"] = None
     state["build_result"] = None
+    state["ui_song_config"] = dict(ui_song_config) if ui_song_config else None
 
     graph = get_master_graph()
     result = graph.invoke(state)

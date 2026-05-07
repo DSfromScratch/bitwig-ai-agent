@@ -196,6 +196,17 @@ DEVICES = [
          {"name": "Decay",    "type": "float","min": 0.01,"max": 1.0,"default": 0.2},
      ]},
 
+    # ── Audio Loops (virtuelle Devices — repräsentieren WAV-Loops aus installierten Paketen) ──
+    {"name": "AudioLoop_GuitarRiff",  "type": "instrument", "category": "audio_loop",
+     "description": "Echter E-Gitarren-Riff Loop (WAV). Rock, Metal, Blues. Laden via find_guitar_loops + load_guitar_loop.",
+     "browser_path": "AudioLoop", "params": []},
+    {"name": "AudioLoop_GuitarLead",  "type": "instrument", "category": "audio_loop",
+     "description": "Echter E-Gitarren-Lead Loop (WAV). Rock, Metal, Blues Solo.",
+     "browser_path": "AudioLoop", "params": []},
+    {"name": "AudioLoop_BassGuitar",  "type": "instrument", "category": "audio_loop",
+     "description": "Echter Bass-Gitarren Loop (WAV). Rock, Metal, Blues.",
+     "browser_path": "AudioLoop", "params": []},
+
     {"name": "Drum Machine","type": "instrument", "category": "sampler",
      "description": "16-Pad Drum Machine. Jedes Pad: eigenes Instrument/Sample.",
      "browser_path": "Instruments > Drum Machine",
@@ -364,25 +375,25 @@ SOUNDS = [
      "created_by": "Sampler",
      "settings": "Short samples, Gate, Reverb + Delay"},
     {"name": "Rock Guitar Riff","category": "lead",
-     "description": "E-Gitarren-Riff, Pentatonik, Distortion. Rock/Metal.",
-     "created_by": "Phase-4",
-     "settings": "fx_preset: Guitar Crunchy, Audioeffekte>Guitar FX-Chain, mittlere Verzerrung"},
+     "description": "E-Gitarren-Riff Loop (WAV), Pentatonik, Distortion. Rock/Metal.",
+     "created_by": "AudioLoop_GuitarRiff",
+     "settings": "find_guitar_loops(key, bpm) → load_guitar_loop(); Distortion+Amp FX hinzufügen"},
     {"name": "Lead Guitar",    "category": "lead",
-     "description": "Lead-Gitarren-Sound mit Sustain. Rock, Metal.",
-     "created_by": "Phase-4",
-     "settings": "fx_preset: Lead Guitar 1, Audioeffekte>Guitar FX-Chain, Lead mit Sustain"},
+     "description": "Lead-Gitarren Loop mit Sustain. Rock, Metal.",
+     "created_by": "AudioLoop_GuitarLead",
+     "settings": "find_guitar_loops(key, bpm, loop_type='GuitarLead') → load_guitar_loop()"},
     {"name": "Heavy Guitar",   "category": "lead",
-     "description": "Stark verzerrter Gitarren-Sound. Metal, Heavy Rock.",
-     "created_by": "Phase-4",
-     "settings": "fx_preset: Faulty Distortion, Audioeffekte>Guitar FX-Chain, starke Verzerrung"},
+     "description": "Stark verzerrter Gitarren-Loop. Metal, Heavy Rock.",
+     "created_by": "AudioLoop_GuitarRiff",
+     "settings": "find_guitar_loops(key, bpm, loop_type='GuitarRiff'); Distortion Drive=0.8+Amp"},
     {"name": "Clean Guitar",   "category": "lead",
-     "description": "Sauberer Gitarren-Sound. Pop, Blues, Funk.",
-     "created_by": "Phase-4",
-     "settings": "fx_preset: Clean Guitar, Audioeffekte>Guitar FX-Chain, unverzerrter Klang"},
+     "description": "Sauberer Gitarren-Loop. Pop, Blues, Funk.",
+     "created_by": "AudioLoop_GuitarRiff",
+     "settings": "find_guitar_loops(key, bpm, loop_type='GuitarChords'); kein Distortion"},
     {"name": "Blues Lead",     "category": "lead",
-     "description": "Blues-Gitarren-Lead mit Bend-Charakter. Pentatonik.",
-     "created_by": "Phase-4",
-     "settings": "fx_preset: A Little Crunch, Audioeffekte>Guitar FX-Chain, leichte Verzerrung"},
+     "description": "Blues-Gitarren-Lead Loop mit Bend-Charakter. Pentatonik.",
+     "created_by": "AudioLoop_GuitarLead",
+     "settings": "find_guitar_loops(key, bpm, loop_type='GuitarLead'); leichte Distortion+Amp"},
 ]
 
 # ── Genre → Device Beziehungen ────────────────────────────────────────────────
@@ -420,22 +431,28 @@ GENRE_DEVICES = [
     ("Drum and Bass","E-Snare",    "drums",  0.90),
     ("Drum and Bass","FM-4",       "bass",   0.95),
     ("Drum and Bass","Transient Control","effect",0.80),
-    # Rock
-    ("Rock",         "Phase-4",    "guitar", 0.95),
-    ("Rock",         "Distortion", "effect", 0.98),
-    ("Rock",         "Amp",        "effect", 0.90),
-    ("Rock",         "EQ-5",       "effect", 0.80),
-    ("Rock",         "E-Kick",     "drums",  0.90),
-    ("Rock",         "E-Snare",    "drums",  0.90),
-    # Metal
-    ("Metal",        "Phase-4",    "guitar", 0.95),
-    ("Metal",        "Distortion", "effect", 0.99),
-    ("Metal",        "Amp",        "effect", 0.95),
-    ("Metal",        "E-Kick",     "drums",  0.95),
-    # Blues
-    ("Blues",        "Phase-4",    "guitar", 0.95),
-    ("Blues",        "Amp",        "effect", 0.85),
-    ("Blues",        "Reverb",     "effect", 0.80),
+    # Rock — echte Gitarren-Loops, keine Synthesizer
+    ("Rock",         "AudioLoop_GuitarRiff", "guitar",  0.99),
+    ("Rock",         "AudioLoop_GuitarLead", "lead",    0.92),
+    ("Rock",         "AudioLoop_BassGuitar", "bass",    0.95),
+    ("Rock",         "Distortion",           "effect",  0.98),
+    ("Rock",         "Amp",                  "effect",  0.90),
+    ("Rock",         "EQ-5",                 "effect",  0.80),
+    ("Rock",         "E-Kick",               "drums",   0.90),
+    ("Rock",         "E-Snare",              "drums",   0.90),
+    # Metal — echte Gitarren-Loops, keine Synthesizer
+    ("Metal",        "AudioLoop_GuitarRiff", "guitar",  0.99),
+    ("Metal",        "AudioLoop_GuitarLead", "lead",    0.92),
+    ("Metal",        "AudioLoop_BassGuitar", "bass",    0.95),
+    ("Metal",        "Distortion",           "effect",  0.99),
+    ("Metal",        "Amp",                  "effect",  0.95),
+    ("Metal",        "E-Kick",               "drums",   0.95),
+    # Blues — echte Gitarren-Loops, keine Synthesizer
+    ("Blues",        "AudioLoop_GuitarRiff", "guitar",  0.95),
+    ("Blues",        "AudioLoop_GuitarLead", "lead",    0.90),
+    ("Blues",        "AudioLoop_BassGuitar", "bass",    0.85),
+    ("Blues",        "Amp",                  "effect",  0.85),
+    ("Blues",        "Reverb",               "effect",  0.80),
 ]
 
 # ── Empfohlene Effekt-Ketten ──────────────────────────────────────────────────
@@ -572,7 +589,13 @@ def build_graph():
                 """, snd=snd["name"], dev=creator)
         print(f"  ✓ {len(SOUNDS)} Sounds")
 
-        # Genre → Device
+        # Genre → Device — zuerst veraltete guitar/lead-Synth-Beziehungen für Loop-Genres löschen
+        s.run("""
+            MATCH (g:Genre)-[r:USES]->(d:Device {name: "Phase-4"})
+            WHERE g.name IN ["Rock", "Metal", "Blues"]
+              AND r.role IN ["guitar", "lead"]
+            DELETE r
+        """)
         for genre, device, role, weight in GENRE_DEVICES:
             s.run("""
                 MATCH (g:Genre {name: $genre}), (d:Device {name: $device})

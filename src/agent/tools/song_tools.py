@@ -209,10 +209,16 @@ def create_song_from_genre(
     import os, sys
     sys.path.insert(0, str(__file__).split("/src/")[0])
 
-    # Für Rock/Metal: Nutze den geführten Kompositions-Dialog statt direkter Erstellung
-    # 1. get_genre_overview(genre) → allgemeine Genre-Infos
-    # 2. get_section_proposal(genre, section) → Vorschläge pro Section
-    # 3. create_song_with_sections → finaler Aufbau
+    # Rock/Metal/Blues → echte Gitarren-Loops via create_song_with_sections
+    _GUITAR_GENRES = {"rock", "metal", "hard rock", "heavy metal", "blues", "grunge",
+                      "punk rock", "classic rock", "indie rock", "progressive rock"}
+    _g = genre.lower().strip()
+    if _g in _GUITAR_GENRES or any(kw in _g for kw in ("rock", "metal", "blues")):
+        return create_song_with_sections.invoke({
+            "genre": genre,
+            "start_track_index": start_track_index,
+        })
+
     os.environ.setdefault("NEO4J_URI",      "bolt://localhost:7687")
     os.environ.setdefault("NEO4J_USER",     "neo4j")
     os.environ.setdefault("NEO4J_PASSWORD", "neo4jllm")
@@ -355,11 +361,13 @@ def create_song_from_genre(
     names = [i[0] for i in instruments]
     bus.emit("song_done", {"genre": genre, "bpm": bpm, "track_count": len(instruments)})
     # Explizit "FERTIG" + Tracks — verhindert Doppelaufruf und setup_instrument_track danach
-    return (
-        f"SONG FERTIG ERSTELLT. KEINE weiteren create_song/setup_instrument Aufrufe nötig.\n"
-        f"Genre: {genre} | BPM: {bpm:.0f} | Progression: {chord_str}\n"
-        f"Tracks erstellt: " + " | ".join(f"Track {i}: {n}" for i, n in zip(track_indices, names))
-    )
+    return {
+        "status": "SONG FERTIG ERSTELLT. KEINE weiteren create_song/setup_instrument Aufrufe nötig.",
+        "genre": genre,
+        "bpm": bpm,
+        "progression": chord_str,
+        "tracks": " | ".join(f"Track {i}: {n}" for i, n in zip(track_indices, names))
+    }
 
 
 @tool
@@ -385,7 +393,7 @@ def setup_instrument_track(track_index: int, instrument_name: str) -> dict:
     # UUID-basiertes Laden — sofort für alle 146 Bitwig Built-in Devices
     client.send_message("/browser/device/load", instrument_name)
     time.sleep(1.5)  # Browser-Fallback: 3 flush-Zyklen (à ~150ms) + Navigation + Commit
-    return f"OK: {instrument_name} auf Track {track_index}"
+    return {"status": "OK", "instrument": instrument_name, "track": track_index}
 
 
 @tool
@@ -445,7 +453,7 @@ def write_notes_to_clip(
         return None
 
     if not _check_bridge():
-        return "Fehler: BitwigAgentBridge nicht erreichbar"
+        return {"error": "BitwigAgentBridge nicht erreichbar"}
 
     # ── JSON-Repair ───────────────────────────────────────────────────────────
     try:
@@ -455,9 +463,9 @@ def write_notes_to_clip(
             trimmed = notes_json[:notes_json.rfind("}") + 1] + "]"
             notes = json.loads(trimmed)
             if not notes:
-                return "Fehler: notes_json ist leer oder ungültig"
+                return {"error": "notes_json ist leer oder ungültig"}
         except Exception as e:
-            return f"Fehler: Ungültiges JSON — {e}. Kürzere Note-Liste verwenden."
+            return {"error": f"Ungültiges JSON — {e}. Kürzere Note-Liste verwenden."}
 
     # ── MIDI-Validierung ──────────────────────────────────────────────────────
     errors   = []
@@ -486,9 +494,9 @@ def write_notes_to_clip(
         valid_notes.append({**n, "pitch": pitch, "vel": vel, "dur": dur})
 
     if errors:
-        return f"Fehler in notes_json:\n" + "\n".join(errors) + \
+        return {"error": "Fehler in notes_json:\n" + "\n".join(errors) + \
                f"\n\nMIDI-Referenz: C4=60 D4=62 E4=64 F4=65 G4=67 A4=69 B4=71 C5=72\n" + \
-               f"Halbtonschritte: C=0 C#=1 D=2 D#=3 E=4 F=5 F#=6 G=7 G#=8 A=9 A#=10 B=11"
+               f"Halbtonschritte: C=0 C#=1 D=2 D#=3 E=4 F=5 F#=6 G=7 G#=8 A=9 A#=10 B=11"}
 
     # ── In Bitwig schreiben ───────────────────────────────────────────────────
     client = _osc_client()
@@ -522,7 +530,7 @@ def write_notes_to_clip(
         result += f"Warnungen: {'; '.join(warnings)}\n"
     if len(valid_notes) < len(notes):
         result += f"Übersprungen: {len(notes)-len(valid_notes)} ungültige Noten"
-    return result
+    return {"ok": True, "message": result}
 
 
 @tool
@@ -530,7 +538,7 @@ def verify_song(
     play_seconds: float = 5.0,
     slot: int = 0,
     expected_tracks: int = 1,
-) -> str:
+) -> dict:
     """Spielt den erstellten Song ab und überprüft das Ergebnis.
 
     Workflow:
@@ -551,14 +559,13 @@ def verify_song(
     from pathlib import Path
 
     if not _check_bridge():
-        import json as _json
-        return _json.dumps({
+        return {
             "ok": False,
             "error": "BitwigAgentBridge nicht erreichbar — Bitwig starten",
             "track_count": None,
             "warnings": ["Bridge nicht erreichbar"],
             "report_text": "Fehler: BitwigAgentBridge nicht erreichbar",
-        })
+        }
 
     client = _bound_osc_client(timeout=2.5)
 
@@ -645,7 +652,7 @@ def verify_song(
     else:
         report_text += f"\n✓ Song korrekt erstellt mit {track_count} Tracks"
 
-    return _json.dumps({
+    return {
         "ok": ok,
         "track_count": track_count,
         "tracks_info": tracks_info,
@@ -653,7 +660,7 @@ def verify_song(
         "screenshot_path": screenshot_path if screenshot_ok else None,
         "warnings": warnings,
         "report_text": report_text,
-    }, ensure_ascii=False)
+    }
 
 
 @tool

@@ -1,0 +1,23 @@
+[Unit]
+Description=Bitwig Audio Agent (LangGraph + OSC Listener Port 9003)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sija/bitwig-agent
+ExecStart=/home/sija/bitwig-agent/.venv/bin/python -m src.agent.core
+Restart=on-failure
+RestartSec=10
+
+Environment=LD_LIBRARY_PATH=/home/sija/bitwig-agent/.cuda_compat
+Environment=PYTHONUNBUFFERED=1
+Environment=NEO4J_URI=bolt://localhost:7687
+Environment=NEO4J_USER=neo4j
+Environment=NEO4J_PASSWORD=neo4jllm
+
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

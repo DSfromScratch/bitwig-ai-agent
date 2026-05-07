@@ -15,6 +15,12 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 
 from src.agent.state import AgentState
+from src.audio.style_rules import (
+    apply_dynamics,
+    apply_register_hint,
+    apply_rhythm_pattern,
+    apply_technique,
+)
 
 log = logging.getLogger("bitwig-agent.note-slave")
 
@@ -49,6 +55,13 @@ Regeln:
 - Verwende mindestens 4 verschiedene Pitches wenn die Anfrage ein Riff, Guitar, Rock, Metal oder Blues erwähnt
 - Rhythmus variieren: Mix aus 0.25, 0.5 und 1.0 dur Werten; vermeide stumpfe Gleichverteilung nur auf Vierteln
 - Velocity dynamisch: starke Schläge (beat 0, 2, 4...) lauter als Zwischennoten; einzelne Ghost-Noten leiser
+- Wenn Technik "Palm Mute" erwähnt wird: mehr kurze Noten (dur 0.1-0.25) im tiefen Register, eher harte Downbeat-Akzente
+- Wenn Technik "Legato" erwähnt wird: mehr verbundene Phrasen (dur 0.5-1.0), kleine melodische Schritte statt Sprünge
+- Wenn Technik "Bend Heavy" oder "Vibrato" erwähnt wird: halte Zielnoten länger (dur 0.75-1.5) und setze Peaks auf Phrasenenden
+- Wenn Rhythmus "Gallop" erwähnt wird: baue wiederholt 0.25/0.25/0.5 Gruppen ein
+- Wenn Rhythmus "Triplet Feel" erwähnt wird: nutze 0.33/0.66-artige Verteilungen statt strikt gerade Raster
+- Wenn Saitenbereich "Low" erwähnt wird: Schwerpunkt E2-D3 (40-50), bei "Mid": D3-G3 (50-55), bei "Lead": G3-E4 (55-64)
+- Wenn Dynamik "Accent 1&3" oder "Accent 2&4" erwähnt wird: diese Beats hörbar lauter als die Zwischenzeiten
 - Vermeide zu einfache Tonleitern aufwärts/abwärts ohne Motivik
 - max. 16 Noten — das Pattern wird extern wiederholt
 Kein <think>-Block, keine Erklärung. Nur JSON.
@@ -335,11 +348,23 @@ def run_note_slave(state: AgentState) -> dict:
     bpm = plan.get("bpm", 120)
     beat_count = plan.get("beat_count", 8)
     scale = plan.get("scale", "")
+    technique = plan.get("technique", "")
+    rhythm_pattern = plan.get("rhythm_pattern", "")
+    string_register = plan.get("string_register", "")
+    dynamics_shape = plan.get("dynamics_shape", "")
     harmony = _find_harmony_context(state)
 
     hint_parts = [user_text]
     if scale:
         hint_parts.append(f"Tonleiter/Skala: {scale}")
+    if technique:
+        hint_parts.append(f"Technik: {technique}")
+    if rhythm_pattern:
+        hint_parts.append(f"Rhythmusmuster: {rhythm_pattern}")
+    if string_register:
+        hint_parts.append(f"Saitenbereich: {string_register}")
+    if dynamics_shape:
+        hint_parts.append(f"Dynamikform: {dynamics_shape}")
     if harmony:
         hint_parts.append(
             "Harmonie-Kontext: "
@@ -384,6 +409,10 @@ def run_note_slave(state: AgentState) -> dict:
             notes = _break_repetitive_loop(notes, harmony)
             notes = _inject_missing_scale_tones(notes, harmony)
         notes = _shape_rhythm(notes)
+        notes = apply_register_hint(notes, string_register)
+        notes = apply_technique(notes, technique)
+        notes = apply_rhythm_pattern(notes, rhythm_pattern)
+        notes = apply_dynamics(notes, dynamics_shape)
         if not notes:
             log.debug("NoteSlave — Kandidat %d/%d: empty_after_validation", i + 1, candidate_count)
             continue

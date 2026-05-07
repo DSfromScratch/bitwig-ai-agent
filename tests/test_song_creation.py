@@ -88,12 +88,13 @@ class TestVerifySong:
 
     @pytest.mark.unit
     def test_verify_song_returns_string(self):
-        """Mock: verify_song ohne echte Bridge."""
+        """Mock: verify_song ohne echte Bridge gibt dict mit report_text zurück."""
         with patch("src.agent.tools.song_tools._check_bridge", return_value=False):
             from src.agent.tools.song_tools import verify_song
             result = verify_song.invoke({"play_seconds": 1.0})
-            assert isinstance(result, str)
-            assert "Fehler" in result or "Bridge" in result
+            assert isinstance(result, dict)
+            assert result["ok"] is False
+            assert "Bridge" in result["error"]
 
 
 class TestAgentState:

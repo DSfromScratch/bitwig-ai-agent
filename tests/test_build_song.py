@@ -45,6 +45,7 @@ class TestBuildSongUnit:
         self.mock_client = MagicMock()
         with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
              patch("src.agent.tools.song_tools._osc_client", return_value=self.mock_client), \
+             patch("src.agent.tools.song_tools._get_current_track_count", return_value=0), \
              patch("time.sleep"):  # sleep überspringen → Tests schnell
             yield
 

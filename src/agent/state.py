@@ -10,6 +10,17 @@ def _merge_dicts(a: dict, b: dict) -> dict:
     return {**a, **b}
 
 
+def _slave_results_reducer(existing: list, new: list) -> list:
+    """Reducer für slave_results: unterstützt Reset via __reset__-Sentinel.
+
+    verify_node setzt [{"__reset__": True}] wenn ein Retry-Loop startet —
+    dann wird die Liste geleert statt die alten Ergebnisse zu behalten.
+    """
+    if new and isinstance(new[0], dict) and new[0].get("__reset__"):
+        return new[1:]  # Sentinel konsumieren, Rest (leer) übernehmen
+    return existing + new
+
+
 class BitwigTrack(TypedDict):
     index:      int
     instrument: str
@@ -48,6 +59,12 @@ GenerationPhase = Literal[
     "error",        # Nicht behebbar
 ]
 
+RetrySignal = Literal[
+    "instrument_retry",  # instrument_slave nochmal ausführen
+    "harmony_retry",     # harmony_slave nochmal ausführen
+    "note_retry",        # note_slave nochmal ausführen
+]
+
 
 class AgentState(TypedDict):
     messages:      Annotated[list, add_messages]
@@ -63,9 +80,15 @@ class AgentState(TypedDict):
     quality_report:     Optional[dict]          # letztes verify_song JSON
     pending_sections:   list[str]              # noch zu generierende Sections
     retry_count:        int
+    ui_song_config:     Optional[dict]         # Strukturierte Song-Config aus Bitwig UI (OSC)
     # ── Multi-Agent Slave-State ───────────────────────────────────────────────
     slave_plan:          Optional[dict]                              # plan-Node Output: {instrument_hint, fx_hint, bpm, beat_count, scale}
-    slave_results:       Annotated[list[dict], operator.add]        # Fan-in Reducer: sammelt Outputs aller Slaves
+    slave_results:       Annotated[list[dict], _slave_results_reducer]  # Fan-in Reducer: sammelt Outputs aller Slaves (reset-fähig)
     assembled_json:      Optional[str]                              # assemble-Node: fertiges build_song JSON
     build_result:        Optional[str]                              # execute_build-Node: Tool-Rückgabe
     slave_retry_counts:  Annotated[dict, _merge_dicts]              # {"instrument": 0, "notes": 0}
+    # ── Observer / Retry-Loop ─────────────────────────────────────────────────
+    retry_budget:        dict                                        # {"instrument": 2, "harmony": 2, "notes": 2}
+    phase_quality_score: float                                       # 0.0–1.0 nach verify
+    quality_thresholds:  dict                                        # {"overall": 0.75, "notes": 0.70}
+    retry_signal:        Optional[str]                               # None | "instrument_retry" | "harmony_retry" | "note_retry"

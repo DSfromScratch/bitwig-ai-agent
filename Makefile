@@ -8,7 +8,7 @@ PYTEST   := $(PYTHON) -m pytest
 FILE ?= song.mp3
 VLLM_MGR ?= $(shell if [ -x /home/sija/vllm/service-manager.sh ]; then printf '%s' /home/sija/vllm/service-manager.sh; elif [ -x ../vllm/service-manager.sh ]; then printf '%s' ../vllm/service-manager.sh; elif [ -x ./vllm/service-manager.sh ]; then printf '%s' ./vllm/service-manager.sh; fi)
 
-.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j neo4j-import vllm-up vllm-down vllm-status stack-up stack-down stack-status build-extension build-plugin install-plugin test-integration test-neo4j test-all
+.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j neo4j-import vllm-up vllm-down vllm-status stack-up stack-down stack-status build-extension build-plugin install-plugin test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs
 
 help: ## Verfügbare Befehle anzeigen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -106,9 +106,10 @@ clean: ## Cache löschen
 	find . -type f -name "*.pyc" -delete 2>/dev/null; true
 	@echo "✓ Cache bereinigt"
 
-build-extension: ## Bitwig Extension JAR bauen (benötigt JDK 25)
-	cd bitwig-extension && JAVA_HOME=$(JAVA_HOME) mvn package -q
-	@echo "✓ Extension gebaut"
+build-extension: ## Bitwig Extension JAR bauen und nach Extensions/ kopieren (benötigt JDK 25)
+	cd bitwig-extension && JAVA_HOME=$(JAVA_HOME) mvn package -DskipTests -q
+	cp bitwig-extension/dist/BitwigAgentBridge.bwextension "/mnt/c/Users/Admin/Documents/Bitwig Studio/Extensions/"
+	@echo "✓ Extension gebaut und installiert → Bitwig: Controller neu laden"
 
 build-plugin: ## Agent UI CLAP-Plugin bauen (benötigt g++ + libX11)
 	$(MAKE) -C agent-plugin/src
@@ -116,3 +117,25 @@ build-plugin: ## Agent UI CLAP-Plugin bauen (benötigt g++ + libX11)
 
 install-plugin: build-plugin ## Plugin nach ~/.clap/ installieren (Bitwig neu starten!)
 	$(MAKE) -C agent-plugin/src install
+
+agent-service-install: ## Bitwig Agent als systemd User-Service installieren (autostart)
+	@mkdir -p ~/.config/systemd/user
+	@install -m 644 scripts/bitwig-agent.service ~/.config/systemd/user/bitwig-agent.service
+	@systemctl --user daemon-reload
+	@systemctl --user enable bitwig-agent.service
+	@echo "✓ bitwig-agent.service installiert und aktiviert (startet beim Login automatisch)"
+	@echo "  Starten: make agent-service-start"
+
+agent-service-start: ## Bitwig Agent Service starten
+	systemctl --user start bitwig-agent.service
+	@sleep 2 && systemctl --user status bitwig-agent.service --no-pager | head -8
+
+agent-service-stop: ## Bitwig Agent Service stoppen
+	systemctl --user stop bitwig-agent.service
+	@echo "✓ bitwig-agent.service gestoppt"
+
+agent-service-status: ## Bitwig Agent Service Status anzeigen
+	systemctl --user status bitwig-agent.service --no-pager
+
+agent-service-logs: ## Bitwig Agent Service Logs live anzeigen (Ctrl+C zum Beenden)
+	journalctl --user -u bitwig-agent.service -f
