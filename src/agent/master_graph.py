@@ -155,53 +155,50 @@ def execute_build_node(state: AgentState) -> dict:
         return {"build_result": f"Fehler: {exc}", "generation_phase": "error"}
 
 
-def _compute_quality(report: dict, assembled_json: str | None) -> tuple[float, str | None]:
-    """Observer-Logik: berechnet Quality-Score und welcher Slave wiederholt werden soll.
+def _compute_quality(
+    report: dict,
+    assembled_json: str | None,
+    state: "AgentState",
+) -> tuple[float, str | None, dict]:
+    """Berechnet Quality-Score via CompositeQualitySpec (F3).
 
-    Returns (score 0.0–1.0, retry_signal | None).
+    Returns (score 0.0–1.0, retry_signal | None, spec_details).
     """
+    from src.agent.quality.specs import DEFAULT_QUALITY_SPEC, SongReport, scale_pcs_from_hint
+
     # Bridge nicht erreichbar → Instrument-Problem
     if not report.get("ok", True) and report.get("track_count") is None:
-        return 0.0, "instrument_retry"
+        return 0.0, "instrument_retry", {}
 
-    warnings = report.get("warnings", [])
-    track_count = report.get("track_count")
+    plan = state.get("slave_plan") or {}
+    beat_count = float(plan.get("beat_count", 16) or 16)
 
-    score = 1.0
-
-    # Keine Tracks erkannt → Instrument-Retry
-    if track_count == 0:
-        return 0.0, "instrument_retry"
-
-    # Jede Warning kostet 0.15 Punkte
-    score -= len(warnings) * 0.15
-
-    # Noten-Dichte aus assembled_json prüfen
-    retry_for: str | None = None
+    notes: list[dict] = []
     if assembled_json:
         try:
             proj = json.loads(assembled_json)
             for t in proj.get("tracks", []):
-                notes = t.get("clip", {}).get("notes", [])
-                length = float(t.get("clip", {}).get("length_beats", 16) or 16)
-                density = len(notes) / max(length, 1)
-                if density < 0.25:  # weniger als 1 Note pro 4 Beats
-                    score -= 0.20
-                    retry_for = "note_retry"
+                notes.extend(t.get("clip", {}).get("notes", []))
         except Exception:
             pass
 
-    score = max(0.0, min(1.0, score))
+    song_report = SongReport(
+        track_count=report.get("track_count") or 0,
+        expected_tracks=int(plan.get("track_count") or 1),
+        notes=notes,
+        scale_pcs=scale_pcs_from_hint(plan.get("scale", "") or ""),
+        bpm=float(plan.get("bpm", 120) or 120),
+        expected_notes=max(int(beat_count * 2), 8),
+    )
 
-    # Wenn Score unter Schwelle: passendes Signal bestimmen
-    if score < 0.75 and not retry_for:
-        warning_text = " ".join(warnings).lower()
-        if "track" in warning_text or "instrument" in warning_text:
-            retry_for = "instrument_retry"
-        else:
-            retry_for = "note_retry"
+    score, details = DEFAULT_QUALITY_SPEC.evaluate(song_report)
 
-    return score, (retry_for if score < 0.75 else None)
+    retry_for: str | None = None
+    if score < 0.75:
+        worst = min(details, key=lambda k: details[k])
+        retry_for = "instrument_retry" if worst == "track_count" else "note_retry"
+
+    return score, retry_for, details
 
 
 def verify_node(state: AgentState) -> dict:
@@ -214,13 +211,12 @@ def verify_node(state: AgentState) -> dict:
         # verify_song gibt dict zurück
         report = result if isinstance(result, dict) else {"raw": str(result)}
 
-        warnings = report.get("warnings", [])
         thresholds = state.get("quality_thresholds") or {"overall": 0.75}
         budget = dict(state.get("retry_budget") or {})
 
-        score, signal = _compute_quality(report, state.get("assembled_json"))
+        score, signal, spec_details = _compute_quality(report, state.get("assembled_json"), state)
 
-        log.info("verify: score=%.2f, warnings=%d, signal=%s", score, len(warnings), signal)
+        log.info("verify: score=%.2f, details=%s, signal=%s", score, spec_details, signal)
 
         # Budget prüfen — kein Retry wenn aufgebraucht
         if signal:

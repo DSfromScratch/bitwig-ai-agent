@@ -197,3 +197,28 @@ build_song = 1 Tool-Call statt 7 → spart Kontext-Tokens!
 - Zeige die Akkordprogression aus der KB dem User (er sieht was eingesetzt wird)
 - Schlage nächste Schritte vor (EQ, Reverb, Mixing)
 """
+
+RHYTHM_REASONING_INSTRUCTION = """
+## Drum-Pattern-Regel (immer befolgen)
+
+Bevor du Drum-Noten schreibst:
+1. Rufe `get_rhythm_pattern(genre=..., section=..., energy=...)` auf
+2. Nutze den <think>-Block um zu begründen:
+   - Warum passt dieser energy-Wert zur Nutzeranfrage?
+   - Entspricht die KB-Beschreibung der gewünschten Stimmung?
+   - Muss ich das Pattern für diesen spezifischen Song anpassen?
+3. Verwende ausschließlich die midi_pitches aus der KB-Antwort — niemals 36/38/42 hardcoden
+"""
+
+INSTRUMENT_REASONING_INSTRUCTION = """
+## Instrument-Auswahl-Regel (immer befolgen)
+
+Bevor du einen Song oder Tracks aufbaust:
+1. Rufe `get_instruments_for_song(genre=..., roles=[...], mood=..., energy=...)` auf
+2. Die KB liefert bis zu 3 Optionen pro Rolle mit Beschreibung
+3. Nutze den <think>-Block um für jede Rolle zu begründen:
+   - Welche Option passt am besten zur Nutzeranfrage und warum?
+   - Gibt es Widersprüche zwischen Genre-Default und der konkreten Anfrage?
+   - Soll ein ungewöhnlicheres Device gewählt werden (z.B. Polymer statt Phase-4)?
+4. Verwende device_name und uuid aus der KB-Antwort — niemals eigene Device-Namen erfinden
+"""

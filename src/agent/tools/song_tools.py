@@ -61,18 +61,20 @@ def _get_current_track_count() -> int:
 
 
 def _check_bridge(timeout: float = 1.5) -> bool:
-    """Ping/Pong Verbindungstest."""
+    """Ping/Pong Verbindungstest. Meldet Fehler an Circuit Breaker."""
     import socket
+    from src.agent.osc.circuit_breaker import get_circuit
 
+    circuit = get_circuit()
     client = _bound_osc_client(timeout=timeout)
     sock = client._sock
     try:
         client.send_message("/ping", 1)
         sock.recvfrom(64)
+        circuit._on_success()
         return True
-    except socket.timeout:
-        return False
-    except OSError:
+    except (socket.timeout, OSError):
+        circuit._on_failure()
         return False
     finally:
         try:
@@ -707,6 +709,12 @@ def build_song(project_json: str) -> str:
     Returns: Kompakter Status-String (Track-Count, Noten-Count, Fehler)
     """
     import json as _json
+    from src.agent.osc.circuit_breaker import get_circuit, CircuitOpenError
+
+    # ── 0. Circuit Breaker prüfen ─────────────────────────────────────────────
+    circuit = get_circuit()
+    if circuit.is_open():
+        return "ERROR: Bitwig nicht erreichbar (Circuit offen). Bitte Verbindung prüfen."
 
     # ── 1. JSON parsen ────────────────────────────────────────────────────────
     try:
@@ -747,49 +755,67 @@ def build_song(project_json: str) -> str:
         time.sleep(0.35)
         current_count -= 1
 
-    # ── 5. Tracks anlegen und Noten schreiben ─────────────────────────────────
+    # ── 5. Tracks anlegen und Noten schreiben (via Saga) ─────────────────────
+    from src.agent.osc.saga import BitwigSaga, OscCommand, SagaStepError
+
     for track in tracks:
         idx        = int(track.get("index", 1))
         instrument = track.get("instrument", "")
-        preset     = track.get("preset", "")      # optionaler Instrument-Preset
-        fx_preset  = track.get("fx_preset", "")   # Audioeffekte-Guitar-Chain-Preset
+        preset     = track.get("preset", "")
+        fx_preset  = track.get("fx_preset", "")
         fx_list    = track.get("fx", [])
         clip       = track.get("clip", {})
         slot       = int(clip.get("slot", 0))
         length     = float(clip.get("length_beats", 16.0))
         notes      = clip.get("notes", [])
 
-        # Track nur hinzufügen wenn er noch nicht existiert
+        saga = BitwigSaga(client)
+
+        # Track hinzufügen wenn noch nicht vorhanden
         if current_count < idx:
-            client.send_message("/track/add/instrument", 1)
+            ok = saga.step(OscCommand(
+                "/track/add/instrument", [1],
+                compensate=OscCommand("/track/delete/last", [1]),
+            ))
+            if not ok:
+                results.append(f"Track {idx}: Fehler beim Anlegen (Rollback)")
+                continue
             time.sleep(0.3)
             current_count += 1
+
         client.send_message(f"/track/{idx}/select", 1)
         time.sleep(0.2)
 
         # Instrument laden
         if instrument:
-            client.send_message("/browser/device/load", instrument)
+            saga.step(OscCommand("/browser/device/load", [instrument]))
             time.sleep(1.5)
 
-        # Optionaler Instrument-Preset laden (ersetzt Default-Preset des Instruments)
+        # Optionaler Preset
         if preset:
-            client.send_message("/browser/preset/load", preset)
-            time.sleep(2.5)  # mehr Zeit für Preset-Browser-Navigation
+            saga.step(OscCommand("/browser/preset/load", [preset]))
+            time.sleep(2.5)
 
-        # FX-Chain-Preset aus Audioeffekte-Kategorie (z.B. "Guitar Crunchy", "Lead Guitar 1")
+        # FX
         if fx_preset:
-            client.send_message("/browser/fx/load", fx_preset)
-            time.sleep(3.0)  # FX-Browser braucht mehr Zeit
+            saga.step(OscCommand("/browser/fx/load", [fx_preset]))
+            time.sleep(3.0)
         elif fx_list:
             for fx in fx_list:
-                client.send_message("/browser/device/load", fx)
+                saga.step(OscCommand("/browser/device/load", [fx]))
                 time.sleep(1.0)
 
         # Clip erstellen und Noten schreiben
         if notes:
             client.send_message(f"/track/{idx}/select", 1); time.sleep(0.15)
-            client.send_message("/clip/create", [float(slot), float(length)]); time.sleep(0.4)
+            ok = saga.step(OscCommand(
+                "/clip/create", [float(slot), float(length)],
+                compensate=OscCommand("/clip/delete", [float(slot)]),
+            ))
+            if not ok:
+                results.append(f"Track {idx}: Fehler beim Clip-Erstellen (Rollback)")
+                continue
+            time.sleep(0.4)
             client.send_message("/clip/step_size", 0.25); time.sleep(0.05)
 
             valid = 0
@@ -805,8 +831,10 @@ def build_song(project_json: str) -> str:
                 time.sleep(0.02)
                 valid += 1
 
+            saga.commit()
             results.append(f"Track {idx} ({instrument}): {valid}/{len(notes)} Noten")
         else:
+            saga.commit()
             results.append(f"Track {idx} ({instrument}): kein Clip")
 
     summary = f"build_song OK — BPM={bpm:.0f} | " + " | ".join(results)

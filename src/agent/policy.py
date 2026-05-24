@@ -82,23 +82,8 @@ def _beats_from_time(bpm: float, text: str) -> float | None:
 
 
 def is_concrete_track_task(user_text: str) -> bool:
-    lower = user_text.lower()
-    # Direkte Musikproduktions-Prompts (Beat/Drums/Genre) als konkret behandeln.
-    direct_music_markers = [
-        "beat", "drum", "drums", "hip hop", "hip-hop", "trap", "techno", "house", "genre",
-    ]
-    if any(token in lower for token in direct_music_markers):
-        return True
-
-    groups = [
-        ["riff", "loop", "melodie", "melody", "bassline", "lead", "track", "beat", "drum"],
-        ["phase-4", "fm-4", "polysynth", "instrument", "gitarre", "guitar"],
-        ["distortion", "amp", "fx", "effekt", "chain"],
-        ["bpm", "beat", "beats", "sek", "sekunden", "seconds", "takt"],
-        ["e-moll", "minor", "pentatonik", "midi", "tonart", "scale"],
-    ]
-    hits = sum(1 for group in groups if any(token in lower for token in group))
-    return hits >= 2
+    from src.agent.routing import DEFAULT_ROUTER
+    return DEFAULT_ROUTER.route(user_text) == "master_graph"
 
 
 def _safe_load_notes(raw: Any) -> list[dict[str, Any]]:

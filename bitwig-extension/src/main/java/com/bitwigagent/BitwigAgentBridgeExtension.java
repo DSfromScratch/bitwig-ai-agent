@@ -1,6 +1,8 @@
 package com.bitwigagent;
 
 import com.bitwig.extension.api.opensoundcontrol.*;
+import com.bitwig.extension.callback.BooleanValueChangedCallback;
+import com.bitwig.extension.callback.StringValueChangedCallback;
 import com.bitwig.extension.controller.ControllerExtension;
 import com.bitwig.extension.controller.api.*;
 import java.util.HashMap;
@@ -220,6 +222,10 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private final Map<String, Integer> noteCountMap = new HashMap<>(); // "track:slot" → count
     private volatile int     loadWaitLeft  = 0;   // Flush-Zyklen warten bevor navigiert wird
 
+    // F11: Observer-State für Browser-ACK
+    private volatile String  pendingLoadName   = null;  // Name des gerade ladenden Devices
+    private volatile String  lastCommittedName = null;  // Zuletzt bestätigter Result-Name
+
     // Preset-Suche: Name → nach browseToReplaceDevice im resultBank scannen
     private volatile String  presetTarget   = null;
     private volatile int     presetWaitLeft = 0;
@@ -259,6 +265,30 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
         cursorResult.name().markInterested();
         cursorResult.exists().markInterested();
         cursorResult.isSelected().markInterested();
+
+        // F11: Observer — lastCommittedName mitschreiben sobald Cursor-Result wechselt
+        cursorResult.name().addValueObserver(new StringValueChangedCallback() {
+            @Override
+            public void valueChanged(Object newName) {
+                lastCommittedName = newName != null ? newName.toString() : null;
+            }
+        });
+
+        // F11: Observer — Browser-ACK senden wenn PopupBrowser sich schließt
+        popupBrowser.exists().addValueObserver(new BooleanValueChangedCallback() {
+            @Override
+            public void valueChanged(boolean isOpen) {
+                if (!isOpen && pendingLoadName != null) {
+                    String pn = pendingLoadName;
+                    String cn = lastCommittedName;
+                    boolean ok = cn != null && cn.toLowerCase().contains(pn.toLowerCase());
+                    sendReply(null, "/browser/device/loaded", pn, ok ? 1 : 0);
+                    host.println("[BitwigAgent] Browser geschlossen — geladen: " + pn + " ok=" + ok);
+                    pendingLoadName   = null;
+                    lastCommittedName = null;
+                }
+            }
+        });
 
         cursorClip.setStepSize(0.25); // default: 1/16-Noten
 
@@ -502,6 +532,30 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                 (src, msg) -> {
                     noteCountMap.clear();
                     host.println("[BitwigAgent] Note-Counter zurückgesetzt");
+                });
+
+        // F11: /clip/notes/write <json_array>  → Batch-Write + ACK
+        space.registerMethod("/clip/notes/write", "*", "Batch write notes and send ACK",
+                (src, msg) -> {
+                    String json = argStr(msg, 0);
+                    if (json == null || json.isBlank()) {
+                        sendReply(src, "/clip/notes/written", 0, "error: empty payload");
+                        return;
+                    }
+                    int written = 0;
+                    try {
+                        written = parseAndWriteNoteBatch(json);
+                    } catch (Exception e) {
+                        host.println("[BitwigAgent] Batch-Fehler: " + e.getMessage());
+                        sendReply(src, "/clip/notes/written", 0, "error: " + e.getMessage());
+                        return;
+                    }
+                    String tn = cursorTrack.name().get();
+                    if (tn != null && !tn.isEmpty()) {
+                        noteCountMap.merge(tn, written, Integer::sum);
+                    }
+                    sendReply(src, "/clip/notes/written", written, tn != null ? tn : "");
+                    host.println("[BitwigAgent] Batch: " + written + " Noten auf '" + tn + "'");
                 });
 
         // ── Agent Status — Vollständiger Projekt-Status ───────────────────
@@ -757,8 +811,9 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                     // ── Option 2: Browser für alle anderen (Surge XT, Presets, VST) ──
                     popupBrowser.cancel();
                     cursorDevice.browseToInsertBeforeDevice();
-                    loadTarget   = key;
-                    loadWaitLeft = 3;
+                    loadTarget      = key;
+                    pendingLoadName = key;   // F11: Observer wartet auf Browser-Close
+                    loadWaitLeft    = 3;
                     host.println("[BitwigAgent] Browser-Suche: " + name);
                 });
 
@@ -1157,6 +1212,48 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             host.println("[BitwigAgent] '" + key + "' nicht im Katalog ("
                 + deviceCatalog.size() + " Einträge). Browser bleibt offen.");
         }
+    }
+
+    // F11: Batch-Note-Writer ──────────────────────────────────────────────────
+
+    /** Parst [{step,pitch,vel,dur},...] und schreibt alle Noten in cursorClip. */
+    private int parseAndWriteNoteBatch(String json) {
+        int count = 0;
+        // Strip outer brackets and split on object boundaries
+        String stripped = json.replace("[", "").replace("]", "");
+        for (String entry : stripped.split("\\},\\s*\\{")) {
+            entry = entry.replace("{", "").replace("}", "").trim();
+            if (entry.isBlank()) continue;
+            Map<String, Double> fields = parseSimpleJsonObject(entry);
+            double stepBeat = fields.getOrDefault("step", 0.0);
+            int    step     = (int) Math.round(stepBeat / 0.25);
+            int    pitch    = fields.getOrDefault("pitch", 60.0).intValue();
+            float  vel      = fields.getOrDefault("vel",   0.8).floatValue();
+            float  dur      = fields.getOrDefault("dur",   0.25).floatValue();
+            if (step < 0 || step >= CLIP_STEPS || pitch < 0 || pitch > 127 || dur <= 0) continue;
+            int velInt = Math.max(1, Math.min(127, (int) (vel * 127)));
+            cursorClip.setStep(0, step, pitch, velInt, (double) dur);
+            count++;
+        }
+        return count;
+    }
+
+    /** Minimaler Key:Value-Parser für flache JSON-Objekte mit nur numerischen Werten. */
+    private Map<String, Double> parseSimpleJsonObject(String kvPairs) {
+        Map<String, Double> result = new HashMap<>();
+        for (String pair : kvPairs.split(",")) {
+            pair = pair.trim();
+            int colon = pair.indexOf(':');
+            if (colon < 0) continue;
+            String key = pair.substring(0, colon).trim().replace("\"", "");
+            String val = pair.substring(colon + 1).trim().replace("\"", "");
+            try {
+                result.put(key, Double.parseDouble(val));
+            } catch (NumberFormatException ignored) {
+                // non-numeric value — skip
+            }
+        }
+        return result;
     }
 
     @Override

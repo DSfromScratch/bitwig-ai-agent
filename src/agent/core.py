@@ -270,37 +270,9 @@ def _phase_from_reasoning(reasoning: str, current: GenerationPhase) -> Generatio
 
 
 def _recover_tool_calls(response: AIMessage, state: AgentState | None = None) -> AIMessage:
-    """Fallback: parse Qwen3's raw <tool_call> XML if OpenAI function-call format was not used."""
-    if response.tool_calls:
-        return response
-    if not isinstance(response.content, str):
-        return response
-    matches = _TOOL_CALL_RE.findall(response.content)
-    if not matches:
-        return response
-    tool_calls = []
-    for i, raw in enumerate(matches):
-        try:
-            tc = json.loads(raw)
-            args = tc.get("arguments", tc.get("args", {}))
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except json.JSONDecodeError:
-                    pass
-            tool_calls.append({
-                "name": tc["name"],
-                "args": args,
-                "id": f"call_{i}",
-                "type": "tool_call",
-            })
-        except (json.JSONDecodeError, KeyError):
-            continue
-    if tool_calls:
-        clean = _TOOL_CALL_RE.sub("", response.content).strip()
-        log.info("Qwen3 <tool_call> recovered: %s tool call(s)", len(tool_calls))
-        return AIMessage(content=clean, tool_calls=tool_calls)
-    return response
+    """Fallback-Parser via CompositeToolCallParser (F7 — Parser-Chain)."""
+    from src.agent.parsing.tool_call_parsers import TOOL_CALL_PARSER
+    return TOOL_CALL_PARSER.patch_message(response)
 
 
 _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
