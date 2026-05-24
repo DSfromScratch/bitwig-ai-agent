@@ -1,0 +1,28 @@
+#!/bin/sh
+# Maven Wrapper — lädt Maven 3.9.9 automatisch herunter falls nicht vorhanden
+
+set -e
+
+MAVEN_VERSION="3.9.9"
+WRAPPER_DIR="$(dirname "$0")/.mvn/wrapper"
+MAVEN_HOME="$WRAPPER_DIR/apache-maven-$MAVEN_VERSION"
+MAVEN_ZIP="$WRAPPER_DIR/apache-maven-$MAVEN_VERSION-bin.zip"
+MAVEN_URL="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$MAVEN_VERSION/apache-maven-$MAVEN_VERSION-bin.zip"
+
+if [ ! -f "$MAVEN_HOME/bin/mvn" ]; then
+    echo "[mvnw] Maven $MAVEN_VERSION nicht gefunden — lade herunter..."
+    mkdir -p "$WRAPPER_DIR"
+    if command -v curl > /dev/null 2>&1; then
+        curl -fsSL -o "$MAVEN_ZIP" "$MAVEN_URL"
+    elif command -v wget > /dev/null 2>&1; then
+        wget -q -O "$MAVEN_ZIP" "$MAVEN_URL"
+    else
+        echo "[mvnw] Fehler: curl oder wget benötigt" >&2
+        exit 1
+    fi
+    unzip -q "$MAVEN_ZIP" -d "$WRAPPER_DIR"
+    rm -f "$MAVEN_ZIP"
+    echo "[mvnw] Maven $MAVEN_VERSION bereit."
+fi
+
+exec "$MAVEN_HOME/bin/mvn" "$@"

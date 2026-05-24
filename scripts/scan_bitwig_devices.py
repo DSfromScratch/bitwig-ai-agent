@@ -19,29 +19,33 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dotenv import load_dotenv
 from pythonosc import udp_client
+
+load_dotenv()
 
 OSC_HOST = "127.0.0.1"
 OSC_PORT = 8001
 
-# Datei-Pfade: Java schreibt unter Windows, Python liest unter WSL
-CATALOG_WIN = r"C:\Users\Public\bitwig_catalog.json"
-CATALOG_WSL = "/mnt/c/Users/Public/bitwig_catalog.json"
+# Datei-Pfade: Java schreibt unter Windows, Python liest über WSL-Mount
+# Überschreibbar per Umgebungsvariable BITWIG_CATALOG_WIN / BITWIG_CATALOG_WSL
+CATALOG_WIN = os.environ.get("BITWIG_CATALOG_WIN", r"C:\Users\Public\bitwig_catalog.json")
+CATALOG_WSL = os.environ.get("BITWIG_CATALOG_WSL", "/mnt/c/Users/Public/bitwig_catalog.json")
+
+_osc_client = udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT)
 
 
 # ── OSC Hilfsfunktionen ───────────────────────────────────────────────────────
 
-def osc(address: str, value=1):
-    udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT).send_message(address, value)
-
-def osc_str(address: str, value: str):
-    udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT).send_message(address, value)
+def osc(address: str, value=1) -> None:
+    _osc_client.send_message(address, value)
 
 
 # ── Browser-Scan ──────────────────────────────────────────────────────────────
@@ -57,7 +61,7 @@ def scan_browser_catalog() -> list[dict]:
     time.sleep(3.0)
 
     print(f"▶ Katalog speichern → {CATALOG_WIN}")
-    osc_str("/browser/catalog/save", CATALOG_WIN)
+    osc("/browser/catalog/save", CATALOG_WIN)
     time.sleep(0.8)
 
     osc("/browser/cancel", 1)
@@ -108,13 +112,19 @@ def ingest_devices(catalog: list[dict]) -> int:
     count = 0
     with session() as s:
         for entry in catalog:
-            name = entry["name"]
+            name = entry.get("name", "").strip()
+            if not name:
+                continue
             dtype, cat, bpath = categorize(name)
-            s.run("""
-                MERGE (d:Device {name: $name})
-                SET d.type=$type, d.category=$category, d.browser_path=$bpath
-            """, name=name, type=dtype, category=cat, bpath=bpath)
-            count += 1
+            try:
+                s.run(
+                    "MERGE (d:Device {name: $name}) "
+                    "SET d.type=$type, d.category=$category, d.browser_path=$bpath",
+                    name=name, type=dtype, category=cat, bpath=bpath,
+                )
+                count += 1
+            except Exception as exc:
+                print(f"  ⚠ Ingest fehlgeschlagen für '{name}': {exc}")
     return count
 
 
@@ -143,39 +153,47 @@ def setup_nu_metal_genre(device_names: list[str], dry_run: bool = False) -> None
     print("\n▶ Nu-Metal Genre in Neo4j anlegen...")
     names_lower = {n.lower(): n for n in device_names}
 
-    if not dry_run:
-        with session() as s:
-            s.run("""
-                MERGE (g:Genre {name: 'Nu-Metal'})
-                SET g.bpm_min=120, g.bpm_max=160,
-                    g.key_mode='minor',
-                    g.description='Heavy guitar riffs, Drop D tuning, hip-hop elements, aggressive drums'
-            """)
+    # Alle Rollen-Matches vorab ermitteln (max. 1 Device pro Rolle)
+    role_matches: list[tuple[str, float, str]] = []
+    for terms, role, weight in NU_METAL_ROLES:
+        matched = next(
+            (orig for term in terms for low, orig in names_lower.items() if term in low),
+            None,
+        )
+        if matched:
+            role_matches.append((role, weight, matched))
+
+    for role, weight, device in role_matches:
+        print(f"  {'→' if not dry_run else '~'} Nu-Metal --[{role}, w={weight}]--> {device}")
+
+    if dry_run:
+        if not role_matches:
+            print("  ⚠ Keine passenden Devices im Katalog — Browser-Scan korrekt?")
+        else:
+            print(f"  → {len(role_matches)} Devices würden verknüpft")
+        return
+
+    with session() as s:
+        s.run("""
+            MERGE (g:Genre {name: 'Nu-Metal'})
+            SET g.bpm_min=120, g.bpm_max=160,
+                g.key_mode='minor',
+                g.description='Heavy guitar riffs, Drop D tuning, hip-hop elements, aggressive drums'
+        """)
         print("  ✓ Genre 'Nu-Metal' erstellt")
 
-    linked = 0
-    for terms, role, weight in NU_METAL_ROLES:
-        matches = []
-        for term in terms:
-            matches = [orig for low, orig in names_lower.items() if term in low]
-            if matches:
-                break  # ersten Treffer pro Rolle nehmen
+        for role, weight, device in role_matches:
+            s.run(
+                "MATCH (g:Genre {name: 'Nu-Metal'}), (d:Device {name: $device}) "
+                "MERGE (g)-[r:USES {role: $role}]->(d) "
+                "SET r.weight = $weight",
+                device=device, role=role, weight=weight,
+            )
 
-        for device in matches[:1]:  # max. 1 Device pro Rolle
-            print(f"  {'→' if not dry_run else '~'} Nu-Metal --[{role}, w={weight}]--> {device}")
-            if not dry_run:
-                with session() as s:
-                    s.run("""
-                        MATCH (g:Genre {name: 'Nu-Metal'}), (d:Device {name: $device})
-                        MERGE (g)-[r:USES {role: $role}]->(d)
-                        SET r.weight = $weight
-                    """, device=device, role=role, weight=weight)
-            linked += 1
-
-    if linked == 0:
+    if not role_matches:
         print("  ⚠ Keine passenden Devices im Katalog — Browser-Scan korrekt?")
     else:
-        print(f"  → {linked} Devices verknüpft")
+        print(f"  → {len(role_matches)} Devices verknüpft")
 
 
 # ── Hauptprogramm ─────────────────────────────────────────────────────────────

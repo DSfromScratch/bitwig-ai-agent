@@ -1,22 +1,22 @@
 .DEFAULT_GOAL := help
-JAVA_HOME ?= /usr/lib/jvm/java-25-openjdk
+JAVA_HOME ?= $(or $(wildcard $(HOME)/.sdkman/candidates/java/25.0.2-open),$(wildcard /usr/lib/jvm/java-25-openjdk),$(error JDK 25 nicht gefunden — JAVA_HOME setzen))
 VENV     := .venv
-PYTHON   := $(shell if [ -x "$(VENV)/bin/python" ]; then printf '%s' "$(VENV)/bin/python"; elif command -v python3 >/dev/null 2>&1; then command -v python3; else command -v python; fi)
+PYTHON   := $(shell if [ -e "$(VENV)/bin/python" ] && "$(VENV)/bin/python" --version >/dev/null 2>&1; then printf '%s' "$(VENV)/bin/python"; elif command -v python3.11 >/dev/null 2>&1; then command -v python3.11; elif command -v python3 >/dev/null 2>&1; then command -v python3; else command -v python; fi)
+UV       := $(shell command -v uv 2>/dev/null || echo $$HOME/.local/bin/uv)
 STREAMLIT := $(PYTHON) -m streamlit
 PYTEST   := $(PYTHON) -m pytest
 
 FILE ?= song.mp3
-VLLM_MGR ?= $(shell if [ -x /home/sija/vllm/service-manager.sh ]; then printf '%s' /home/sija/vllm/service-manager.sh; elif [ -x ../vllm/service-manager.sh ]; then printf '%s' ../vllm/service-manager.sh; elif [ -x ./vllm/service-manager.sh ]; then printf '%s' ./vllm/service-manager.sh; fi)
 
-.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j neo4j-import vllm-up vllm-down vllm-status stack-up stack-down stack-status build-extension build-plugin install-plugin test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs
+.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status
 
 help: ## Verfügbare Befehle anzeigen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 install: ## Abhängigkeiten installieren
-	@if [ ! -d "$(VENV)" ]; then uv python install 3.11 && uv venv --python 3.11 $(VENV); fi
-	uv pip install --python $(PYTHON) -r requirements.txt
+	@if [ ! -d "$(VENV)" ]; then $(UV) python install 3.11 && $(UV) venv --python 3.11 $(VENV); fi
+	$(UV) pip install --python $(PYTHON) -r requirements.txt
 
 download-mf: ## Music Flamingo Modell herunterladen (~16 GB, einmalig)
 	$(PYTHON) -c "\
@@ -24,15 +24,6 @@ from huggingface_hub import snapshot_download; \
 print('Lade Music Flamingo FP8...'); \
 snapshot_download('henry1477/music-flamingo-2601-hf-fp8'); \
 print('Download abgeschlossen.')"
-
-neo4j: ## Neo4j Windows Desktop — Starten Sie Neo4j Desktop manuell auf Windows 11
-	@echo "💡 Neo4j Desktop auf Windows starten:"
-	@echo "   1. Neo4j Desktop öffnen (bereits installiert)"
-	@echo "   2. Database starten"
-	@echo "   3. bolt://localhost:7687"
-	@echo ""
-	@echo "Oder SSH-Tunnel von Linux:"
-	@echo "   ssh -L 7687:localhost:7687 user@windows-host"
 
 neo4j-import: ## Neo4j Graph aus Bitwig-Installation neu aufbauen
 	$(PYTHON) -c "\
@@ -51,27 +42,15 @@ agent: ## Interaktiven CLI-Agent starten (vLLM nötig)
 start: ## 🚀 MCP Server + Agent starten (vollständiger Stack)
 	$(PYTHON) start_agent.py
 
-vllm-up: ## vLLM Runtime über Service-Manager starten
-	@if [ -z "$(VLLM_MGR)" ]; then echo "⚠️  Kein vLLM Service-Manager gefunden"; exit 0; fi
-	bash -lc '$(VLLM_MGR) start'
-
-vllm-down: ## vLLM Runtime über Service-Manager stoppen
-	@if [ -z "$(VLLM_MGR)" ]; then echo "⚠️  Kein vLLM Service-Manager gefunden"; exit 0; fi
-	bash -lc '$(VLLM_MGR) stop'
-
-vllm-status: ## vLLM Runtime Status anzeigen
-	@if [ -z "$(VLLM_MGR)" ]; then echo "⚠️  Kein vLLM Service-Manager gefunden"; exit 0; fi
-	bash -lc '$(VLLM_MGR) status'
-
-stack-up: ## Vollen Stack starten (vLLM extern, Projektservices)
+stack-up: ## Vollen Stack starten (Neo4j + vLLM + Agent)
+	systemctl --user start neo4j.service vllm@agent.service
 	$(PYTHON) start_agent.py
 
-stack-down: ## Managed vLLM Runtime stoppen
-	@if [ -z "$(VLLM_MGR)" ]; then echo "⚠️  Kein vLLM Service-Manager gefunden"; exit 0; fi
-	bash -lc '$(VLLM_MGR) stop'
+stack-down: ## Stack stoppen (Neo4j + vLLM)
+	systemctl --user stop vllm@agent.service neo4j.service
 
-stack-status: ## Projekt- und Runtime-Status anzeigen
-	@if [ -n "$(VLLM_MGR)" ]; then bash -lc '$(VLLM_MGR) status'; else echo "⚠️  Kein vLLM Service-Manager gefunden"; fi
+stack-status: ## Stack-Status anzeigen
+	@systemctl --user status neo4j.service vllm@agent.service --no-pager 2>/dev/null | grep -E '(●|○|Active|Main PID)'
 	$(PYTHON) start_agent.py --status-only
 
 analyse: ## Song analysieren: make analyse FILE=song.mp3
@@ -106,17 +85,11 @@ clean: ## Cache löschen
 	find . -type f -name "*.pyc" -delete 2>/dev/null; true
 	@echo "✓ Cache bereinigt"
 
-build-extension: ## Bitwig Extension JAR bauen und nach Extensions/ kopieren (benötigt JDK 25)
-	cd bitwig-extension && JAVA_HOME=$(JAVA_HOME) mvn package -DskipTests -q
-	cp bitwig-extension/dist/BitwigAgentBridge.bwextension "/mnt/c/Users/Admin/Documents/Bitwig Studio/Extensions/"
-	@echo "✓ Extension gebaut und installiert → Bitwig: Controller neu laden"
+build-extension: ## Bitwig Extension JAR bauen (benötigt JDK 25; Maven wird automatisch heruntergeladen)
+	cd bitwig-extension && JAVA_HOME=$(JAVA_HOME) ./mvnw package -DskipTests -q
+	@echo "✓ Extension gebaut → bitwig-extension/dist/BitwigAgentBridge.bwextension"
+	@echo "  Manuell nach Windows kopieren: cp bitwig-extension/dist/*.bwextension /mnt/c/Users/<User>/Documents/Bitwig\\ Studio/Extensions/"
 
-build-plugin: ## Agent UI CLAP-Plugin bauen (benötigt g++ + libX11)
-	$(MAKE) -C agent-plugin/src
-	@echo "✓ CLAP Plugin gebaut → agent-plugin/build/agent-ui.clap"
-
-install-plugin: build-plugin ## Plugin nach ~/.clap/ installieren (Bitwig neu starten!)
-	$(MAKE) -C agent-plugin/src install
 
 agent-service-install: ## Bitwig Agent als systemd User-Service installieren (autostart)
 	@mkdir -p ~/.config/systemd/user
@@ -139,3 +112,32 @@ agent-service-status: ## Bitwig Agent Service Status anzeigen
 
 agent-service-logs: ## Bitwig Agent Service Logs live anzeigen (Ctrl+C zum Beenden)
 	journalctl --user -u bitwig-agent.service -f
+
+# ── Container (Podman Quadlet) ──────────────────────────────────────────────
+
+container-neo4j-start: ## Neo4j Container starten
+	systemctl --user start neo4j.service
+	@sleep 3 && systemctl --user status neo4j.service --no-pager | head -6
+
+container-neo4j-stop: ## Neo4j Container stoppen
+	systemctl --user stop neo4j.service
+
+container-neo4j-logs: ## Neo4j Logs live anzeigen
+	journalctl --user -u neo4j.service -f
+
+container-vllm-build: ## fedora-vllm Image bauen (einmalig, ~24 GB)
+	podman build -t localhost/fedora-vllm:latest ~/.local/share/containers/fedora-vllm/
+	@echo "✓ Image localhost/fedora-vllm:latest gebaut"
+
+container-vllm-start: ## vLLM Backend (agent/Qwen3-14B-AWQ) starten
+	systemctl --user start vllm@agent.service
+	@sleep 5 && systemctl --user status vllm@agent.service --no-pager | head -6
+
+container-vllm-stop: ## vLLM Backend stoppen
+	systemctl --user stop vllm@agent.service
+
+container-vllm-logs: ## vLLM Logs live anzeigen
+	journalctl --user -u vllm@agent.service -f
+
+container-status: ## Status aller Container-Services anzeigen
+	@systemctl --user status neo4j.service vllm@agent.service --no-pager 2>/dev/null | grep -E '(●|○|Active|Main PID)'

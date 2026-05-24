@@ -13,8 +13,6 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <!-- Pfad zur Bitwig API (Windows, via WSL2) -->
-    <bitwig.api.jar>C:/Program Files/Bitwig Studio/bin/bitwig.jar</bitwig.api.jar>
   </properties>
 
   <dependencies>
@@ -22,8 +20,7 @@
       <groupId>com.bitwig</groupId>
       <artifactId>bitwig-extension-api</artifactId>
       <version>18</version>
-      <scope>system</scope>
-      <systemPath>/mnt/c/Program Files/Bitwig Studio/bin/bitwig.jar</systemPath>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -47,9 +44,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
         <configuration>
-          <jdkToolchain>
-            <version>25</version>
-          </jdkToolchain>
+          <release>25</release>
         </configuration>
       </plugin>
       <!-- JUnit 5 test runner -->

@@ -7,7 +7,7 @@
       <vendor>any</vendor>
     </provides>
     <configuration>
-      <jdkHome>/home/sija/.jdk/jdk-25.0.2</jdkHome>
+      <jdkHome>/home/sija/.sdkman/candidates/java/25.0.2-open</jdkHome>
     </configuration>
   </toolchain>
 </toolchains>

@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.knowledge.ingest import load_all_docs, count_sources, DOCS_DIR
-from src.knowledge.store import get_store, get_embeddings, CHROMA_PATH, COLLECTION
+from src.knowledge.store import get_store, get_embeddings, CHROMA_PATH
 
 
 def main() -> None:
@@ -58,7 +58,7 @@ def main() -> None:
     print(f"\nGesamt: {len(docs)} Chunks")
 
     # Embeddings laden (Download beim ersten Mal)
-    print(f"\nLade Embedding-Modell (erster Start lädt ~280 MB) ...")
+    print("\n Lade Embedding-Modell (erster Start lädt ~280 MB) ...")
     embeddings = get_embeddings()
 
     # Store aufbauen

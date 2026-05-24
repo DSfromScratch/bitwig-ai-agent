@@ -760,27 +760,6 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
         log.info("Agent UI Prompt empfangen: %s", prompt[:120])
         threading.Thread(target=_process_prompt, args=(prompt,), daemon=True).start()
 
-    def _prompt_from_config(cfg: dict[str, Any]) -> str:
-        genre = str(cfg.get("genre", "Rock"))
-        bpm = int(float(cfg.get("bpm", 120)))
-        track_count = int(float(cfg.get("track_count", 4)))
-        key = str(cfg.get("key", "E minor"))
-        length_beats = int(float(cfg.get("length_beats", 32)))
-        technique = str(cfg.get("technique", "Standard"))
-        rhythm = str(cfg.get("rhythm_pattern", "Straight Eighths"))
-        string_register = str(cfg.get("string_register", "Low (E2-D3)"))
-        dynamics = str(cfg.get("dynamics_shape", "Accent 1&3"))
-        fx = str(cfg.get("fx_preset", "Distortion+Amp"))
-
-        return (
-            f"Erstelle einen {genre}-Track mit {track_count} Track(s), {bpm} BPM, "
-            f"Tonart {key}, Länge {length_beats} Beats. "
-            f"Nutze Spieltechnik {technique}, Rhythmusmuster {rhythm}, "
-            f"Saitenbereich {string_register}, Dynamik {dynamics}. "
-            f"FX-Preset: {fx}. "
-            "Bitte variiere Notenlängen und Akzente musikalisch, und halte den Stil konsistent."
-        )
-
     def _handle_config(_address: str, *args: Any) -> None:
         raw = str(args[0]).strip() if args else ""
         if not raw:
@@ -790,9 +769,13 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
             cfg = json.loads(raw)
             if not isinstance(cfg, dict):
                 raise ValueError("JSON muss ein Objekt sein")
-            _set_latest_ui_config(cfg)
-            prompt = _prompt_from_config(cfg)
-            log.info("Agent UI Config empfangen: genre=%s bpm=%s tracks=%s key=%s", cfg.get("genre"), cfg.get("bpm"), cfg.get("track_count"), cfg.get("key"))
+            prompt = str(cfg.get("prompt", "")).strip()
+            bpm = cfg.get("bpm")
+            if not prompt:
+                _send_ui_response("Prompt ist leer")
+                return
+            _set_latest_ui_config({"bpm": bpm} if bpm else {})
+            log.info("Agent UI Config empfangen: prompt=%s bpm=%s", prompt[:80], bpm)
             threading.Thread(target=_process_prompt, args=(prompt,), daemon=True).start()
         except Exception as exc:
             log.warning("Agent UI Config parse error: %s", exc)

@@ -107,33 +107,13 @@ def plan_node(state: AgentState) -> dict:
             if user_text:
                 break
 
-    cfg_genre = str(ui_cfg.get("genre", "")).strip()
     cfg_bpm = ui_cfg.get("bpm")
-    cfg_beats = ui_cfg.get("length_beats")
-    cfg_tracks = ui_cfg.get("track_count")
-    cfg_key = str(ui_cfg.get("key", "")).strip()
-    cfg_technique = str(ui_cfg.get("technique", "")).strip()
-    cfg_rhythm = str(ui_cfg.get("rhythm_pattern", "")).strip()
-    cfg_register = str(ui_cfg.get("string_register", "")).strip()
-    cfg_dynamics = str(ui_cfg.get("dynamics_shape", "")).strip()
-    cfg_fx = str(ui_cfg.get("fx_preset", "")).strip()
-
-    if ui_cfg:
-        cfg_text = (
-            f"Genre {cfg_genre or 'Rock'}, {cfg_bpm or 120} BPM, "
-            f"{cfg_tracks or 4} Track(s), Key {cfg_key or 'E minor'}, "
-            f"{cfg_beats or 32} Beats, Technik {cfg_technique or 'Standard'}, "
-            f"Rhythmus {cfg_rhythm or 'Straight Eighths'}, "
-            f"Register {cfg_register or 'Low (E2-D3)'}, "
-            f"Dynamik {cfg_dynamics or 'Accent 1&3'}, FX {cfg_fx or 'Distortion+Amp'}"
-        )
-        user_text = f"{user_text}\n\n[UI_CONFIG] {cfg_text}".strip()
 
     bpm = float(cfg_bpm) if cfg_bpm is not None else _extract_bpm(user_text, 120.0)
-    beat_count = float(cfg_beats) if cfg_beats is not None else (_extract_beats(user_text) or _beats_from_time(bpm, user_text) or 16.0)
+    beat_count = float(_extract_beats(user_text) or _beats_from_time(bpm, user_text) or 16.0)
     instrument_hint = _extract_instrument_hint(user_text)
-    fx_hint = cfg_fx if cfg_fx else ", ".join(_extract_explicit_fx(user_text))
-    scale = cfg_key if cfg_key else _extract_scale_hint(user_text)
+    fx_hint = ", ".join(_extract_explicit_fx(user_text))
+    scale = _extract_scale_hint(user_text)
 
     slave_plan = {
         "user_text": user_text,
@@ -142,17 +122,10 @@ def plan_node(state: AgentState) -> dict:
         "instrument_hint": instrument_hint,
         "fx_hint": fx_hint,
         "scale": scale,
-        "genre": cfg_genre,
-        "track_count": int(float(cfg_tracks)) if cfg_tracks is not None and str(cfg_tracks).strip() else 1,
-        "technique": cfg_technique,
-        "rhythm_pattern": cfg_rhythm,
-        "string_register": cfg_register,
-        "dynamics_shape": cfg_dynamics,
     }
     log.info(
-        "Plan: bpm=%.0f, beats=%.0f, instrument=%s, fx=%s, scale=%s, technique=%s, rhythm=%s",
+        "Plan: bpm=%.0f, beats=%.0f, instrument=%s, fx=%s, scale=%s",
         bpm, beat_count, instrument_hint or "(auto)", fx_hint or "(auto)", scale or "(auto)",
-        cfg_technique or "(auto)", cfg_rhythm or "(auto)",
     )
     return {
         "slave_plan": slave_plan,

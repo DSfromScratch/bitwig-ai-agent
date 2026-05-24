@@ -67,6 +67,7 @@ chroma_db/
 # Maven / Java (bitwig-extension)
 bitwig-extension/target/
 bitwig-extension/*.bwextension
+bitwig-extension/.mvn
 
 # Built extension dist (außer finalem Release)
 bitwig-extension/dist/

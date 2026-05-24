@@ -42,16 +42,8 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private OscConnection        replyLoopbackV4;
     private OscConnection        replyLoopbackLocalhost;
     private OscConnection        agentUiLoopback;
-    private SettableEnumValue    cfgGenre;
+    private SettableStringValue  cfgPrompt;
     private SettableRangedValue  cfgBpm;
-    private SettableEnumValue    cfgTracks;
-    private SettableEnumValue    cfgKey;
-    private SettableEnumValue    cfgLength;
-    private SettableEnumValue    cfgTechnique;
-    private SettableEnumValue    cfgRhythm;
-    private SettableEnumValue    cfgStringRegister;
-    private SettableEnumValue    cfgDynamics;
-    private SettableEnumValue    cfgFx;
     private BrowserFilterItemBank    categoryBank;     // Kategorie-Spalte (linke Spalte)
     private BrowserFilterItemBank    smartCollBank;    // Smart-Collections
     private static final int         CAT_BANK_SIZE  = 64;
@@ -285,64 +277,28 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private void setupAgentUi() {
         Preferences prefs = host.getPreferences();
 
-        final String[] genres = {"Pop", "Rock", "Metal", "Blues", "Jazz", "EDM", "Hip-Hop", "Classical"};
-        final String[] tracks = {"1", "2", "4", "6"};
-        final String[] keys = {"C major", "A minor", "E minor", "G major", "D major", "F major", "B minor"};
-        final String[] lengths = {"8", "16", "32", "64"};
-        final String[] techniques = {"Standard", "Palm Mute", "Legato", "Bend Heavy", "Vibrato", "Arpeggio"};
-        final String[] rhythms = {"Straight Eighths", "Gallop", "Syncopated", "Triplet Feel", "Chug Pattern"};
-        final String[] stringRegisters = {"Low (E2-D3)", "Mid (D3-G3)", "Lead (G3-E4)"};
-        final String[] dynamics = {"Flat", "Crescendo", "Accent 1&3", "Accent 2&4"};
-        final String[] fxPresets = {"None", "Distortion+Amp", "Reverb+EQ", "Delay+Chorus"};
-
-        cfgGenre = prefs.getEnumSetting("Genre", "Song Config", genres, "Rock");
-        cfgBpm = prefs.getNumberSetting("BPM", "Song Config", 60.0, 200.0, 1.0, " bpm", 120.0);
-        cfgTracks = prefs.getEnumSetting("Track Count", "Song Config", tracks, "4");
-        cfgKey = prefs.getEnumSetting("Key", "Song Config", keys, "E minor");
-        cfgLength = prefs.getEnumSetting("Length (beats)", "Song Config", lengths, "32");
-        cfgTechnique = prefs.getEnumSetting("Technique", "Song Config", techniques, "Standard");
-        cfgRhythm = prefs.getEnumSetting("Rhythm Pattern", "Song Config", rhythms, "Straight Eighths");
-        cfgStringRegister = prefs.getEnumSetting("String Register", "Song Config", stringRegisters, "Low (E2-D3)");
-        cfgDynamics = prefs.getEnumSetting("Dynamics", "Song Config", dynamics, "Accent 1&3");
-        cfgFx = prefs.getEnumSetting("FX Preset", "Song Config", fxPresets, "Distortion+Amp");
+        cfgPrompt = prefs.getStringSetting("Prompt", "Agent", 400, "");
+        cfgBpm = prefs.getNumberSetting("BPM (optional)", "Agent", 60.0, 200.0, 1.0, " bpm", 0.0);
 
         Signal sendPrompt = prefs.getSignalSetting(
-            "Send Config",
-            "Song Config",
-            "Song-Konfiguration an Agent senden"
+            "Send",
+            "Agent",
+            "Prompt an Agent senden"
         );
         sendPrompt.addSignalObserver(() -> {
-            String genre = cfgGenre != null ? cfgGenre.get() : "Rock";
-            int bpm = cfgBpm != null ? (int) Math.round(cfgBpm.get()) : 120;
-            int trackCount = cfgTracks != null ? Integer.parseInt(cfgTracks.get()) : 4;
-            String key = cfgKey != null ? cfgKey.get() : "E minor";
-            int lengthBeats = cfgLength != null ? Integer.parseInt(cfgLength.get()) : 32;
-            String technique = cfgTechnique != null ? cfgTechnique.get() : "Standard";
-            String rhythm = cfgRhythm != null ? cfgRhythm.get() : "Straight Eighths";
-            String stringRegister = cfgStringRegister != null ? cfgStringRegister.get() : "Low (E2-D3)";
-            String dynamicShape = cfgDynamics != null ? cfgDynamics.get() : "Accent 1&3";
-            String fxPreset = cfgFx != null ? cfgFx.get() : "Distortion+Amp";
-
-            String payload = "{" +
-                "\"genre\":\"" + escapeJson(genre) + "\"," +
-                "\"bpm\":" + bpm + "," +
-                "\"track_count\":" + trackCount + "," +
-                "\"key\":\"" + escapeJson(key) + "\"," +
-                "\"length_beats\":" + lengthBeats + "," +
-                "\"technique\":\"" + escapeJson(technique) + "\"," +
-                "\"rhythm_pattern\":\"" + escapeJson(rhythm) + "\"," +
-                "\"string_register\":\"" + escapeJson(stringRegister) + "\"," +
-                "\"dynamics_shape\":\"" + escapeJson(dynamicShape) + "\"," +
-                "\"fx_preset\":\"" + escapeJson(fxPreset) + "\"" +
-            "}";
-
+            String prompt = cfgPrompt != null ? cfgPrompt.get() : "";
+            int bpm = cfgBpm != null ? (int) Math.round(cfgBpm.get()) : 0;
+            if (prompt == null || prompt.isBlank()) {
+                host.showPopupNotification("Prompt ist leer");
+                return;
+            }
+            String payload = "{\"prompt\":\"" + escapeJson(prompt) + "\",\"bpm\":" + bpm + "}";
             boolean delivered = sendAgentUiPromptWithRetries(payload, 8, 350L);
-
             if (delivered) {
-                host.println("[BitwigAgent] Config gesendet: " + payload);
-                host.showPopupNotification("Song Config gesendet");
+                host.println("[BitwigAgent] Prompt gesendet: " + prompt.substring(0, Math.min(80, prompt.length())));
+                host.showPopupNotification("Prompt gesendet");
             } else {
-                host.showPopupNotification("Agent UI: Agent nicht erreichbar (OSC 127.0.0.1:9003)");
+                host.showPopupNotification("Agent nicht erreichbar (OSC 127.0.0.1:9003)");
             }
         });
 
