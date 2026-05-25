@@ -450,8 +450,10 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             t.exists().markInterested();
         }
         cursorDevice.name().markInterested();
-        cursorTrack.name().markInterested();   // für noteCountMap
+        cursorTrack.name().markInterested();
         popupBrowser.exists().markInterested();
+        transport.isPlaying().markInterested();
+        transport.tempo().markInterested();
     }
 
     // ── Hilfsmethoden ─────────────────────────────────────────────────────────
@@ -640,7 +642,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                 (src, msg) -> application.undo());
 
         // ── Audio-Loop als Device in CursorTrack einfügen ────────────────
-        // /arrange/insert/file <windows_path>
+        // /arrange/insert/file <linux_path>
         // Fügt eine Audio-Datei als Device (Sampler) auf dem aktuellen Track ein.
         space.registerMethod("/arrange/insert/file", "*", "Insert audio file as device",
                 (src, msg) -> {
@@ -650,7 +652,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                     host.println("[BitwigAgent] Audio-File eingefügt: " + path);
                 });
 
-        // /sampler/load <windows_path>
+        // /sampler/load <linux_path>
         // Ersetzt den aktuellen CursorDevice (Sampler) durch einen neuen Sampler
         // mit dem angegebenen Audio-File. Workflow:
         //   1. Leeren Sampler auf Track laden (/browser/device/load "Sampler")
@@ -1043,7 +1045,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                 (src, msg) -> {
                     String filePath = argStr(msg, 0);
                     if (filePath == null || filePath.isBlank())
-                        filePath = "C:\\Users\\Public\\bitwig_catalog.json";
+                        filePath = System.getProperty("user.home") + "/bitwig_catalog.json";
 
                     // Katalog direkt aus ResultBank lesen (original Groß-/Kleinschreibung)
                     StringBuilder json = new StringBuilder("[\n");

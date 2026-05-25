@@ -40,44 +40,6 @@ class TestGenreMapping:
         assert result == "unknowngenre"
 
 
-class TestCreateSongFromGenre:
-    """create_song_from_genre Tests (Unit mit Mocking)."""
-
-    @pytest.mark.unit
-    def test_num_tracks_always_6(self):
-        """num_tracks wird intern immer auf 6 gesetzt."""
-        from src.agent.tools import song_tools
-        import inspect
-        src = inspect.getsource(song_tools.create_song_from_genre.func)
-        assert "num_tracks = 6" in src or "num_tracks=6" in src
-
-    @pytest.mark.unit
-    def test_genre_map_in_source(self):
-        """Genre-Fallback-Map ist definiert."""
-        from src.agent.tools import song_tools
-        import inspect
-        src = inspect.getsource(song_tools.create_song_from_genre.func)
-        assert "GENRE_MAP" in src
-        assert "hard rock" in src
-
-    @pytest.mark.unit
-    def test_float_pitch_in_pattern_writing(self):
-        """Chord-Noten müssen als float gesendet werden."""
-        from src.agent.tools import song_tools
-        import inspect
-        src = inspect.getsource(song_tools.create_song_from_genre.func)
-        # float() muss bei pitch verwendet werden
-        assert "float(n[" in src or "float(n.get" in src
-
-    @pytest.mark.unit
-    def test_response_contains_fertig_signal(self):
-        """Antwort muss 'FERTIG' enthalten um Doppelaufruf zu verhindern."""
-        from src.agent.tools import song_tools
-        import inspect
-        src = inspect.getsource(song_tools.create_song_from_genre.func)
-        assert "FERTIG" in src or "SONG FERTIG" in src
-
-
 class TestVerifySong:
     """verify_song Tests."""
 

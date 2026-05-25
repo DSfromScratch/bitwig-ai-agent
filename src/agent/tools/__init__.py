@@ -4,7 +4,6 @@ from src.agent.tools.knowledge.rhythm_tool import get_rhythm_pattern
 from src.agent.tools.knowledge.instrument_tool import get_instruments_for_song
 from src.agent.tools.song_tools import (
     build_song,
-    create_song_from_genre,
     check_bitwig_connection,
     get_bitwig_track_state,
     setup_instrument_track,
@@ -13,10 +12,7 @@ from src.agent.tools.song_tools import (
     get_pattern_context,
     compose_arrangement,
     create_song_structure,
-    create_song_with_sections,
     get_song_form,
-    find_guitar_loops,
-    load_guitar_loop,
     get_genre_overview,
     get_section_proposal,
 )
@@ -27,7 +23,6 @@ ALL_TOOLS = [
     get_rhythm_pattern,
     get_instruments_for_song,
     build_song,
-    create_song_from_genre,
     check_bitwig_connection,
     get_bitwig_track_state,
     setup_instrument_track,
@@ -36,10 +31,7 @@ ALL_TOOLS = [
     get_pattern_context,
     compose_arrangement,
     create_song_structure,
-    create_song_with_sections,
     get_song_form,
-    find_guitar_loops,
-    load_guitar_loop,
     get_genre_overview,
     get_section_proposal,
 ]

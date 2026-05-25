@@ -21,7 +21,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 # ── Fake-Daten (minimal valide) ───────────────────────────────────────────────
 
-_INSTRUMENT_JSON = json.dumps({"instrument": "Phase-4", "fx": [], "preset": "", "fx_preset": ""})
+_INSTRUMENT_JSON = json.dumps({"tracks": [
+    {"role": "lead", "instrument": "Phase-4", "preset": "", "fx_preset": "", "fx": []},
+]})
 _NOTES_JSON = json.dumps({
     "bpm": 120, "length_beats": 8,
     "notes": [
@@ -180,15 +182,16 @@ class TestSlaveThinkingResults:
         return next((r for r in self._slave_results if r.get("type") == type_), {})
 
     @pytest.mark.e2e
-    def test_instrument_result_has_instrument_field(self):
+    def test_instrument_result_has_tracks_manifest(self):
         r = self._get("instrument")
-        assert "instrument" in r
-        assert r["instrument"] == "Phase-4"
+        assert "tracks" in r
+        assert len(r["tracks"]) >= 1
+        assert r["tracks"][0]["instrument"] == "Phase-4"
 
     @pytest.mark.e2e
-    def test_instrument_result_has_fx_list(self):
+    def test_instrument_result_track_has_fx_list(self):
         r = self._get("instrument")
-        assert isinstance(r.get("fx"), list)
+        assert isinstance(r["tracks"][0].get("fx"), list)
 
     @pytest.mark.e2e
     def test_harmony_result_has_key(self):

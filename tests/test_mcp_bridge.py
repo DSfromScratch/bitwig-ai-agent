@@ -46,8 +46,7 @@ class TestMcpBridgeDirect:
         combined = get_all_tools_combined()
         combined_names = {t.name for t in combined}
         # Agent-spezifische Tools die nicht im MCP sind
-        agent_specific = {"create_song_from_genre", "verify_song",
-                          "get_bitwig_track_state", "query_bitwig_docs"}
+        agent_specific = {"verify_song", "get_bitwig_track_state", "query_bitwig_docs"}
         for name in agent_specific:
             assert name in combined_names, f"Agent-Tool fehlt: {name}"
 

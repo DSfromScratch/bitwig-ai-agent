@@ -106,12 +106,9 @@ def get_bitwig_track_state() -> str:
 
     Macht einen Screenshot des Bildschirms, analysiert welche Tracks
     sichtbar sind, wie viele es gibt und was geladen ist.
-    Gibt start_track_index für den nächsten create_song_from_genre Aufruf zurück.
-
-    Funktioniert NUR auf Windows mit Bitwig im Vordergrund.
+    Funktioniert NUR auf Linux mit Bitwig im Vordergrund.
     """
-    import subprocess, struct, os
-    from pathlib import Path
+    import struct
 
     ok = _check_bridge(timeout=1.0)
     if not ok:
@@ -158,226 +155,13 @@ def get_bitwig_track_state() -> str:
             f"  {'Leeres Projekt → start_track_index=1 verwenden' if count == 0 else f'{count} Tracks vorhanden → start_track_index={next_idx}'}"
         )
 
-    # ── Strategie 2: Screenshot als Fallback ──────────────────────────────────
-    tmp_win = r"C:\Users\Admin\AppData\Local\Temp\bitwig_state.png"
-    tmp_wsl = "/mnt/c/Users/Admin/AppData/Local/Temp/bitwig_state.png"
-    try:
-        subprocess.run(["powershell.exe", "-Command",
-            f"Add-Type -AssemblyName System.Windows.Forms;"
-            f"$s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;"
-            f"$b=New-Object System.Drawing.Bitmap($s.Width,$s.Height);"
-            f"$g=[System.Drawing.Graphics]::FromImage($b);"
-            f"$g.CopyFromScreen($s.Location,[System.Drawing.Point]::Empty,$s.Size);"
-            f"$b.Save('{tmp_win}');"],
-            capture_output=True, timeout=8)
-        if Path(tmp_wsl).exists():
-            size_kb = Path(tmp_wsl).stat().st_size // 1024
-            return (
-                f"OSC-Rückkanal nicht erreichbar (Extension zu alt?).\n"
-                f"Screenshot erstellt: {tmp_wsl} ({size_kb}KB)\n"
-                f"Annahme: Projekt ist leer → start_track_index=1\n"
-                f"Tipp: Extension neu laden für OSC-Track-Count."
-            )
-    except Exception:
-        pass
-
     return "Track-Zustand unbekannt — Annahme: leeres Projekt, start_track_index=1"
 
-
-@tool
-def create_song_from_genre(
-    genre: str,
-    bpm: float = 0.0,
-    section: str = "verse_1",
-    start_track_index: int = 1,
-    num_tracks: int = 6,  # INTERN — nicht vom Agent setzen, immer 6
-) -> dict:
-    """Erstellt einen vollständigen Song in Bitwig.
-
-    FÜR ROCK/METAL/HARD ROCK: Leitet automatisch an create_song_with_sections weiter!
-    → Mehrere Scenes (Intro/Verse/Chorus/Solo/Outro)
-    → Echte Gitarren-Loops (2 Rhythmus + 1 Lead)
-    → Kein Synth für Gitarre
-    → Keine Pausen (beat-genaue Loop-Länge)
-
-    FÜR POP/JAZZ: 6 Tracks mit Synths (Polysynth/Phase-4/FM-4).
-
-    Args:
-        genre:             "pop", "rock", "metal", "jazz", "hard rock", "metal" ...
-        bpm:               0 = aus Genre-KB automatisch
-        section:           ignoriert für Rock/Metal (alle Sections werden erstellt)
-        start_track_index: aus get_bitwig_track_state() holen
-    """
-    import os, sys
-    sys.path.insert(0, str(__file__).split("/src/")[0])
-
-    # Rock/Metal/Blues → echte Gitarren-Loops via create_song_with_sections
-    _GUITAR_GENRES = {"rock", "metal", "hard rock", "heavy metal", "blues", "grunge",
-                      "punk rock", "classic rock", "indie rock", "progressive rock"}
-    _g = genre.lower().strip()
-    if _g in _GUITAR_GENRES or any(kw in _g for kw in ("rock", "metal", "blues")):
-        return create_song_with_sections.invoke({
-            "genre": genre,
-            "start_track_index": start_track_index,
-        })
-
-    os.environ.setdefault("NEO4J_URI",      "bolt://localhost:7687")
-    os.environ.setdefault("NEO4J_USER",     "neo4j")
-    os.environ.setdefault("NEO4J_PASSWORD", "neo4jllm")
-
-    from src.audio.chord_to_bitwig import query_chordonomicon, progression_to_pattern
-    from pythonosc import udp_client
-
-    # Immer 6 Tracks — ignoriere num_tracks vom Agent
-    num_tracks = 6
-
-    # Genre-Fallback-Mapping für Chordonomicon
-    GENRE_MAP = {
-        "hard rock": "rock", "hardrock": "rock", "heavy metal": "metal",
-        "heavymetal": "metal", "progressive rock": "rock", "indie rock": "rock",
-        "classic rock": "rock", "punk rock": "rock", "grunge": "rock",
-        "jazz rock": "rock", "jazz fusion": "jazz", "bossa nova": "jazz",
-        "electro pop": "pop", "synth pop": "pop", "dance pop": "pop",
-        "hip hop": "hip-hop", "r&b": "hip-hop", "edm": "house",
-    }
-    genre_query = GENRE_MAP.get(genre.lower().strip(), genre)
-
-    # ── 1. Verbindung ────────────────────────────────────────────────────────
-    if not _check_bridge():
-        return {"error": "BitwigAgentBridge nicht erreichbar — Bitwig starten"}
-
-    # ── 2. BPM aus KB ────────────────────────────────────────────────────────
-    from src.knowledge.neo4j_graph import get_driver as _neo4j_driver
-    try:
-        _driver = _neo4j_driver()
-    except ConnectionError as e:
-        return {"error": str(e)}
-
-    if bpm <= 0:
-        with _driver.session() as s:
-            row = s.run(
-                "MATCH (g:Genre) WHERE toLower(g.name) CONTAINS $g "
-                "RETURN g.bpm_min AS mn, g.bpm_max AS mx LIMIT 1",
-                g=genre.lower(),
-            ).single()
-        bpm = (row["mn"] + row["mx"]) / 2 if row else 120.0
-
-    client = udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT)
-    client.send_message("/transport/tempo", float(bpm))
-    time.sleep(0.1)
-
-    # ── 3. Akkordprogression ─────────────────────────────────────────────────
-    results = query_chordonomicon(genre=genre_query, n=1)
-    if not results and genre_query != genre:
-        results = query_chordonomicon(genre=genre_query.split()[0], n=1)  # Kurzform versuchen
-    if not results:
-        return {"error": f"Keine Akkordprogression für Genre '{genre}' in der KB gefunden. "
-                         f"KB befüllen: `make ingest`"}
-
-    parsed   = results[0]
-    sections = parsed["sections"]
-    chords   = sections.get(section) or next(iter(sections.values()), [])
-    chords   = chords[:8]
-
-    if not chords:
-        return {"error": f"Keine Akkorde gefunden (Sektionen: {list(sections.keys())})"}
-
-    # ── 4. Tracks anlegen ────────────────────────────────────────────────────────
-    # Instrument-Layout aus Registry (Genre-Overrides werden automatisch berücksichtigt)
-    from src.audio.instrument_registry import build_track_layout
-    from src.agent.events import get_event_bus
-
-    bus = get_event_bus()
-    layout = build_track_layout(genre=genre)
-    instruments = [(t["device_name"], t["role"]) for t in layout]
-    track_indices = list(range(start_track_index, start_track_index + len(instruments)))
-
-    for _ in instruments:
-        client.send_message("/track/add/instrument", 1)
-        time.sleep(0.3)
-
-    # ── 5. Instrumente via UUID laden (sofort, kein Browser) ─────────────────
-    for idx, (instr, _) in zip(track_indices, instruments):
-        client.send_message(f"/track/{idx}/select", 1)
-        time.sleep(0.2)
-        client.send_message("/browser/device/load", instr)
-        time.sleep(0.5)  # UUID → sofort geladen
-
-    # ── 6. Pattern-Hilfsfunktion ─────────────────────────────────────────────
-    step_size = 0.25
-    pat    = progression_to_pattern(chords, beats_per_chord=2.0)
-    length = pat["length_beats"]
-
-    def write_pattern(track_idx, notes, slot=0):
-        client.send_message(f"/track/{track_idx}/select", 1); time.sleep(0.5)
-        client.send_message("/clip/create", [float(slot), float(length)]); time.sleep(0.6)
-        client.send_message("/clip/step_size", step_size); time.sleep(0.05)
-        for n in notes:
-            step_idx = int(round(float(n["step"]) / step_size))
-            client.send_message("/clip/note",
-                [float(n["step"]), float(n["pitch"]), float(n["vel"]), float(n["dur"])])
-            time.sleep(0.02)
-
-    # ── 7. Drum-Patterns (separate Tracks, je eigene Tonhöhe) ────────────────
-    from src.audio.instrument_registry import get_instrument
-
-    kick_idx, snare_idx, hihat_idx = track_indices[0], track_indices[1], track_indices[2]
-    kick_pitch  = get_instrument("kick",  genre=genre)["midi_low"]
-    snare_pitch = get_instrument("snare", genre=genre)["midi_low"]
-    hihat_pitch = get_instrument("hihat", genre=genre)["midi_low"]
-    kick_vel    = get_instrument("kick",  genre=genre)["default_velocity"]
-    snare_vel   = get_instrument("snare", genre=genre)["default_velocity"]
-    hihat_vel   = get_instrument("hihat", genre=genre)["default_velocity"]
-
-    kick_notes = [{"step": b, "pitch": kick_pitch,  "vel": kick_vel,  "dur": 0.25}
-                  for b in [0, 2, 4, 6]]
-    write_pattern(kick_idx, kick_notes)
-    bus.emit("track_done", {"role": "kick", "notes": len(kick_notes)})
-
-    snare_notes = [{"step": b, "pitch": snare_pitch, "vel": snare_vel, "dur": 0.25}
-                   for b in [1, 3, 5, 7]]
-    write_pattern(snare_idx, snare_notes)
-    bus.emit("track_done", {"role": "snare", "notes": len(snare_notes)})
-
-    hihat_notes = [{"step": b * 0.25, "pitch": hihat_pitch,
-                    "vel": hihat_vel if b % 2 == 0 else hihat_vel * 0.75, "dur": 0.1}
-                   for b in range(32)]
-    write_pattern(hihat_idx, hihat_notes)
-    bus.emit("track_done", {"role": "hihat", "notes": len(hihat_notes)})
-
-    # ── 8. Bass + Chords ─────────────────────────────────────────────────────
-    write_pattern(track_indices[3], pat["bass"])
-    bus.emit("track_done", {"role": "bass", "notes": len(pat["bass"])})
-    write_pattern(track_indices[4], pat["chords"])
-    bus.emit("track_done", {"role": "chords", "notes": len(pat["chords"])})
-
-    # ── 9. Lead-Melodie automatisch generieren (FM-4, Track 6) ──────────────
-    if len(track_indices) >= 6:
-        from src.audio.chord_to_bitwig import generate_melody
-        melody_notes = generate_melody(chords, length_beats=length, seed=42, genre=genre)
-        if melody_notes:
-            write_pattern(track_indices[5], melody_notes)
-            bus.emit("track_done", {"role": "lead", "notes": len(melody_notes)})
-
-    chord_str = " → ".join(chords)
-    names = [i[0] for i in instruments]
-    bus.emit("song_done", {"genre": genre, "bpm": bpm, "track_count": len(instruments)})
-    # Explizit "FERTIG" + Tracks — verhindert Doppelaufruf und setup_instrument_track danach
-    return {
-        "status": "SONG FERTIG ERSTELLT. KEINE weiteren create_song/setup_instrument Aufrufe nötig.",
-        "genre": genre,
-        "bpm": bpm,
-        "progression": chord_str,
-        "tracks": " | ".join(f"Track {i}: {n}" for i, n in zip(track_indices, names))
-    }
 
 
 @tool
 def setup_instrument_track(track_index: int, instrument_name: str) -> dict:
     """Erstellt einen Instrument-Track und lädt ein Instrument per Browser.
-
-    Für spezifische Songs (z.B. Kinderlieder) wo create_song_from_genre
-    nicht passt. Immer zuerst check_bitwig_connection() aufrufen.
 
     Args:
         track_index:     Track-Nummer (1-basiert, muss nach vorhandenen Tracks kommen)
@@ -550,15 +334,14 @@ def verify_song(
       4. Nach play_seconds stoppen
       5. Verifikations-Bericht zurückgeben
 
-    Immer nach create_song_from_genre aufrufen um zu prüfen ob alles korrekt ist.
+    Immer nach build_song aufrufen um zu prüfen ob alles korrekt ist.
 
     Args:
         play_seconds: Wiedergabedauer für Test (Standard: 5s)
         expected_tracks: Mindestanzahl erwarteter Tracks (Standard: 1)
         slot:         Clip-Slot der abgespielt werden soll (0=Scene 1)
     """
-    import subprocess, struct
-    from pathlib import Path
+    import struct
 
     if not _check_bridge():
         return {
@@ -595,34 +378,6 @@ def verify_song(
     client.send_message("/transport/play", 1)
     time.sleep(0.5)
 
-    # ── 3. Screenshot (Bitwig in Vordergrund) ─────────────────────────────────
-    screenshot_path = "/mnt/c/Users/Admin/AppData/Local/Temp/bitwig_verify.png"
-    screenshot_ok = False
-    try:
-        # Bitwig-Fenster in den Vordergrund bringen
-        subprocess.run(["powershell.exe", "-Command",
-            "Add-Type -TypeDefinition '"
-            "using System;using System.Runtime.InteropServices;"
-            "public class Win32{[DllImport(\"user32.dll\")]"
-            "public static extern bool SetForegroundWindow(IntPtr h);"
-            "[DllImport(\"user32.dll\")]"
-            "public static extern IntPtr FindWindow(string c,string t);}' ;"
-            "$h=[Win32]::FindWindow($null,'Bitwig Studio');"
-            "if($h -ne 0){[Win32]::SetForegroundWindow($h)};"
-            "Start-Sleep -Milliseconds 500;"],
-            capture_output=True, timeout=5)
-        subprocess.run(["powershell.exe", "-Command",
-            "Add-Type -AssemblyName System.Windows.Forms;"
-            "$s=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;"
-            "$b=New-Object System.Drawing.Bitmap($s.Width,$s.Height);"
-            "$g=[System.Drawing.Graphics]::FromImage($b);"
-            "$g.CopyFromScreen($s.Location,[System.Drawing.Point]::Empty,$s.Size);"
-            "$b.Save('C:\\Users\\Admin\\AppData\\Local\\Temp\\bitwig_verify.png');"],
-            capture_output=True, timeout=8)
-        screenshot_ok = Path(screenshot_path).exists()
-    except:
-        pass
-
     # ── 4. Warten und stoppen ────────────────────────────────────────────────
     time.sleep(max(0, play_seconds - 0.5))
     client.send_message("/transport/play", 0)  # stop
@@ -635,7 +390,7 @@ def verify_song(
     warnings: list[str] = []
 
     if track_count == 0:
-        warnings.append("Keine Tracks erkannt — create_song_from_genre nochmal ausführen!")
+        warnings.append("Keine Tracks erkannt — Song-Erstellung nochmal versuchen!")
     elif isinstance(track_count, int) and track_count < expected_tracks:
         warnings.append(f"Nur {track_count} Tracks erkannt (erwartet {expected_tracks}) — möglicherweise fehlende Instruments")
 
@@ -647,7 +402,7 @@ def verify_song(
         f"  Tracks in Bitwig: {track_count if track_count is not None else '?'}\n"
         f"  Track-Details: {tracks_info}\n"
         f"  Wiedergabe: {play_seconds:.0f}s abgespielt ✓\n"
-        f"  Screenshot: {'gespeichert (' + screenshot_path + ')' if screenshot_ok else 'nicht verfügbar'}\n"
+        f"  Screenshot: nicht verfügbar (natives Linux)\n"
     )
     if warnings:
         report_text += "\n" + "\n".join(f"⚠ {w}" for w in warnings)
@@ -659,7 +414,6 @@ def verify_song(
         "track_count": track_count,
         "tracks_info": tracks_info,
         "playback_seconds": play_seconds,
-        "screenshot_path": screenshot_path if screenshot_ok else None,
         "warnings": warnings,
         "report_text": report_text,
     }
@@ -1276,537 +1030,12 @@ def create_song_structure(
     )
 
 
-
-# ── Drum-Profile pro Genre und Section-Typ ────────────────────────────────────
-# Jeder Eintrag: kick_beats, snare_beats, hat_step (Abstände in Beats),
-# hat_vel_on/off, open_hat_beats, kick_vel, snare_vel
-
-DRUM_PROFILES: dict[str, dict[str, dict]] = {
-    "pop": {
-        "intro":  {"kick": [0, 4],    "snare": [4],     "hat_step": 1.0,  "hat_vel_on": 0.40, "hat_vel_off": 0.30, "kick_vel": 0.70, "snare_vel": 0.65},
-        "verse":  {"kick": [0,2,4,6], "snare": [2,6],   "hat_step": 0.5,  "hat_vel_on": 0.52, "hat_vel_off": 0.38, "kick_vel": 0.88, "snare_vel": 0.82},
-        "chorus": {"kick": "4floor",  "snare": [2,6],   "hat_step": 0.25, "hat_vel_on": 0.62, "hat_vel_off": 0.42, "open_hat": [3.5,7.5], "kick_vel": 0.95, "snare_vel": 0.92},
-        "solo":   {"kick": [0,2,4,6], "snare": [2,6],   "hat_step": 1.0,  "hat_vel_on": 0.40, "hat_vel_off": 0.30, "kick_vel": 0.82, "snare_vel": 0.78},
-        "outro":  {"kick": [0,4],     "snare": [2],     "hat_step": 1.0,  "hat_vel_on": 0.35, "hat_vel_off": 0.25, "kick_vel": 0.72, "snare_vel": 0.68},
-    },
-    "jazz": {
-        "intro":  {"kick": [0],         "snare": [],    "hat_step": 0.67, "hat_vel_on": 0.35, "hat_vel_off": 0.22, "kick_vel": 0.60, "snare_vel": 0.50},
-        "verse":  {"kick": [0, 3],      "snare": [2,6], "hat_step": 0.67, "hat_vel_on": 0.45, "hat_vel_off": 0.28, "kick_vel": 0.72, "snare_vel": 0.68},
-        "chorus": {"kick": [0,2,4,6],   "snare": [2,6], "hat_step": 0.5,  "hat_vel_on": 0.52, "hat_vel_off": 0.35, "open_hat": [5.67], "kick_vel": 0.82, "snare_vel": 0.78},
-        "solo":   {"kick": [0, 2.5],    "snare": [2,6], "hat_step": 0.67, "hat_vel_on": 0.42, "hat_vel_off": 0.28, "kick_vel": 0.75, "snare_vel": 0.70},
-        "outro":  {"kick": [0],         "snare": [2],   "hat_step": 1.0,  "hat_vel_on": 0.30, "hat_vel_off": 0.22, "kick_vel": 0.55, "snare_vel": 0.50},
-    },
-    "metal": {
-        "intro":  {"kick": [0,0.5,1,1.5,2,2.5,3,3.5], "snare": [2,6],   "hat_step": 0.25, "hat_vel_on": 0.55, "hat_vel_off": 0.40, "kick_vel": 0.88, "snare_vel": 0.85},
-        "verse":  {"kick": "double",                    "snare": [2,6],   "hat_step": 0.25, "hat_vel_on": 0.65, "hat_vel_off": 0.45, "kick_vel": 0.95, "snare_vel": 0.90},
-        "chorus": {"kick": "double",                    "snare": [2,4,6], "hat_step": 0.25, "hat_vel_on": 0.68, "hat_vel_off": 0.48, "open_hat": [3.75,7.75], "kick_vel": 0.98, "snare_vel": 0.95},
-        "solo":   {"kick": "double",                    "snare": [2,6],   "hat_step": 0.5,  "hat_vel_on": 0.55, "hat_vel_off": 0.38, "kick_vel": 0.92, "snare_vel": 0.82},
-        "outro":  {"kick": [0,2],                       "snare": [2],     "hat_step": 0.5,  "hat_vel_on": 0.45, "hat_vel_off": 0.32, "kick_vel": 0.75, "snare_vel": 0.65},
-    },
-    "trap": {
-        "intro":  {"kick": [0,1.5,3],       "snare": [],    "hat_step": 0.125, "hat_vel_on": 0.35, "hat_vel_off": 0.20, "kick_vel": 0.72, "snare_vel": 0.65},
-        "verse":  {"kick": [0,1.5,3,4.5],   "snare": [2,6], "hat_step": 0.125, "hat_vel_on": 0.55, "hat_vel_off": 0.28, "kick_vel": 0.85, "snare_vel": 0.80},
-        "chorus": {"kick": [0,1,2.5,4,5.5], "snare": [2,6], "hat_step": 0.125, "hat_vel_on": 0.60, "hat_vel_off": 0.32, "open_hat": [3.875,7.875], "kick_vel": 0.90, "snare_vel": 0.85},
-        "solo":   {"kick": [0,2,3.5],        "snare": [2,6], "hat_step": 0.125, "hat_vel_on": 0.50, "hat_vel_off": 0.25, "kick_vel": 0.80, "snare_vel": 0.75},
-        "outro":  {"kick": [0,3],            "snare": [4],   "hat_step": 0.25,  "hat_vel_on": 0.35, "hat_vel_off": 0.22, "kick_vel": 0.65, "snare_vel": 0.55},
-    },
-    "bossa nova": {
-        "intro":  {"kick": [0,1.5,2.5],           "snare": [],    "hat_step": 0.5, "hat_vel_on": 0.30, "hat_vel_off": 0.20, "kick_vel": 0.60, "snare_vel": 0.50},
-        "verse":  {"kick": [0,1.5,2.5,4,5.5,6.5], "snare": [2,6], "hat_step": 0.5, "hat_vel_on": 0.40, "hat_vel_off": 0.28, "kick_vel": 0.72, "snare_vel": 0.65},
-        "chorus": {"kick": [0,1.5,2.5,4,5.5,6.5], "snare": [2,6], "hat_step": 0.5, "hat_vel_on": 0.45, "hat_vel_off": 0.32, "open_hat": [], "kick_vel": 0.78, "snare_vel": 0.72},
-        "solo":   {"kick": [0,1.5,2.5,4],          "snare": [2,6], "hat_step": 0.5, "hat_vel_on": 0.38, "hat_vel_off": 0.25, "kick_vel": 0.70, "snare_vel": 0.65},
-        "outro":  {"kick": [0,2.5],                 "snare": [2],   "hat_step": 1.0, "hat_vel_on": 0.28, "hat_vel_off": 0.18, "kick_vel": 0.55, "snare_vel": 0.48},
-    },
-}
-DRUM_PROFILES["rock"]       = DRUM_PROFILES["pop"]
-DRUM_PROFILES["hard rock"]  = DRUM_PROFILES["metal"]
-DRUM_PROFILES["heavy metal"] = DRUM_PROFILES["metal"]
-DRUM_PROFILES["default"]    = DRUM_PROFILES["pop"]
-
-
-def _build_drum_track(profile: dict, sec_type: str, length: float) -> tuple[list, list, list]:
-    """Generiert Kick/Snare/Hat aus einem DRUM_PROFILES-Eintrag."""
-    from src.audio.chord_to_bitwig import humanize_velocity
-    p = profile.get(sec_type, profile.get("verse", {}))
-
-    # Kick
-    kick_beats = p.get("kick", [0, 2, 4, 6])
-    kv = p.get("kick_vel", 0.88)
-    if kick_beats == "4floor":
-        kick_beats = [b for b in range(int(length))]
-        kick_beats += [b + 0.5 for b in [0, 2, 4, 6] if b + 0.5 < length]
-    elif kick_beats == "double":
-        kick_beats = [b * 0.5 for b in range(int(length * 2))]
-    kick = [{"step": b, "pitch": 36, "vel": kv * (0.78 if b != int(b) else 1.0), "dur": 0.25}
-            for b in kick_beats if b < length]
-
-    # Snare
-    sv = p.get("snare_vel", 0.82)
-    snare_beats = p.get("snare", [2, 6])
-    snare = [{"step": b, "pitch": 38, "vel": sv, "dur": 0.25} for b in snare_beats if b < length]
-    # Ghost Notes für energetische Sections
-    if sec_type == "chorus":
-        ghost_beats = [b + 0.5 for b in snare_beats if b + 0.5 < length]
-        snare += [{"step": b, "pitch": 38, "vel": sv * 0.48, "dur": 0.1} for b in ghost_beats]
-
-    # HiHat
-    hat_step = p.get("hat_step", 0.5)
-    hv_on  = p.get("hat_vel_on",  0.52)
-    hv_off = p.get("hat_vel_off", 0.38)
-    n_hats = int(length / hat_step)
-    hat = [{"step": round(i * hat_step, 4), "pitch": 42,
-            "vel": hv_on if i % 2 == 0 else hv_off, "dur": 0.1}
-           for i in range(n_hats) if i * hat_step < length]
-    # Open Hi-Hat
-    for s in p.get("open_hat", []):
-        if s < length:
-            hat.append({"step": s, "pitch": 46, "vel": hv_on * 1.1, "dur": 0.25})
-
-    # Velocity humanisieren
-    kick  = humanize_velocity(kick,  variance=0.04, seed=1)
-    snare = humanize_velocity(snare, variance=0.03, seed=2)
-    hat   = humanize_velocity(hat,   variance=0.05, seed=3)
-
-    return kick, snare, hat
-
-
-# ── Section-Pattern-Definitionen ──────────────────────────────────────────────
-
-def _make_intro_patterns(chords, length, bpm, genre="default"):
-    """Intro: sparse, aufbauend — nur Kick + Bass + leise Chords."""
-    from src.audio.chord_to_bitwig import progression_to_pattern, humanize_velocity
-    pat = progression_to_pattern(chords, beats_per_chord=length/4)
-    drum_profile = DRUM_PROFILES.get(genre, DRUM_PROFILES["default"])
-    kick, snare, hat = _build_drum_track(drum_profile, "intro", length)
-    bass  = [{"step": 0, "pitch": float(pat["bass"][0]["pitch"]), "vel": 0.65, "dur": length - 0.5}]
-    bass  = humanize_velocity(bass, variance=0.03, seed=10)
-    chords_notes = []
-    melody = []
-    return kick, snare, hat, bass, chords_notes, melody
-
-
-def _make_verse_patterns(chords, length, bpm, seed=42, genre="default"):
-    """Verse: klassisch, leicht."""
-    from src.audio.chord_to_bitwig import progression_to_pattern, generate_melody, humanize_velocity
-    pat = progression_to_pattern(chords, beats_per_chord=length/len(chords))
-    drum_profile = DRUM_PROFILES.get(genre, DRUM_PROFILES["default"])
-    kick, snare, hat = _build_drum_track(drum_profile, "verse", length)
-    bass   = humanize_velocity(pat["bass"],   variance=0.05, seed=seed)
-    chords_h = humanize_velocity(pat["chords"], variance=0.04, seed=seed+1)
-    melody = generate_melody(chords, length_beats=length, seed=seed, genre=genre)
-    melody = humanize_velocity(melody, variance=0.05, seed=seed+2)
-    return kick, snare, hat, bass, chords_h, melody
-
-
-def _make_chorus_patterns(chords, length, bpm, seed=99, genre="default"):
-    """Chorus: 4-on-floor, energetisch."""
-    from src.audio.chord_to_bitwig import progression_to_pattern, generate_melody, humanize_velocity
-    pat = progression_to_pattern(chords, beats_per_chord=length/len(chords))
-    drum_profile = DRUM_PROFILES.get(genre, DRUM_PROFILES["default"])
-    kick, snare, hat = _build_drum_track(drum_profile, "chorus", length)
-    # Bass: Oktavsprünge auf Off-Beats
-    bass_c = []
-    for n in pat["bass"]:
-        note = dict(n)
-        if n["step"] % 2 == 1.0:
-            note["pitch"] = int(note["pitch"]) + 12
-        bass_c.append(note)
-    bass_c = humanize_velocity(bass_c, variance=0.05, seed=seed)
-    chords_s = humanize_velocity(
-        [{**n, "dur": 0.45} for n in pat["chords"]],
-        variance=0.04, seed=seed+1,
-    )
-    melody = generate_melody(chords, length_beats=length, melody_octave=2, seed=seed, genre=genre)
-    melody = humanize_velocity(melody, variance=0.05, seed=seed+2)
-    return kick, snare, hat, bass_c, chords_s, melody
-
-
-def _make_solo_patterns(chords, length, bpm, seed=77, genre="default"):
-    """Solo: Melodie im Vordergrund, Drums minimal, Chords gedämpft."""
-    from src.audio.chord_to_bitwig import (
-        progression_to_pattern, PENTATONIC, detect_key, humanize_velocity
-    )
-    import random
-    rng = random.Random(seed)
-    pat = progression_to_pattern(chords, beats_per_chord=length/len(chords))
-    drum_profile = DRUM_PROFILES.get(genre, DRUM_PROFILES["default"])
-    kick, snare, hat = _build_drum_track(drum_profile, "solo", length)
-    chords_s = humanize_velocity(
-        [{**n, "vel": n["vel"] * 0.55} for n in pat["chords"]],
-        variance=0.04, seed=seed,
-    )
-    # Solo-Melodie: schnell, volle Pentatonik, random walk
-    root, mode = detect_key(chords)
-    scale_ivs = PENTATONIC[mode]
-    scale = sorted({root + ov * 12 + iv for ov in range(2, 4) for iv in scale_ivs
-                    if 72 <= root + ov * 12 + iv <= 96})
-    solo_notes = []
-    beat = 0.0
-    while beat < length - 0.1:
-        pitch = rng.choice(scale) if scale else 72
-        dur = rng.choice([0.25, 0.25, 0.5, 0.5, 0.25])
-        dur = min(dur, length - beat)
-        solo_notes.append({"step": round(beat, 4), "pitch": float(pitch),
-                            "vel": rng.uniform(0.72, 0.92), "dur": dur})
-        beat += dur
-    solo_notes = humanize_velocity(solo_notes, variance=0.05, seed=seed+1)
-    return kick, snare, hat, pat["bass"], chords_s, solo_notes
-
-
-def _make_outro_patterns(chords, length, bpm, seed=12, genre="default"):
-    """Outro: ausdünnend, letzter Akkord hält."""
-    from src.audio.chord_to_bitwig import progression_to_pattern, generate_melody, parse_chord, humanize_velocity
-    pat = progression_to_pattern(chords, beats_per_chord=length/len(chords))
-    drum_profile = DRUM_PROFILES.get(genre, DRUM_PROFILES["default"])
-    kick, snare, hat = _build_drum_track(drum_profile, "outro", length)
-    last_chord_start = (len(chords) - 1) * (length / len(chords))
-    outro_chords = [n for n in pat["chords"] if n["step"] < last_chord_start]
-    last_r = parse_chord(chords[-1])
-    if last_r:
-        root, ivs = last_r
-        for iv in ivs:
-            outro_chords.append({
-                "step": last_chord_start,
-                "pitch": float(root + iv + 12),
-                "vel": 0.60,
-                "dur": length - last_chord_start - 0.1,
-            })
-    outro_chords = humanize_velocity(outro_chords, variance=0.03, seed=seed,
-                                     curve=[1.0, 0.65])  # Decrescendo
-    melody = generate_melody([chords[-1]], length_beats=length, seed=seed, genre=genre,
-                             end_on_tonic=True)
-    melody = humanize_velocity(melody, variance=0.04, seed=seed+1, curve=[1.0, 0.55])
-    bass = pat["bass"][:2] + [{
-        "step": last_chord_start,
-        "pitch": float(pat["bass"][0]["pitch"]),
-        "vel": 0.55,
-        "dur": length - last_chord_start - 0.1,
-    }]
-    return kick, snare, hat, bass, outro_chords, melody
-
-
-SECTION_BUILDERS = {
-    "intro":  _make_intro_patterns,
-    "verse":  _make_verse_patterns,
-    "chorus": _make_chorus_patterns,
-    "solo":   _make_solo_patterns,
-    "outro":  _make_outro_patterns,
-}
-
-
-def _make_fill_pattern(from_sec: str, to_sec: str, bpm: float, genre: str = "default") -> list[dict]:
-    """Erzeugt einen 1-Bar Drum-Fill als Übergangselement zwischen zwei Sections.
-
-    Typen:
-      → chorus: Snare-Roll (16tel letzte 2 Beats) + Crash
-      → verse:  einfache Snare-Variante + Crash
-      → solo:   Wirbel (32tel letzte 2 Beats)
-      → outro:  ausdünnend — Crash + Kick
-
-    Returns:
-        Liste von Note-Dicts für 2 Beats (relativ zu Beat 0 des Fill-Bars)
-    """
-    notes = []
-    if to_sec == "chorus":
-        # Snare-Roll crescendo: 16tel × 8
-        for k in range(8):
-            vel = 0.45 + k * 0.06
-            notes.append({"step": round(k * 0.25, 4), "pitch": 38, "vel": min(vel, 0.95), "dur": 0.2})
-        notes.append({"step": 0.0,  "pitch": 36, "vel": 0.92, "dur": 0.25})
-        notes.append({"step": 2.0,  "pitch": 36, "vel": 0.88, "dur": 0.25})
-        notes.append({"step": 1.75, "pitch": 49, "vel": 0.88, "dur": 0.5})  # Crash
-    elif to_sec in ("verse", "intro"):
-        for k, b in enumerate([0.5, 1.0, 1.5]):
-            notes.append({"step": b, "pitch": 38, "vel": 0.70 + k * 0.05, "dur": 0.25})
-        notes.append({"step": 0.0,  "pitch": 36, "vel": 0.82, "dur": 0.25})
-        notes.append({"step": 1.75, "pitch": 49, "vel": 0.72, "dur": 0.5})
-    elif to_sec == "solo":
-        for k in range(16):
-            vel = 0.40 + k * 0.035
-            notes.append({"step": round(k * 0.125, 4), "pitch": 38, "vel": min(vel, 0.90), "dur": 0.1})
-        notes.append({"step": 1.875, "pitch": 49, "vel": 0.85, "dur": 0.5})
-    elif to_sec == "outro":
-        notes.append({"step": 0.0, "pitch": 49, "vel": 0.75, "dur": 1.0})
-        notes.append({"step": 0.0, "pitch": 36, "vel": 0.72, "dur": 0.25})
-    else:
-        notes.append({"step": 0.0, "pitch": 49, "vel": 0.80, "dur": 0.5})
-    return notes
-
-
-@tool
-def create_song_with_sections(
-    genre: str = "pop",
-    start_track_index: int = 1,
-    clip_beats: float = 8.0,
-    sections: str = "intro,verse,chorus,solo,chorus,outro",
-    section_loops: str = "3,7,7,4,7,3",
-) -> str:
-    """Erstellt einen Song mit mehreren Sections und Tempo-Variationen.
-
-    Jede Section hat eigene Patterns:
-      intro  — sparse, aufbauend (nur Kick+Bass)
-      verse  — klassisch, leicht
-      chorus — 4-on-floor, energetisch, staccato Chords
-      solo   — Lead-Solo im Vordergrund, Drums minimal
-      outro  — ausdünnend, letzter Akkord hält
-
-    Tempo-Wechsel: Chorus läuft 3% schneller, Solo 2% schneller.
-
-    Args:
-        genre:              "pop", "rock" ...
-        start_track_index:  aus get_bitwig_track_state()
-        clip_beats:         Clip-Länge in Beats (Standard: 8)
-        sections:           Komma-getrennte Sections: "intro,verse,chorus,solo,chorus,outro"
-        section_loops:      Loops pro Section: "3,7,7,4,7,3"
-    """
-    import os, sys
-    sys.path.insert(0, str(__file__).split("/src/")[0])
-    os.environ.setdefault("NEO4J_URI",      "bolt://localhost:7687")
-    os.environ.setdefault("NEO4J_USER",     "neo4j")
-    os.environ.setdefault("NEO4J_PASSWORD", "neo4jllm")
-
-    from src.audio.chord_to_bitwig import query_chordonomicon
-    from pythonosc import udp_client
-
-    if not _check_bridge():
-        return "Fehler: BitwigAgentBridge nicht erreichbar"
-
-    client = udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT)
-    step_size = 0.25
-
-    section_list = [s.strip() for s in sections.split(",")]
-    loop_list    = [int(x.strip()) for x in section_loops.split(",")]
-    if len(loop_list) < len(section_list):
-        loop_list += [4] * (len(section_list) - len(loop_list))
-
-    # ── BPM aus KB ────────────────────────────────────────────────────────────
-    from src.knowledge.neo4j_graph import get_driver as _neo4j_driver
-    try:
-        _neo4j_drv = _neo4j_driver()
-    except ConnectionError as e:
-        return f"Fehler: {e}"
-
-    base_bpm = 100.0
-    with _neo4j_drv.session() as s:
-        row = s.run("MATCH (g:Genre) WHERE toLower(g.name) CONTAINS $g "
-                    "RETURN g.bpm_min AS mn, g.bpm_max AS mx LIMIT 1", g=genre.lower()).single()
-    if row:
-        base_bpm = (row["mn"] + row["mx"]) / 2
-
-    # Tempo-Faktoren pro Section-Typ
-    BPM_FACTORS = {"intro":0.97,"verse":1.0,"chorus":1.03,"solo":1.02,"outro":0.96}
-
-    # ── Akkordprogressionen ───────────────────────────────────────────────────
-    GENRE_MAP = {"hard rock":"rock","heavy metal":"metal","electro pop":"pop"}
-    genre_q = GENRE_MAP.get(genre.lower(), genre)
-    results = query_chordonomicon(genre=genre_q, n=1)
-    if not results:
-        return (f"Fehler: Keine Akkordprogression für Genre '{genre}' in der KB. "
-                f"KB befüllen: `make ingest`")
-    parsed = results[0]
-    all_secs = list(parsed["sections"].values())
-    verse_chords  = all_secs[0][:4]
-    chorus_chords = all_secs[1][:4] if len(all_secs) > 1 else verse_chords
-    CHORDS_BY_TYPE = {"intro":verse_chords,"verse":verse_chords,"chorus":chorus_chords,
-                      "solo":chorus_chords,"outro":verse_chords}
-
-    # ── Dynamische Track-Konfiguration basierend auf verfügbaren Loops ───────
-    from src.audio.loop_catalog import find_loops_for_genre as _find_loops
-
-    # Tonart aus erster Akkordprogression ableiten
-    from src.audio.chord_to_bitwig import detect_key
-    try:
-        _key_root, _key_mode = detect_key(verse_chords)
-        from src.audio.chord_to_bitwig import NOTE_NAMES as _NN
-        _key = f"{_NN[_key_root % 12]}{'m' if _key_mode=='minor' else ''}"
-        if _key_mode == 'minor' and not _key.endswith('m'):
-            _key += 'm'
-    except Exception:
-        _key = "Am"
-
-    genre_loops = _find_loops(genre, _key, base_bpm)
-    has_loops = any(genre_loops.values())
-
-    if has_loops:
-        # ── Loop-basierte Tracks: Drums + echte Gitarren/Bass ────────────────
-        drum_instruments = [("v9 Kick","kick"),("v9 Snare","snare"),("v9 Hat Closed","hihat")]
-        track_indices = list(range(start_track_index, start_track_index + 3))
-
-        # Drums anlegen
-        for _ in drum_instruments:
-            client.send_message("/track/add/instrument",1); time.sleep(0.3)
-        for idx,(instr,_) in zip(track_indices, drum_instruments):
-            client.send_message(f"/track/{idx}/select",1); time.sleep(0.2)
-            client.send_message("/browser/device/load",instr); time.sleep(0.5)
-
-        # Guitar/Bass-Loops anlegen — Anzahl dynamisch
-        loop_track_map = {}  # role → [track_index]
-        next_track = start_track_index + 3
-        role_order = ["bass","rhythm_guitar","lead_guitar"]
-        for role in role_order:
-            role_loops = genre_loops.get(role, [])
-            loop_track_map[role] = []
-            for loop in role_loops:
-                client.send_message("/track/add/instrument",1); time.sleep(0.3)
-                client.send_message(f"/track/{next_track}/select",1); time.sleep(0.3)
-                client.send_message("/browser/device/load","Sampler"); time.sleep(0.8)
-                client.send_message("/sampler/load", loop.windows_path); time.sleep(1.5)
-                track_indices.append(next_track)
-                loop_track_map[role].append(next_track)
-                next_track += 1
-
-        # Panning: Rhythmus-Gitarren links/rechts
-        rg = loop_track_map.get("rhythm_guitar", [])
-        if len(rg) >= 2:
-            client.send_message(f"/track/{rg[0]}/pan", 0.28)
-            client.send_message(f"/track/{rg[1]}/pan", 0.72)
-
-        # ── KB-Empfohlene Effekte laden ────────────────────────────────────
-        # Gitarren-Tracks: Distortion (w=0.98) + Amp (w=0.95)
-        for t in loop_track_map.get("rhythm_guitar", []):
-            client.send_message(f"/track/{t}/select", 1); time.sleep(0.2)
-            client.send_message("/browser/device/load", "Distortion"); time.sleep(0.5)
-            client.send_message("/browser/device/load", "Amp"); time.sleep(0.5)
-        # Lead-Gitarre: Distortion + Amp + EQ-5
-        for t in loop_track_map.get("lead_guitar", []):
-            client.send_message(f"/track/{t}/select", 1); time.sleep(0.2)
-            client.send_message("/browser/device/load", "Distortion"); time.sleep(0.5)
-            client.send_message("/browser/device/load", "Amp"); time.sleep(0.5)
-        # Bass: Saturator (w=0.90)
-        for t in loop_track_map.get("bass", []):
-            client.send_message(f"/track/{t}/select", 1); time.sleep(0.2)
-            client.send_message("/browser/device/load", "Saturator"); time.sleep(0.5)
-        # Drums Track 1 (Kick): Compressor + Transient Control
-        if track_indices:
-            client.send_message(f"/track/{track_indices[0]}/select", 1); time.sleep(0.2)
-            client.send_message("/browser/device/load", "Compressor"); time.sleep(0.5)
-            client.send_message("/browser/device/load", "Transient Control"); time.sleep(0.5)
-
-        bass_tracks  = loop_track_map.get("bass",[])
-        chord_tracks = loop_track_map.get("rhythm_guitar",[])
-        lead_tracks  = loop_track_map.get("lead_guitar",[])
-    else:
-        # ── Synth-Fallback: Layout via Registry (Genre-Overrides berücksichtigt) ─────────
-        from src.audio.instrument_registry import build_track_layout
-        _layout = build_track_layout(genre=genre)
-        instruments = [(t["device_name"], t["role"]) for t in _layout]
-        track_indices = list(range(start_track_index, start_track_index + len(instruments)))
-        for _ in instruments:
-            client.send_message("/track/add/instrument",1); time.sleep(0.3)
-        for idx,(instr,_) in zip(track_indices,instruments):
-            client.send_message(f"/track/{idx}/select",1); time.sleep(0.2)
-            client.send_message("/browser/device/load",instr); time.sleep(0.5)
-        bass_tracks  = [track_indices[3]]
-        chord_tracks = [track_indices[4]]
-        lead_tracks  = [track_indices[5]] if len(track_indices) > 5 else []
-        loop_track_map = {}
-
-    # ── Patterns pro Section in Slots schreiben ───────────────────────────────
-    unique_sections = list(dict.fromkeys(section_list))  # eindeutig, Reihenfolge bewahren
-    slot_map = {s: i for i, s in enumerate(unique_sections)}
-
-    def write_clip(tidx, notes, slot, length):
-        client.send_message(f"/track/{tidx}/select",1); time.sleep(0.5)
-        client.send_message("/clip/create",[float(slot),float(length)]); time.sleep(0.6)
-        client.send_message("/clip/step_size",step_size); time.sleep(0.05)
-        client.send_message("/clip/clear",1); time.sleep(0.15)
-        for n in notes:
-            client.send_message("/clip/note/beat",
-                [float(n["step"]),float(n["pitch"]),float(n.get("vel",0.8)),float(n.get("dur",0.5))])
-            time.sleep(0.02)
-
-    from src.agent.events import get_event_bus as _get_bus
-    _bus = _get_bus()
-
-    for sec_type in unique_sections:
-        slot = slot_map[sec_type]
-        chords = CHORDS_BY_TYPE.get(sec_type, verse_chords)
-        bpm_s = base_bpm * BPM_FACTORS.get(sec_type, 1.0)
-        builder = SECTION_BUILDERS.get(sec_type, _make_verse_patterns)
-        kick, snare, hat, bass, chords_n, melody = builder(chords, clip_beats, bpm_s, genre=genre)
-        _bus.emit("section_start", {"section": sec_type, "bpm": bpm_s, "slot": slot})
-        write_clip(track_indices[0], kick,     slot, clip_beats)
-        write_clip(track_indices[1], snare,    slot, clip_beats)
-        write_clip(track_indices[2], hat,      slot, clip_beats)
-        write_clip(track_indices[3], bass,     slot, clip_beats)
-        write_clip(track_indices[4], chords_n, slot, clip_beats)
-        write_clip(track_indices[5], melody,   slot, clip_beats)
-        note_total = sum(len(x) for x in [kick, snare, hat, bass, chords_n, melody])
-        _bus.emit("section_done", {"section": sec_type, "note_count": note_total})
-
-    # ── Fill-Clips: je ein 2-Beat-Fill-Slot pro Section-Übergang ─────────────
-    # Fill wird im letzten Slot (unique+1) abgelegt und beim Arrangement-Record
-    # als letzter Takt vor jedem Section-Wechsel eingefügt.
-    fill_slot_base = len(unique_sections)
-    for i in range(len(section_list) - 1):
-        from_s = section_list[i]
-        to_s   = section_list[i + 1]
-        if from_s == to_s:
-            continue
-        fill_notes = _make_fill_pattern(from_s, to_s, base_bpm, genre)
-        fill_slot  = fill_slot_base + i
-        # Fill nur auf Kick + Snare (Track 0 + 1)
-        write_clip(track_indices[0], [n for n in fill_notes if n["pitch"] in (36,49)], fill_slot, 2.0)
-        write_clip(track_indices[1], [n for n in fill_notes if n["pitch"] == 38],       fill_slot, 2.0)
-
-
-    # Lautstärken
-    if has_loops:
-        # Drum-Tracks
-        for t,vol in zip(track_indices[:3], [0.88, 0.82, 0.68]):
-            client.send_message(f"/track/{t}/volume", vol); time.sleep(0.03)
-        # Loop-Tracks: Bass, Rhythmus-Git, Lead
-        for t in loop_track_map.get("bass",[]): client.send_message(f"/track/{t}/volume",0.80); time.sleep(0.03)
-        for t in loop_track_map.get("rhythm_guitar",[]): client.send_message(f"/track/{t}/volume",0.75); time.sleep(0.03)
-        for t in loop_track_map.get("lead_guitar",[]): client.send_message(f"/track/{t}/volume",0.85); time.sleep(0.03)
-    else:
-        for t,vol in zip(track_indices,[0.85,0.80,0.65,0.75,0.60,0.82]):
-            client.send_message(f"/track/{t}/volume",vol); time.sleep(0.03)
-
-    # ── Arrangement aufnehmen mit Tempo-Wechseln ──────────────────────────────
-    client.send_message("/arrange/view",1); time.sleep(0.5)
-    client.send_message("/arrange/record/start",1); time.sleep(0.3)
-
-    total_sec = 0.0
-    summary = []
-    for sec_type, loops in zip(section_list, loop_list):
-        bpm_s = base_bpm * BPM_FACTORS.get(sec_type, 1.0)
-        client.send_message("/transport/tempo", float(bpm_s))
-        time.sleep(0.1)
-        slot = slot_map[sec_type]
-        client.send_message(f"/scene/{slot+1}/launch",1)
-        sec_dur = loops * clip_beats * 60.0 / bpm_s
-        time.sleep(sec_dur)
-        total_sec += sec_dur
-        summary.append(f"  [{sec_type:7s}] Scene {slot+1} | {loops}× | {bpm_s:.0f}BPM | {sec_dur:.1f}s")
-
-    client.send_message("/transport/tempo", float(base_bpm))  # BPM zurücksetzen
-    client.send_message("/arrange/record/stop",1)
-
-    v_str = " → ".join(verse_chords)
-    if has_loops:
-        rg_count = len(loop_track_map.get("rhythm_guitar", []))
-        lg_count = len(loop_track_map.get("lead_guitar", []))
-        track_info = (f"Drums(3) + Bass-Loop + {rg_count}×Rhythm-Guitar-Loop"
-                      f"{' + Lead-Guitar-Loop' if lg_count else ''}"
-                      f" + KB-Effekte (Distortion, Amp, Saturator, Compressor)")
-    else:
-        track_info = "v9 Kick|Snare|Hat|Polysynth|Phase-4|FM-4 (Synth-Fallback)"
-    return (
-        f"SONG FERTIG ERSTELLT. KEINE weiteren create_song Aufrufe nötig.\n"
-        f"{len(section_list)} Sections | {total_sec:.1f}s | {base_bpm:.0f}BPM\n"
-        + "\n".join(summary) + "\n"
-        f"Akkorde: {v_str}\n"
-        f"Instrumente: {track_info}"
-    )
-
-
 @tool
 def get_song_form(genre: str = "pop") -> str:
     """Holt Songform-Kompositionsregeln aus der KB für ein Genre.
 
     Gibt empfohlene Reihenfolge, Loop-Counts und Kompositionsregeln zurück.
-    Verwende diese Infos BEVOR du create_song_with_sections aufrufst.
+    Gibt empfohlene Song-Struktur für ein Genre zurück.
 
     Beispiel:
         get_song_form("pop")
@@ -1857,8 +1086,7 @@ def get_song_form(genre: str = "pop") -> str:
             return (
                 f"SONGFORM-REGELN FÜR {genre.upper()} aus KB:\n\n"
                 + "\n\n".join(results)
-                + f"\n\nVERWENDE: create_song_with_sections(genre='{genre}', "
-                  f"sections='...', section_loops='...')"
+                + f"\n\nVERWENDE diese Infos für build_song mit genre='{genre}'."
             )
     except Exception as e:
         pass
@@ -1878,87 +1106,6 @@ def get_song_form(genre: str = "pop") -> str:
         f"Regel: Intro/Outro NUR EINMAL (loops=2 = ~9s). "
         f"Verse/Chorus 4 Loops (~17s). Solo 4 Loops."
     )
-
-
-@tool
-def find_guitar_loops(
-    key: str = "Am",
-    bpm: float = 100.0,
-    loop_type: str = "all",
-) -> str:
-    """Findet passende E-Gitarren und Bass-Loops aus installierten Paketen.
-
-    Sucht nach Loops die zur Tonart und BPM des Songs passen.
-    Gibt Dateipfade zurück die mit /arrange/insert/file oder /sampler/load
-    direkt in Bitwig geladen werden können.
-
-    Args:
-        key:       Ziel-Tonart ("Am", "Em", "Dm", "C", "G" ...)
-        bpm:       Ziel-BPM (Loops innerhalb ±20 BPM werden gefunden)
-        loop_type: "GuitarRiff","GuitarLead","GuitarChords","BassGuitar","all"
-    """
-    import sys; sys.path.insert(0, str(__file__).split("/src/")[0])
-    from src.audio.loop_catalog import scan_loops, find_best_loops, PACKAGES_BASE
-
-    loops = scan_loops(PACKAGES_BASE)
-    if not loops:
-        return "Keine Loops gefunden. Pakete installiert?"
-
-    needed = {}
-    if loop_type == "all":
-        needed = {"GuitarRiff":2,"GuitarLead":1,"GuitarChords":1,"BassGuitar":2}
-    else:
-        needed = {loop_type: 3}
-
-    matches = find_best_loops(loops, key, bpm, needed)
-
-    lines = [f"LOOPS für {key} @ {bpm}BPM:\n"]
-    for typ, found in matches.items():
-        if found:
-            lines.append(f"[{typ}]")
-            for l in found:
-                lines.append(
-                    f"  BPM:{l.bpm:.0f} Key:{l.key:4} {l.name[:45]}"
-                    f"\n  → {l.windows_path}"
-                )
-    lines.append(
-        f"\nLaden via:\n"
-        f"  1. Track auswählen: /track/N/select\n"
-        f"  2. Loop laden:      /sampler/load <windows_path>"
-    )
-    return "\n".join(lines)
-
-
-@tool
-def load_guitar_loop(
-    track_index: int,
-    windows_path: str,
-) -> str:
-    """Lädt einen Guitar/Bass-Loop auf einen Track in Bitwig.
-
-    Verwendet /sampler/load um den Loop als Device auf den Track zu laden.
-    Der Loop wird über den Bitwig Sampler mit Timestretching abgespielt.
-
-    Workflow:
-        1. find_guitar_loops(key, bpm) → findet passende Loop-Pfade
-        2. load_guitar_loop(track, path) → lädt Loop auf Track
-
-    Args:
-        track_index:  Track-Nummer (1-basiert)
-        windows_path: Windows-Pfad zur WAV-Datei (aus find_guitar_loops)
-    """
-    from pythonosc import udp_client
-    if not _check_bridge():
-        return "Fehler: BitwigAgentBridge nicht erreichbar"
-
-    client = udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT)
-    client.send_message(f"/track/{track_index}/select", 1)
-    time.sleep(0.3)
-    client.send_message("/sampler/load", windows_path)
-    time.sleep(1.5)  # Sampler laden braucht Zeit
-
-    loop_name = windows_path.split("\\")[-1].replace(".wav", "")
-    return f"✓ Loop geladen auf Track {track_index}: {loop_name}"
 
 
 @tool

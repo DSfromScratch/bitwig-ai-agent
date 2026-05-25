@@ -232,7 +232,6 @@ def _select_tools_for_context(all_messages: list):
                 "check_bitwig_connection",
                 "build_song",
                 "verify_song",
-                "create_song_from_genre",
             }
             narrowed = [t for t in tools if getattr(t, "name", "") in minimal]
             if narrowed:
@@ -276,11 +275,11 @@ def _recover_tool_calls(response: AIMessage, state: AgentState | None = None) ->
 
 
 _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
-    "query_bitwig_docs", "control_bitwig", "build_song", "create_song_from_genre",
+    "query_bitwig_docs", "control_bitwig", "build_song",
     "check_bitwig_connection", "get_bitwig_track_state", "setup_instrument_track",
     "write_notes_to_clip", "verify_song", "get_pattern_context", "compose_arrangement",
-    "create_song_structure", "create_song_with_sections", "get_song_form",
-    "find_guitar_loops", "load_guitar_loop", "get_genre_overview", "get_section_proposal",
+    "create_song_structure", "get_song_form",
+    "get_genre_overview", "get_section_proposal",
 ])
 
 # Diagnostic categories for invalid tool outputs
@@ -341,7 +340,6 @@ def _recover_xml_fragment_once(
             "check_bitwig_connection",
             "build_song",
             "verify_song",
-            "create_song_from_genre",
         }
     ]
     llm = _get_llm(max_tokens=500).bind_tools(fallback_tools or selected_tools)
@@ -396,7 +394,6 @@ def call_llm(state: AgentState) -> dict:
                     "check_bitwig_connection",
                     "build_song",
                     "verify_song",
-                    "create_song_from_genre",
                 }
             ]
             fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)

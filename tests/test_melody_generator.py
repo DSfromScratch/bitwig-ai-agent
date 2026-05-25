@@ -134,11 +134,3 @@ class TestGenerateMelody:
         unique_pitches = len(set(n["pitch"] for n in notes))
         assert unique_pitches >= 3, f"Melodie zu monoton: nur {unique_pitches} verschiedene Töne"
 
-    @pytest.mark.unit
-    def test_melody_integrated_in_song_tools(self):
-        """generate_melody wird in create_song_from_genre importiert."""
-        import inspect
-        from src.agent.tools import song_tools
-        src = inspect.getsource(song_tools.create_song_from_genre.func)
-        assert "generate_melody" in src
-        assert "track_indices[5]" in src

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from dataclasses import dataclass, field
 
-PACKAGES_BASE = Path("/mnt/c/Users/Admin/AppData/Local/Bitwig Studio/installed-packages/5.0")
+PACKAGES_BASE = Path.home() / ".BitwigStudio/installed-packages/5.0"
 
 # Tonart-Ähnlichkeit (parallele + relative Moll-/Dur-Töne)
 KEY_RELATIVES = {
@@ -31,12 +31,10 @@ class AudioLoop:
     key:     str
     loop_type: str  # "GuitarRiff","GuitarChords","GuitarLead","BassGuitar","GuitarStrums"
     package: str
-    windows_path: str = field(default="")
+    linux_path: str = field(default="")
 
     def __post_init__(self):
-        self.windows_path = str(self.path).replace(
-            "/mnt/c/", "C:\\"
-        ).replace("/", "\\")
+        self.linux_path = str(self.path)
 
     def key_distance(self, target_key: str) -> int:
         relatives = KEY_RELATIVES.get(target_key, [target_key])
@@ -205,9 +203,9 @@ def find_best_loops(
     return result
 
 
-def get_windows_path(loop: AudioLoop) -> str:
-    """Gibt Windows-kompatiblen Pfad zurück (für Bitwig)."""
-    return loop.windows_path
+def get_linux_path(loop: AudioLoop) -> str:
+    """Gibt den nativen Linux-Pfad zurück (für Bitwig)."""
+    return loop.linux_path
 
 
 def find_loops_for_genre(

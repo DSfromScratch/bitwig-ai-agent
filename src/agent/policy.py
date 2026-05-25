@@ -200,7 +200,6 @@ def enforce_policy_on_response(state: dict[str, Any], response: AIMessage) -> tu
 
     has_build = any(tc.get("name") == "build_song" for tc in calls)
     has_legacy = any(tc.get("name") in {"setup_instrument_track", "write_notes_to_clip"} for tc in calls)
-    has_wrong_song_path = any(tc.get("name") in {"create_song_from_genre", "create_song_with_sections"} for tc in calls)
 
     if not concrete:
         return response, {"action": "allow", "violations": []}
@@ -208,7 +207,7 @@ def enforce_policy_on_response(state: dict[str, Any], response: AIMessage) -> tu
     if has_build and not has_legacy:
         return response, {"action": "allow", "violations": []}
 
-    if not has_legacy and not has_wrong_song_path:
+    if not has_legacy:
         return response, {"action": "allow", "violations": []}
 
     explicit_fx = _extract_explicit_fx(user_text)

@@ -91,26 +91,6 @@ def test_strict_fx_chain_removes_extra_fx_on_rewrite():
     assert payload["tracks"][0]["fx"] == ["Distortion", "Amp"]
 
 
-@pytest.mark.unit
-def test_rewrites_create_song_from_genre_for_concrete_track_task():
-    state = {
-        "messages": [
-            HumanMessage(content="Erstelle einen einzelnen Rock-Riff-Track mit Phase-4 und Amp"),
-        ]
-    }
-    response = AIMessage(
-        content="",
-        tool_calls=[
-            {"name": "create_song_from_genre", "args": {"genre": "rock", "bpm": 120, "start_track_index": 1}, "id": "c1", "type": "tool_call"},
-        ],
-    )
-
-    rewritten, meta = enforce_policy_on_response(state, response)
-    names = [tc["name"] for tc in rewritten.tool_calls]
-    assert meta["action"] == "rewrite"
-    assert "concrete_track_task_wrong_song_path" in meta["violations"]
-    assert names == ["build_song"]
-
 
 @pytest.mark.unit
 def test_prefers_explicit_beats_from_prompt():

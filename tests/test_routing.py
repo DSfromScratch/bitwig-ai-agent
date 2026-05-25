@@ -19,7 +19,9 @@ from langgraph.types import Send
 
 # ── Hilfsdaten ────────────────────────────────────────────────────────────────
 
-_INSTRUMENT_JSON = json.dumps({"instrument": "Phase-4", "fx": [], "preset": "", "fx_preset": ""})
+_INSTRUMENT_JSON = json.dumps({"tracks": [
+    {"role": "lead", "instrument": "Phase-4", "preset": "", "fx_preset": "", "fx": []},
+]})
 _NOTES_JSON = json.dumps({
     "bpm": 120, "length_beats": 8,
     "notes": [

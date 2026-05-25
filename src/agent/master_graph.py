@@ -11,9 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from datetime import datetime
-from typing import Any
 
 # ── Persistentes Logging in Datei ────────────────────────────────────────────
 def _setup_file_logging() -> None:
@@ -31,12 +29,11 @@ def _setup_file_logging() -> None:
 _setup_file_logging()
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.graph import StateGraph, END, START
+from langgraph.graph import StateGraph, END
 from langgraph.types import Send
 
 from src.agent.state import AgentState
 from src.agent.policy import (
-    is_concrete_track_task,
     _extract_explicit_fx,
     _extract_bpm,
     _extract_beats,
@@ -62,16 +59,30 @@ _INSTRUMENT_KEYWORDS = {
     "surge": "Surge XT",
     "organ": "Organ",
     "sampler": "Sampler",
-    "guitar": "Phase-4",    # Gitarre → Phase-4 als Default
+    "guitar": "Phase-4",
     "gitarre": "Phase-4",
     "bass": "Polysynth",
     "lead": "FM-4",
 }
 
+_GENRE_KEYWORDS = [
+    "rock", "metal", "pop", "jazz", "blues", "ambient", "house", "techno",
+    "trap", "hip-hop", "dubstep", "edm", "funk", "soul", "klassik", "classical",
+    "drum", "schlagzeug", "drums",
+]
+
 _SCALE_KEYWORDS = [
     "pentatonik", "pentatonic", "minor", "moll", "major", "dur",
     "blues", "dorian", "mixolydian", "chromatic",
 ]
+
+
+def _extract_genre(text: str) -> str:
+    lower = text.lower()
+    for kw in _GENRE_KEYWORDS:
+        if kw in lower:
+            return kw
+    return ""
 
 
 def _extract_instrument_hint(text: str) -> str:
@@ -107,25 +118,39 @@ def plan_node(state: AgentState) -> dict:
             if user_text:
                 break
 
-    cfg_bpm = ui_cfg.get("bpm")
+    cfg_bpm    = ui_cfg.get("bpm")
+    cfg_beats  = ui_cfg.get("length_beats") or ui_cfg.get("beat_count")
 
     bpm = float(cfg_bpm) if cfg_bpm is not None else _extract_bpm(user_text, 120.0)
-    beat_count = float(_extract_beats(user_text) or _beats_from_time(bpm, user_text) or 16.0)
-    instrument_hint = _extract_instrument_hint(user_text)
-    fx_hint = ", ".join(_extract_explicit_fx(user_text))
-    scale = _extract_scale_hint(user_text)
+    beat_count = float(cfg_beats) if cfg_beats is not None else float(
+        _extract_beats(user_text) or _beats_from_time(bpm, user_text) or 16.0
+    )
+
+    # UI-Config als [UI_CONFIG]-Block an user_text anhängen (Slaves sehen alle Felder)
+    if ui_cfg:
+        cfg_block = "[UI_CONFIG]\n" + "\n".join(f"{k}: {v}" for k, v in ui_cfg.items())
+        user_text = f"{user_text}\n{cfg_block}" if user_text else cfg_block
+
+    fx_hint = ui_cfg.get("fx_preset") or ", ".join(_extract_explicit_fx(user_text)) or ""
+    scale   = ui_cfg.get("key") or _extract_scale_hint(user_text)
+    genre   = ui_cfg.get("genre") or _extract_genre(user_text)
 
     slave_plan = {
-        "user_text": user_text,
-        "bpm": bpm,
-        "beat_count": beat_count,
-        "instrument_hint": instrument_hint,
-        "fx_hint": fx_hint,
-        "scale": scale,
+        "user_text":       user_text,
+        "bpm":             bpm,
+        "beat_count":      beat_count,
+        "fx_hint":         fx_hint,
+        "scale":           scale,
+        "genre":           genre,
+        "track_count":     int(float(ui_cfg["track_count"])) if ui_cfg.get("track_count") is not None else None,
+        "technique":       ui_cfg.get("technique", ""),
+        "rhythm_pattern":  ui_cfg.get("rhythm_pattern", ""),
+        "string_register": ui_cfg.get("string_register", ""),
+        "dynamics_shape":  ui_cfg.get("dynamics_shape", ""),
     }
     log.info(
-        "Plan: bpm=%.0f, beats=%.0f, instrument=%s, fx=%s, scale=%s",
-        bpm, beat_count, instrument_hint or "(auto)", fx_hint or "(auto)", scale or "(auto)",
+        "Plan: bpm=%.0f, beats=%.0f, genre=%s, fx=%s, scale=%s",
+        bpm, beat_count, genre or "(auto)", fx_hint or "(auto)", scale or "(auto)",
     )
     return {
         "slave_plan": slave_plan,
@@ -158,47 +183,54 @@ def execute_build_node(state: AgentState) -> dict:
 def _compute_quality(
     report: dict,
     assembled_json: str | None,
-    state: "AgentState",
-) -> tuple[float, str | None, dict]:
-    """Berechnet Quality-Score via CompositeQualitySpec (F3).
+    _state: "AgentState | None" = None,
+) -> tuple[float, str | None]:
+    """Berechnet Quality-Score aus Warnings und Note-Dichte.
 
-    Returns (score 0.0–1.0, retry_signal | None, spec_details).
+    Returns (score 0.0–1.0, retry_signal | None).
     """
-    from src.agent.quality.specs import DEFAULT_QUALITY_SPEC, SongReport, scale_pcs_from_hint
-
-    # Bridge nicht erreichbar → Instrument-Problem
+    # Bridge nicht erreichbar oder null Tracks → Instrument-Problem
     if not report.get("ok", True) and report.get("track_count") is None:
-        return 0.0, "instrument_retry", {}
+        return 0.0, "instrument_retry"
+    if report.get("track_count") == 0:
+        return 0.0, "instrument_retry"
 
-    plan = state.get("slave_plan") or {}
-    beat_count = float(plan.get("beat_count", 16) or 16)
+    # Warnings-basierter Score: jede Warning kostet 0.15 Punkte
+    warnings = report.get("warnings") or []
+    score = max(0.0, 1.0 - len(warnings) * 0.15)
 
-    notes: list[dict] = []
-    if assembled_json:
+    # Note-Dichte-Check aus assembled_json (nur wenn warnings-Score noch OK)
+    if assembled_json and score >= 0.75:
         try:
             proj = json.loads(assembled_json)
-            for t in proj.get("tracks", []):
-                notes.extend(t.get("clip", {}).get("notes", []))
+            tracks = proj.get("tracks", [])
+            if tracks:
+                all_notes: list = []
+                length_beats = 16.0
+                for t in tracks:
+                    clip = t.get("clip", {})
+                    all_notes.extend(clip.get("notes", []))
+                    lb = clip.get("length_beats", 16)
+                    if lb:
+                        length_beats = float(lb)
+                density = len(all_notes) / (len(tracks) * length_beats)
+                if density < 0.25:
+                    score = max(0.0, score * density / 0.25)
         except Exception:
             pass
 
-    song_report = SongReport(
-        track_count=report.get("track_count") or 0,
-        expected_tracks=int(plan.get("track_count") or 1),
-        notes=notes,
-        scale_pcs=scale_pcs_from_hint(plan.get("scale", "") or ""),
-        bpm=float(plan.get("bpm", 120) or 120),
-        expected_notes=max(int(beat_count * 2), 8),
-    )
+    score = min(score, 1.0)
 
-    score, details = DEFAULT_QUALITY_SPEC.evaluate(song_report)
+    if score >= 0.75:
+        return score, None
 
-    retry_for: str | None = None
-    if score < 0.75:
-        worst = min(details, key=lambda k: details[k])
-        retry_for = "instrument_retry" if worst == "track_count" else "note_retry"
+    # Retry-Signal: Instrument/Track-Schlüsselwörter → instrument_retry
+    instrument_kw = {"instrument", "track"}
+    for w in warnings:
+        if any(kw in w.lower() for kw in instrument_kw):
+            return score, "instrument_retry"
 
-    return score, retry_for, details
+    return score, "note_retry"
 
 
 def verify_node(state: AgentState) -> dict:
@@ -206,17 +238,23 @@ def verify_node(state: AgentState) -> dict:
     try:
         from src.agent.tools.song_tools import verify_song
         log.info("verify: verify_song aufrufen")
-        result = verify_song.invoke({"play_seconds": 3, "slot": 0, "expected_tracks": 1})
+        assembled = state.get("assembled_json")
+        expected = 1
+        if assembled:
+            try:
+                expected = len(json.loads(assembled).get("tracks", [1]))
+            except Exception:
+                pass
+        result = verify_song.invoke({"play_seconds": 3, "slot": 0, "expected_tracks": expected})
 
         # verify_song gibt dict zurück
         report = result if isinstance(result, dict) else {"raw": str(result)}
 
-        thresholds = state.get("quality_thresholds") or {"overall": 0.75}
         budget = dict(state.get("retry_budget") or {})
 
-        score, signal, spec_details = _compute_quality(report, state.get("assembled_json"), state)
+        score, signal = _compute_quality(report, state.get("assembled_json"), state)
 
-        log.info("verify: score=%.2f, details=%s, signal=%s", score, spec_details, signal)
+        log.info("verify: score=%.2f, signal=%s", score, signal)
 
         # Budget prüfen — kein Retry wenn aufgebraucht
         if signal:
@@ -265,20 +303,20 @@ def reply_node(state: AgentState) -> dict:
     assembled = state.get("assembled_json")
 
     if phase == "done":
-        instrument = ""
-        notes_count = 0
+        track_summary = ""
         if assembled:
             try:
                 proj = json.loads(assembled)
-                t = proj.get("tracks", [{}])[0]
-                instrument = t.get("instrument", "")
-                notes_count = len(t.get("clip", {}).get("notes", []))
+                tracks = proj.get("tracks", [])
+                parts = [f"{t.get('instrument','?')} ({t.get('index','?')})" for t in tracks[:4]]
+                track_summary = ", ".join(parts)
+                if len(tracks) > 4:
+                    track_summary += f" +{len(tracks)-4}"
             except Exception:
                 pass
         msg = (
-            f"Rock-Riff wurde in Bitwig angelegt: {instrument}, "
-            f"{int(plan.get('bpm', 120))} BPM, {int(plan.get('beat_count', 16))} Beats, "
-            f"{notes_count} Noten (mit Wiederholung)."
+            f"Song in Bitwig angelegt: {track_summary or '(keine Tracks)'} — "
+            f"{int(plan.get('bpm', 120))} BPM, {int(plan.get('beat_count', 16))} Beats."
         )
     elif phase == "error":
         msg = "Fehler beim Erstellen des Tracks. Bitte Verbindung und Prompt prüfen."

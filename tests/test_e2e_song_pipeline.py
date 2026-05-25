@@ -20,10 +20,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 # ── Fake-LLM-Antworten ────────────────────────────────────────────────────────
 
 _INSTRUMENT_JSON = json.dumps({
-    "instrument": "Phase-4",
-    "fx": [],
-    "preset": "",
-    "fx_preset": "",
+    "tracks": [
+        {"role": "lead", "instrument": "Phase-4", "preset": "", "fx_preset": "", "fx": []},
+    ]
 })
 
 # E-minor-Noten im Low-Register (E2–D3 = MIDI 40–50), alle in E-minor-Skala
@@ -198,23 +197,44 @@ class TestE2EScreenshotConfig:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 2. track_count-Varianten: assemble_node baut richtige Anzahl Tracks
+# 2. Manifest-Track-Anzahl: assemble_node baut Tracks nach InstrumentSlave-Manifest
 # ══════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.e2e
-@pytest.mark.parametrize("track_count,expected_tracks", [
-    (1, 1),
-    (2, 2),
-    (4, 4),
-    (6, 6),
-], ids=["1track", "2tracks", "4tracks", "6tracks"])
-def test_e2e_track_count_variants(track_count, expected_tracks):
-    """assembled_json muss für jeden track_count-Wert die richtige Anzahl Tracks haben."""
-    cfg = dict(_SCREENSHOT_CFG, track_count=track_count)
-    result, _ = _run_graph(cfg)
+def test_e2e_track_count_from_manifest():
+    """InstrumentSlave-Manifest bestimmt die Track-Anzahl (nicht ui_song_config.track_count)."""
+    drum_manifest = json.dumps({"tracks": [
+        {"role": "kick",  "instrument": "v9 Kick",  "preset": "", "fx_preset": "", "fx": []},
+        {"role": "snare", "instrument": "v9 Snare", "preset": "", "fx_preset": "", "fx": []},
+        {"role": "hihat", "instrument": "v9 Hat Closed", "preset": "", "fx_preset": "", "fx": []},
+    ]})
+    osc = MagicMock()
+    patches = [
+        patch("src.agent.slaves.instrument_slave._get_llm",
+              return_value=_fake_llm(drum_manifest)),
+        patch("src.agent.slaves.note_slave._get_llm",
+              return_value=_fake_llm(_NOTES_JSON)),
+        patch("src.agent.tools.song_tools._check_bridge", return_value=True),
+        patch("src.agent.tools.song_tools._osc_client", return_value=osc),
+        patch("src.agent.tools.song_tools._get_current_track_count", return_value=0),
+        patch("src.agent.tools.song_tools.verify_song", _fake_verify()),
+        patch("time.sleep"),
+        patch.dict(os.environ, {"NOTE_SLAVE_CANDIDATES": "1"}),
+    ]
+    from src.agent.master_graph import build_master_graph
+    from src.agent.core import _default_state
+    with ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        state = _default_state()
+        state["messages"] = [HumanMessage(content="Drum Solo")]
+        state["ui_song_config"] = dict(_SCREENSHOT_CFG)
+        result = build_master_graph().invoke(state)
     assert result.get("assembled_json") is not None
     data = json.loads(result["assembled_json"])
-    assert len(data["tracks"]) == expected_tracks
+    assert len(data["tracks"]) == 3
+    instruments = {t["instrument"] for t in data["tracks"]}
+    assert "v9 Kick" in instruments
 
 
 # ══════════════════════════════════════════════════════════════════════════════
