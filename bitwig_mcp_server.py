@@ -712,10 +712,8 @@ def bitwig_setup_genre(genre: str, bpm: float = 120.0) -> str:
 
 # ── Browser-Scan & DB-Update ──────────────────────────────────────────────────
 
-# Windows-Pfad: C:\Users\Public\bitwig_catalog.json
-# WSL-Pfad:     /mnt/c/Users/Public/bitwig_catalog.json
-_CATALOG_WIN = r"C:\Users\Public\bitwig_catalog.json"
-_CATALOG_WSL = "/mnt/c/Users/Public/bitwig_catalog.json"
+# Linux-native Pfad (Java-Extension schreibt per Default in ~/bitwig_catalog.json)
+_CATALOG_PATH = os.path.expanduser("~/bitwig_catalog.json")
 
 
 @mcp.tool()
@@ -735,16 +733,16 @@ def bitwig_scan_browser() -> str:
     client.send_message("/browser/device", 1)
     time.sleep(3.0)  # Katalog-Aufbau abwarten
 
-    client.send_message("/browser/catalog/save", _CATALOG_WIN)
+    client.send_message("/browser/catalog/save", _CATALOG_PATH)
     time.sleep(0.8)
 
     _osc("/browser/cancel", 1)
     time.sleep(0.2)
 
-    if not os.path.exists(_CATALOG_WSL):
-        return f"Katalog nicht gefunden: {_CATALOG_WSL}\nBitwig + Bridge aktiv?"
+    if not os.path.exists(_CATALOG_PATH):
+        return f"Katalog nicht gefunden: {_CATALOG_PATH}\nBitwig + Bridge aktiv?"
 
-    with open(_CATALOG_WSL) as f:
+    with open(_CATALOG_PATH) as f:
         catalog = json.load(f)
 
     names = sorted(e["name"] for e in catalog)
@@ -762,10 +760,10 @@ def bitwig_search_catalog(search_term: str) -> str:
         search_term: Suchbegriff (Groß-/Kleinschreibung egal)
     """
     import json, os
-    if not os.path.exists(_CATALOG_WSL):
+    if not os.path.exists(_CATALOG_PATH):
         return "Kein Katalog vorhanden — bitte zuerst bitwig_scan_browser() ausführen"
 
-    with open(_CATALOG_WSL) as f:
+    with open(_CATALOG_PATH) as f:
         catalog = json.load(f)
 
     term = search_term.lower()
@@ -898,10 +896,10 @@ def bitwig_ingest_catalog_to_db(filter_term: str = "") -> str:
         filter_term: Nur Devices mit diesem Begriff ingesten (leer = alle)
     """
     import json, os
-    if not os.path.exists(_CATALOG_WSL):
+    if not os.path.exists(_CATALOG_PATH):
         return "Kein Katalog vorhanden — bitte zuerst bitwig_scan_browser() ausführen"
 
-    with open(_CATALOG_WSL) as f:
+    with open(_CATALOG_PATH) as f:
         catalog = json.load(f)
 
     if filter_term:

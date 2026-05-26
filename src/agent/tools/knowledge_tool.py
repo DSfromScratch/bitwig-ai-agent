@@ -3,6 +3,20 @@ import re
 from langchain_core.tools import tool
 
 
+def _fmt_params(params: list[dict], limit: int = 8) -> str:
+    lines = []
+    for p in params[:limit]:
+        ps = f"  • {p['name']}"
+        if p.get('desc'):
+            ps += f": {p['desc']}"
+        if p.get('low') and p.get('high'):
+            ps += f" (↓{p['low']} / ↑{p['high']})"
+        if p.get('tip'):
+            ps += f" → {p['tip']}"
+        lines.append(ps)
+    return "\n".join(lines)
+
+
 def _query_neo4j(query: str) -> str:
     """Sucht im Neo4j-Graph nach Devices, Parametern, Presets, Concepts und Genres."""
     try:
@@ -13,18 +27,19 @@ def _query_neo4j(query: str) -> str:
     parts = []
     q_lower = query.lower()
 
-    # Schlüsselwörter extrahieren
     words = [w for w in re.findall(r'\b\w{3,}\b', q_lower)
              if w not in ("was","wie","für","mit","und","oder","der","die","das",
                           "for","with","the","and","how","what","which","gibt","eine",
-                          "einen","einem","welche","welchen","kann","beim","bitte")]
+                          "einen","einem","welche","welchen","kann","beim","bitte",
+                          "machen","einen","mache","sein","sind","beim","eine")]
 
     if not words:
         return ""
 
     try:
         with neo4j_session() as s:
-            # 1. Concepts (Bitwig-Konzepte aus dem Handbuch)
+
+            # ── 1. Concepts ────────────────────────────────────────────────
             concepts = s.run("""
                 MATCH (c:Concept)
                 WHERE any(w IN $words WHERE toLower(c.name) CONTAINS w
@@ -41,16 +56,28 @@ def _query_neo4j(query: str) -> str:
                     line = f"**{c['name']}** [{c.get('category','')}]\n  {c.get('desc','')}"
                     if c.get('use_case'):
                         line += f"\n  Wann: {c['use_case']}"
+                    # Traverse: Concept → related Devices
+                    related_devs = s.run("""
+                        MATCH (c:Concept {name: $name})-[]->(d:Device)
+                        RETURN d.name AS n LIMIT 5
+                    """, name=c['name']).data()
+                    if related_devs:
+                        line += "\n  Devices: " + ", ".join(r['n'] for r in related_devs)
                     lines.append(line)
                 parts.append("**Bitwig-Konzepte:**\n" + "\n\n".join(lines))
 
-            # 2. Passende Devices finden
+            # ── 2. Devices + Parameter + Traversal ────────────────────────
+            # Namens-Treffer werden höher gewichtet als Beschreibungs-Treffer
             devices = s.run("""
                 MATCH (d:Device)
                 WHERE any(w IN $words WHERE toLower(d.name) CONTAINS w
                        OR toLower(coalesce(d.category,'')) CONTAINS w
                        OR toLower(coalesce(d.description,'')) CONTAINS w
                        OR toLower(coalesce(d.use_case,'')) CONTAINS w)
+                WITH d,
+                     CASE WHEN any(w IN $words WHERE toLower(d.name) CONTAINS w)
+                          THEN 2 ELSE 1 END AS relevance
+                ORDER BY relevance DESC
                 RETURN d.name AS name, d.device_type AS type,
                        d.category AS category, d.description AS desc,
                        d.use_case AS use_case, d.tips AS tips
@@ -67,31 +94,51 @@ def _query_neo4j(query: str) -> str:
                         LIMIT 8
                     """, name=d["name"]).data()
 
-                    chain_result = s.run("""
-                        MATCH (dev:Device {name: $name})-[r:RECOMMENDED_WITH]->(fx:Device)
-                        RETURN fx.name AS fx, r.reason AS reason LIMIT 3
+                    # Traverse: ähnliche Devices
+                    similar = s.run("""
+                        MATCH (dev:Device {name: $name})-[:SIMILAR_TO]->(sim:Device)
+                        RETURN sim.name AS n, sim.description AS desc LIMIT 4
                     """, name=d["name"]).data()
+
+                    # Traverse: Workflows die dieses Device benötigen
+                    wf_using = s.run("""
+                        MATCH (w:Workflow)-[:REQUIRES]->(dev:Device {name: $name})
+                        RETURN w.name AS n LIMIT 4
+                    """, name=d["name"]).data()
+
+                    # Traverse: in welchen Genres verwendet
+                    genre_uses = s.run("""
+                        MATCH (g:Genre)-[r:USES]->(dev:Device {name: $name})
+                        RETURN g.name AS n, r.role AS role
+                        ORDER BY r.weight DESC LIMIT 4
+                    """, name=d["name"]).data()
+
+                    # Navigation / Location
+                    nav = s.run("""
+                        MATCH (dev:Device {name: $name})
+                        RETURN dev.browser_tab AS tab, dev.ui_path AS path,
+                               dev.ui_panel AS panel, dev.builtin_uuid AS uuid,
+                               dev.load_cmd AS load_cmd
+                    """, name=d["name"]).single()
 
                     line = f"**{d['name']}**"
                     if d.get('desc'):
                         line += f" — {d['desc']}"
                     if d.get('use_case'):
                         line += f"\n  Für: {d['use_case']}"
+                    if nav and nav.get('tab'):
+                        line += f"\n  📍 Wo: {nav['path'] or nav['tab']}"
+                        if nav.get('panel'):
+                            line += f" | Panel: {nav['panel']}"
                     if params_result:
-                        param_strs = []
-                        for p in params_result:
-                            ps = f"  • {p['name']}"
-                            if p.get('desc'):
-                                ps += f": {p['desc']}"
-                            if p.get('low') and p.get('high'):
-                                ps += f" (niedrig={p['low']}, hoch={p['high']})"
-                            if p.get('tip'):
-                                ps += f" → {p['tip']}"
-                            param_strs.append(ps)
-                        line += "\n  Parameter:\n" + "\n".join(param_strs)
-                    if chain_result:
-                        chain_str = ", ".join(f"{r['fx']}" for r in chain_result)
-                        line += f"\n  Empfohlen mit: {chain_str}"
+                        line += "\n  Parameter:\n" + _fmt_params(params_result)
+                    if similar:
+                        line += "\n  Ähnliche Devices: " + ", ".join(r['n'] for r in similar)
+                    if wf_using:
+                        line += "\n  Workflows: " + ", ".join(r['n'] for r in wf_using)
+                    if genre_uses:
+                        line += "\n  Genres: " + ", ".join(
+                            f"{r['n']} ({r['role']})" for r in genre_uses)
                     if d.get('tips'):
                         import json
                         try:
@@ -104,27 +151,38 @@ def _query_neo4j(query: str) -> str:
 
                 parts.append("**Devices:**\n" + "\n\n".join(dev_lines))
 
-            # 3. Genre-Empfehlungen
+            # ── 3. Genre → Device-Set + verwandte Workflows ───────────────
             genres = s.run("""
                 MATCH (g:Genre)
                 WHERE any(w IN $words WHERE toLower(g.name) CONTAINS w)
                 WITH g LIMIT 2
                 MATCH (g)-[r:USES]->(d:Device)
                 RETURN g.name AS genre, g.bpm_min AS bmin, g.bpm_max AS bmax,
-                       collect({device: d.name, role: r.role, weight: r.weight})
-                       AS devices
-                LIMIT 2
+                       g.description AS gdesc,
+                       collect({device: d.name, role: r.role, weight: r.weight}) AS devices
             """, words=words).data()
 
             for g in genres:
-                devs = sorted(g["devices"], key=lambda x: -x.get("weight", 0))
-                dev_str = ", ".join(f"{d['device']} ({d['role']})" for d in devs[:6])
-                parts.append(
+                devs = sorted(g["devices"], key=lambda x: -(x.get("weight") or 0))
+                dev_str = ", ".join(f"{d['device']} ({d['role']})" for d in devs[:8])
+
+                # Traverse: Workflows die zu diesem Genre passen
+                genre_wfs = s.run("""
+                    MATCH (g:Genre {name: $name})-[:USES]->(d:Device)<-[:REQUIRES]-(w:Workflow)
+                    RETURN DISTINCT w.name AS n LIMIT 5
+                """, name=g["genre"]).data()
+
+                genre_text = (
                     f"**Genre: {g['genre']}** ({g['bmin']}–{g['bmax']} BPM)\n"
                     f"  Typische Devices: {dev_str}"
                 )
+                if g.get('gdesc'):
+                    genre_text += f"\n  {g['gdesc']}"
+                if genre_wfs:
+                    genre_text += "\n  Relevante Workflows: " + ", ".join(r['n'] for r in genre_wfs)
+                parts.append(genre_text)
 
-            # 4. Workflows
+            # ── 4. Workflows + benötigte Devices ─────────────────────────
             workflows = s.run("""
                 MATCH (w:Workflow)
                 WHERE any(w2 IN $words WHERE toLower(w.name) CONTAINS w2
@@ -146,12 +204,20 @@ def _query_neo4j(query: str) -> str:
                         steps = json.loads(steps_raw) if steps_raw.startswith("[") else steps_raw.split("\n")
                     except Exception:
                         steps = steps_raw.split("\n")
-                    step_lines = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(steps[:6]) if s)
+                    step_lines = "\n".join(f"  {i+1}. {st}" for i, st in enumerate(steps[:6]) if st)
                     if step_lines:
                         wf_text += "\n" + step_lines
+
+                # Traverse: welche Devices braucht dieser Workflow?
+                req_devs = s.run("""
+                    MATCH (w:Workflow {name: $name})-[:REQUIRES]->(d:Device)
+                    RETURN d.name AS n LIMIT 6
+                """, name=wf["name"]).data()
+                if req_devs:
+                    wf_text += "\n  Benötigte Devices: " + ", ".join(r['n'] for r in req_devs)
                 parts.append(wf_text)
 
-            # 4. Presets suchen
+            # ── 5. Presets ────────────────────────────────────────────────
             presets = s.run("""
                 MATCH (p:Preset)-[:BELONGS_TO]->(d:Device)
                 WHERE any(w IN $words WHERE toLower(p.name) CONTAINS w)
@@ -167,6 +233,67 @@ def _query_neo4j(query: str) -> str:
                 ]
                 parts.append("**Presets:**\n" + "\n".join(preset_lines))
 
+            # ── 6. "Ähnlich wie X" — SIMILAR_TO Traversal ────────────────
+            similar_query = s.run("""
+                MATCH (d:Device)-[:SIMILAR_TO]->(sim:Device)
+                WHERE any(w IN $words WHERE toLower(d.name) CONTAINS w)
+                RETURN d.name AS src, sim.name AS similar,
+                       sim.description AS desc, sim.use_case AS use_case
+                LIMIT 6
+            """, words=words).data()
+
+            if similar_query:
+                groups: dict[str, list] = {}
+                for r in similar_query:
+                    groups.setdefault(r['src'], []).append(r)
+                for src, rows in groups.items():
+                    sim_strs = []
+                    for r in rows:
+                        s_str = f"**{r['similar']}**"
+                        if r.get('desc'):
+                            s_str += f": {r['desc'][:80]}"
+                        sim_strs.append(s_str)
+                    parts.append(f"**Ähnlich wie {src}:**\n" + "\n".join(f"  • {s}" for s in sim_strs))
+
+            # ── 7. ProductionPatterns ─────────────────────────────────────
+            patterns = s.run("""
+                MATCH (p:ProductionPattern)
+                WHERE any(w IN $words WHERE toLower(p.name) CONTAINS w
+                       OR toLower(coalesce(p.description,'')) CONTAINS w
+                       OR toLower(coalesce(p.use_case,'')) CONTAINS w
+                       OR toLower(coalesce(p.genre,'')) CONTAINS w)
+                RETURN p.name AS name, p.description AS desc,
+                       p.use_case AS use_case, p.approach AS approach,
+                       p.difficulty AS difficulty, p.source_project AS source,
+                       p.genre AS genre
+                LIMIT 3
+            """, words=words).data()
+
+            for pat in patterns:
+                pat_text = f"**Produktions-Muster: {pat['name']}**"
+                if pat.get('genre'):
+                    pat_text += f" [{pat['genre']}]"
+                if pat.get('source'):
+                    pat_text += f" — aus: {pat['source']}"
+                if pat.get('desc'):
+                    pat_text += f"\n  {pat['desc'][:200]}"
+                if pat.get('use_case'):
+                    pat_text += f"\n  Wann: {pat['use_case'][:150]}"
+                if pat.get('approach'):
+                    pat_text += f"\n  Vorgehensweise: {pat['approach'][:300]}"
+                if pat.get('difficulty'):
+                    pat_text += f"\n  Schwierigkeit: {pat['difficulty']}"
+
+                # Traverse: welche Devices sind beteiligt?
+                pat_devs = s.run("""
+                    MATCH (p:ProductionPattern {name: $name})-[:INVOLVES]->(d:Device)
+                    RETURN d.name AS n LIMIT 6
+                """, name=pat["name"]).data()
+                if pat_devs:
+                    pat_text += "\n  Devices: " + ", ".join(r['n'] for r in pat_devs)
+
+                parts.append(pat_text)
+
     except Exception as e:
         return f"[Neo4j Fehler: {e}]"
 
@@ -175,19 +302,21 @@ def _query_neo4j(query: str) -> str:
 
 @tool
 def query_bitwig_docs(query: str, n_results: int = 6) -> str:
-    """Durchsucht die Bitwig-Wissensdatenbank (ChromaDB + Neo4j Graph).
+    """Durchsucht die Bitwig-Wissensdatenbank (Neo4j Graph + Vektorsuche).
 
-    Kombiniert zwei Quellen:
-    - ChromaDB: semantische Suche in Bitwig-Dokumentation und Workflows
-    - Neo4j: strukturiertes Wissen über alle 151 Devices, 2.663 Presets,
-             Parameter, Genre-Empfehlungen, Effektketten
+    Kombiniert strukturierten Graph-Traversal mit semantischer Suche:
+    - Devices mit Parametern, ähnlichen Devices (SIMILAR_TO), relevanten Workflows
+    - Genre → Device-Sets mit Rollen und verwandten Workflows
+    - Workflows → benötigte Devices
+    - Concepts → verknüpfte Devices
+    - Semantische Vektorsuche für kontextuelle Treffer
 
     Nutze dieses Tool für:
-    - Welche Devices für ein Genre? ("Dubstep Bass Setup")
-    - Parameter eines Instruments ("FM-4 Operator Ratio")
-    - Verfügbare Presets ("E-Kick Presets")
-    - Empfohlene Effektketten ("FM-4 mit welchen Effekten?")
-    - Workflows ("Reese Bass erstellen")
+    - Genre-spezifische Device-Empfehlungen ("Techno Bass", "Ambient Pad")
+    - Geräteparameter und Einstellungen ("SVF Resonance", "Compressor Threshold")
+    - Alternativen zu einem Device ("ähnlich wie Low-pass LD")
+    - Workflows mit Schritt-für-Schritt-Anleitung ("Sidechain Kompression")
+    - Kontext-übergreifende Fragen ("Kick klingt dünn", "warmer Pad-Sound")
 
     Args:
         query: Suchanfrage auf Deutsch oder Englisch

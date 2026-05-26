@@ -167,6 +167,41 @@ def collect_chunks(session) -> list[dict]:
             "content": text,
         })
 
+    # 5. ProductionPatterns
+    patterns = session.run("""
+        MATCH (p:ProductionPattern)
+        RETURN p.name AS name, p.description AS description,
+               p.use_case AS use_case, p.approach AS approach,
+               p.genre AS genre, p.difficulty AS difficulty,
+               p.source_project AS source_project
+        ORDER BY p.name
+    """).data()
+    for pat in patterns:
+        parts = [f"Produktions-Muster: **{pat['name']}**"]
+        if pat.get("genre"):
+            parts.append(f"[{pat['genre']}]")
+        if pat.get("source_project"):
+            parts.append(f"Quelle: {pat['source_project']}")
+        if pat.get("description"):
+            parts.append(pat["description"])
+        if pat.get("use_case"):
+            parts.append(f"Wann: {pat['use_case']}")
+        if pat.get("approach"):
+            parts.append(f"Vorgehensweise: {pat['approach']}")
+        if pat.get("difficulty"):
+            parts.append(f"Schwierigkeit: {pat['difficulty']}")
+        # Devices die beteiligt sind
+        pat_devs = session.run("""
+            MATCH (p:ProductionPattern {name: $name})-[:INVOLVES]->(d:Device)
+            RETURN d.name AS n LIMIT 8
+        """, name=pat["name"]).data()
+        if pat_devs:
+            parts.append("Devices: " + ", ".join(r["n"] for r in pat_devs))
+        chunks.append({
+            "source": f"ProductionPattern:{pat['name']}",
+            "content": "\n".join(parts),
+        })
+
     return chunks
 
 
@@ -240,7 +275,8 @@ def main() -> None:
           f"({sum(1 for c in chunks if c['source'].startswith('Device:'))} Devices, "
           f"{sum(1 for c in chunks if c['source'].startswith('Concept:'))} Concepts, "
           f"{sum(1 for c in chunks if c['source'].startswith('Workflow:'))} Workflows, "
-          f"{sum(1 for c in chunks if c['source'].startswith('Genre:'))} Genres)")
+          f"{sum(1 for c in chunks if c['source'].startswith('Genre:'))} Genres, "
+          f"{sum(1 for c in chunks if c['source'].startswith('ProductionPattern:'))} Patterns)")
 
     embed_and_store(chunks, args.batch, args.dry_run)
 
