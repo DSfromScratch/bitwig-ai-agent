@@ -67,6 +67,37 @@ Kein <think>-Block. Nur JSON.
 
 _TRACKS_RE = re.compile(r'"tracks"\s*:\s*\[', re.DOTALL)
 
+# Maps wrong/hallucinated device names → correct Bitwig internal names
+_DEVICE_NAME_MAP: dict[str, str] = {
+    # Drum aliases
+    "e-kick":           "v9 Kick",
+    "e-snare":          "v9 Snare",
+    "e-hihat":          "v9 Hat Closed",
+    "e-hat":            "v9 Hat Closed",
+    "e-clap":           "v9 Clap",
+    "e-tom":            "v9 Tom",
+    "hihat":            "v9 Hat Closed",
+    "kick drum":        "v9 Kick",
+    "snare drum":       "v9 Snare",
+    # Synth/melodic aliases (LLM hallucinations)
+    "pad":              "Phase-4",
+    "synth pad":        "Phase-4",
+    "atmosphere":       "Phase-4",
+    "atmosphäre":       "Phase-4",
+    "lead synth":       "FM-4",
+    "bass synth":       "FM-4",
+    "reese bass":       "FM-4",
+    "sub bass":         "FM-4",
+    "electric piano":   "E-Piano",
+    "e-piano":          "E-Piano",
+    "keys":             "Polysynth",
+    "synth":            "Phase-4",
+}
+
+
+def _normalize_instrument(name: str) -> str:
+    return _DEVICE_NAME_MAP.get(name.strip().lower(), name)
+
 
 def _kb_lookup(user_text: str, genre: str) -> str:
     try:
@@ -86,6 +117,7 @@ def _kb_lookup(user_text: str, genre: str) -> str:
     lines: list[str] = []
     try:
         with neo4j_session() as s:
+            # Genre → empfohlene Devices
             genres = s.run("""
                 MATCH (g:Genre)
                 WHERE any(w IN $words WHERE toLower(g.name) CONTAINS w
@@ -101,6 +133,7 @@ def _kb_lookup(user_text: str, genre: str) -> str:
                 devs = ", ".join(f"{r['device']} ({r['role']})" for r in genres[:5])
                 lines.append(f"Genre '{genre_name}' → Empfohlene Devices: {devs}")
 
+            # Device-Details + empfohlene FX
             devices = s.run("""
                 MATCH (d:Device)
                 WHERE any(w IN $words WHERE toLower(d.name) CONTAINS w
@@ -115,6 +148,29 @@ def _kb_lookup(user_text: str, genre: str) -> str:
                 line = f"Device '{dev['name']}' [{dev['cat']}]"
                 if dev.get("fx_chain"):
                     line += f" → empfohlene FX: {', '.join(dev['fx_chain'])}"
+                lines.append(line)
+
+            # Workflow-Kontext: passende Sound-Design-Rezepte
+            workflows = s.run("""
+                MATCH (w:Workflow)
+                WHERE any(word IN $words WHERE toLower(w.name) CONTAINS word
+                       OR toLower(coalesce(w.description,'')) CONTAINS word)
+                RETURN w.name AS name, w.description AS desc,
+                       w.osc_steps AS osc_steps
+                LIMIT 2
+            """, words=words).data()
+
+            for wf in workflows:
+                line = f"Workflow '{wf['name']}': {wf['desc'] or ''}"
+                if wf.get("osc_steps"):
+                    import json as _json
+                    try:
+                        steps = _json.loads(wf["osc_steps"])
+                        cmds = [s["cmd"] for s in steps if "cmd" in s][:5]
+                        if cmds:
+                            line += f" → OSC: {', '.join(cmds)}"
+                    except Exception:
+                        pass
                 lines.append(line)
 
     except Exception as e:
@@ -134,6 +190,7 @@ def _get_llm() -> ChatOpenAI:
         temperature=0.3,
         max_tokens=400,
         timeout=60,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
 
 
@@ -170,7 +227,7 @@ def _validate_tracks(tracks: list) -> list[dict] | None:
             continue
         result.append({
             "role":      role,
-            "instrument": str(t["instrument"]),
+            "instrument": _normalize_instrument(str(t["instrument"])),
             "preset":    str(t.get("preset", "") or ""),
             "fx_preset": str(t.get("fx_preset", "") or ""),
             "fx":        [str(f) for f in t.get("fx", []) if f],

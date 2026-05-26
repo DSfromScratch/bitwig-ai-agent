@@ -91,26 +91,63 @@ async def get_mcp_tools_subprocess() -> list:
             return tools
 
 
+_SETTINGS_TOOLS_WHITELIST = {
+    # Verbindung & Status
+    "check_bitwig_connection",
+    "bitwig_check_connection",
+    "get_bitwig_track_state",
+    # Transport
+    "bitwig_play",
+    "bitwig_stop",
+    "bitwig_set_tempo",
+    # Tracks
+    "bitwig_add_instrument_track",
+    "bitwig_add_audio_track",
+    "bitwig_add_effect_track",
+    "bitwig_add_group_track",
+    "bitwig_select_track",
+    "bitwig_set_track_volume",
+    "bitwig_pan_track",
+    "bitwig_solo_track",
+    "bitwig_mute_track",
+    "bitwig_set_send_level",
+    # Devices laden & steuern
+    "bitwig_load_instrument",
+    "bitwig_browser_commit",
+    "bitwig_browser_next",
+    "bitwig_set_parameter",
+    "bitwig_set_named_parameter",
+    "bitwig_eq_band",
+    # Allgemeine Bitwig-Kontrolle
+    "control_bitwig",
+    "setup_instrument_track",
+    # Launchpad MK2
+    "bitwig_launchpad_map",
+    "bitwig_launchpad_led",
+    "bitwig_launchpad_clear",
+    # Wissensdatenbank
+    "query_bitwig_docs",
+}
+
+
 def get_all_tools_combined() -> list:
-    """
-    Kombiniert MCP-Tools mit den Agent-eigenen Tools (song_tools).
-
-    MCP-Tools (39):  bitwig_load_instrument, bitwig_note_pattern, bitwig_play, ...
-    Agent-Tools: build_song, verify_song, query_bitwig_docs, ...
-
-    Duplikate werden durch MCP-Versionen ersetzt (vollständiger).
-    """
+    """Kombiniert MCP-Tools mit Agent-Tools — gefiltert auf Settings-Assistant-relevante Tools."""
     from src.agent.tools import ALL_TOOLS as agent_tools
 
     try:
         mcp_tools = get_mcp_tools_direct()
         mcp_names = {t.name for t in mcp_tools}
 
-        # Agent-Tools die NICHT im MCP-Server sind (KB-Query, Song-Genre, etc.)
-        unique_agent = [t for t in agent_tools if t.name not in mcp_names]
+        # Nur Whitelist-Tools aus MCP
+        filtered_mcp = [t for t in mcp_tools if t.name in _SETTINGS_TOOLS_WHITELIST]
 
-        combined = mcp_tools + unique_agent
-        return combined
+        # Agent-Tools: nur Whitelist, ohne MCP-Duplikate
+        unique_agent = [
+            t for t in agent_tools
+            if t.name in _SETTINGS_TOOLS_WHITELIST and t.name not in mcp_names
+        ]
+
+        return filtered_mcp + unique_agent
     except Exception as e:
         print(f"[mcp_bridge] MCP-Integration fehlgeschlagen: {e} — verwende Agent-Tools")
-        return agent_tools
+        return [t for t in agent_tools if t.name in _SETTINGS_TOOLS_WHITELIST]

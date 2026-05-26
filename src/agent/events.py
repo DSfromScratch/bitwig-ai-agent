@@ -124,7 +124,7 @@ def _register_default_subscribers(bus: EventBus) -> None:
     import os
     import json
 
-    log_dir = os.path.expanduser("~/bitwig-agent/logs")
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
     os.makedirs(log_dir, exist_ok=True)
     event_log_path = os.path.join(log_dir, "generation_events.jsonl")
 

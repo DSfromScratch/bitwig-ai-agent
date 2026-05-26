@@ -429,14 +429,19 @@ def build_song(project_json: str) -> str:
     project_json Schema:
     {
       "bpm": 120,
+      "return_tracks": [
+        {"name": "Room Reverb", "device": "Reverb"},
+        {"name": "Long Plate",  "device": "Convolution"}
+      ],
       "tracks": [
         {
           "index": 1,
           "instrument": "Phase-4",
           "fx": ["Distortion", "Amp"],
+          "sends": [0.7, 0.0],
           "clip": {
             "slot": 0,
-            "length_beats": 40,
+            "length_beats": 16,
             "notes": [
               {"step": 0, "pitch": 40, "vel": 0.8, "dur": 1.0},
               ...
@@ -447,15 +452,19 @@ def build_song(project_json: str) -> str:
     }
 
     Felder:
-      bpm            — Tempo in BPM (z.B. 120)
-      tracks         — Liste von Track-Objekten:
-        index        — Track-Nummer 1-basiert
-        instrument   — Bitwig-Device z.B. "Phase-4", "FM-4", "Polysynth"
-        fx           — optionale FX-Geräte z.B. ["Distortion", "Amp", "EQ-5"]
-        clip.slot    — Clip-Slot (0=Scene 1)
-        clip.length_beats — Clip-Länge in Beats
-        clip.notes   — MIDI-Noten: step=Beat-Position, pitch=MIDI 0-127,
-                       vel=0.0-1.0, dur=Länge in Beats
+      bpm                  — Tempo in BPM (z.B. 120)
+      return_tracks        — optionale Return/Effekt-Tracks (werden zuerst erstellt):
+        name               — Name des Return-Tracks (nur als Label)
+        device             — Bitwig-Device z.B. "Reverb", "Convolution", "Delay+"
+      tracks               — Liste von Track-Objekten:
+        index              — Track-Nummer 1-basiert
+        instrument         — Bitwig-Device z.B. "Phase-4", "FM-4", "Polysynth"
+        fx                 — optionale FX-Geräte z.B. ["Distortion", "Amp", "EQ-5"]
+        sends              — optionale Send-Pegel 0.0-1.0 pro Return-Track (Index entspricht return_tracks)
+        clip.slot          — Clip-Slot (0=Scene 1)
+        clip.length_beats  — Clip-Länge in Beats
+        clip.notes         — MIDI-Noten: step=Beat-Position, pitch=MIDI 0-127,
+                             vel=0.0-1.0, dur=Länge in Beats
 
     MIDI-Referenz Rock/Blues (tief):
       E2=40  G2=43  A2=45  B2=47  D3=50  E3=52
@@ -476,8 +485,9 @@ def build_song(project_json: str) -> str:
     except _json.JSONDecodeError as e:
         return f"Fehler: Ungültiges project_json — {e}"
 
-    bpm    = float(project.get("bpm", 120))
-    tracks = project.get("tracks", [])
+    bpm           = float(project.get("bpm", 120))
+    tracks        = project.get("tracks", [])
+    return_tracks = project.get("return_tracks", [])
     if not tracks:
         return "Fehler: project_json enthält keine 'tracks'"
 
@@ -496,6 +506,18 @@ def build_song(project_json: str) -> str:
     # ── 3. Tempo setzen ───────────────────────────────────────────────────────
     client.send_message("/transport/tempo", bpm)
     time.sleep(0.1)
+
+    # ── 3b. Return-Tracks erstellen ───────────────────────────────────────────
+    if return_tracks:
+        from src.agent.osc.saga import BitwigSaga, OscCommand
+        for rt in return_tracks:
+            client.send_message("/track/add/effect", 1)
+            time.sleep(0.4)
+            rt_device = rt.get("device", "")
+            if rt_device:
+                client.send_message("/browser/device/load", rt_device)
+                time.sleep(1.5)
+        results.append(f"{len(return_tracks)} Return-Track(s): {', '.join(rt.get('name','?') for rt in return_tracks)}")
 
     # ── 4. Track-Anzahl angleichen (überschüssige löschen, fehlende hinzufügen) ──
     needed_count = max(int(t.get("index", 1)) for t in tracks)
@@ -522,6 +544,7 @@ def build_song(project_json: str) -> str:
         slot       = int(clip.get("slot", 0))
         length     = float(clip.get("length_beats", 16.0))
         notes      = clip.get("notes", [])
+        drum_pads  = track.get("drum_pads", [])
 
         saga = BitwigSaga(client)
 
@@ -544,6 +567,17 @@ def build_song(project_json: str) -> str:
         if instrument:
             saga.step(OscCommand("/browser/device/load", [instrument]))
             time.sleep(1.5)
+
+        # Drum Pad Devices laden (Drum Machine: jedes Pad bekommt sein eigenes Instrument)
+        if drum_pads:
+            for pad_def in drum_pads:
+                pad_pitch  = int(pad_def.get("pad_pitch", 36))
+                pad_device = pad_def.get("device", "")
+                if pad_device:
+                    client.send_message("/drum/pad/pitch/enter", float(pad_pitch))
+                    time.sleep(0.4)
+                    client.send_message("/browser/device/load", pad_device)
+                    time.sleep(1.5)
 
         # Optionaler Preset
         if preset:
@@ -590,6 +624,14 @@ def build_song(project_json: str) -> str:
         else:
             saga.commit()
             results.append(f"Track {idx} ({instrument}): kein Clip")
+
+        # Send-Pegel setzen
+        sends = track.get("sends", [])
+        for send_idx, send_level in enumerate(sends):
+            level = max(0.0, min(1.0, float(send_level)))
+            if level > 0.0:
+                client.send_message(f"/track/{idx}/send/{send_idx}", level)
+                time.sleep(0.05)
 
     summary = f"build_song OK — BPM={bpm:.0f} | " + " | ".join(results)
     return summary

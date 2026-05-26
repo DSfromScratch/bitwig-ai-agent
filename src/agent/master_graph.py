@@ -19,7 +19,7 @@ def _setup_file_logging() -> None:
     root = logging.getLogger()
     if any(isinstance(h, logging.FileHandler) for h in root.handlers):
         return
-    log_dir = os.path.expanduser("~/bitwig-agent/logs")
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"agent_{datetime.now().strftime('%Y%m%d')}.log")
     fh = logging.FileHandler(log_file, encoding="utf-8")
@@ -66,6 +66,8 @@ _INSTRUMENT_KEYWORDS = {
 }
 
 _GENRE_KEYWORDS = [
+    # Multi-word genres before single words so the longer match wins
+    "drum and bass", "drum n bass", "dnb",
     "rock", "metal", "pop", "jazz", "blues", "ambient", "house", "techno",
     "trap", "hip-hop", "dubstep", "edm", "funk", "soul", "klassik", "classical",
     "drum", "schlagzeug", "drums",
@@ -77,11 +79,17 @@ _SCALE_KEYWORDS = [
 ]
 
 
+_GENRE_ALIAS: dict[str, str] = {
+    "dnb":        "drum and bass",
+    "drum n bass": "drum and bass",
+}
+
+
 def _extract_genre(text: str) -> str:
     lower = text.lower()
     for kw in _GENRE_KEYWORDS:
         if kw in lower:
-            return kw
+            return _GENRE_ALIAS.get(kw, kw)
     return ""
 
 
@@ -105,6 +113,28 @@ def _extract_scale_hint(text: str) -> str:
     return ""
 
 
+def _bpm_from_genre(genre: str) -> float | None:
+    """Holt BPM-Mittelwert des Genres aus Neo4j (bpm_min/bpm_max)."""
+    try:
+        from src.knowledge.neo4j_graph import session as neo4j_session, is_available
+        if not is_available():
+            return None
+    except Exception:
+        return None
+    try:
+        with neo4j_session() as s:
+            row = s.run(
+                "MATCH (g:Genre) WHERE toLower(g.name) CONTAINS toLower($genre) "
+                "RETURN g.bpm_min AS bpm_min, g.bpm_max AS bpm_max LIMIT 1",
+                genre=genre,
+            ).single()
+            if row and row.get("bpm_min") and row.get("bpm_max"):
+                return (float(row["bpm_min"]) + float(row["bpm_max"])) / 2
+    except Exception as exc:
+        log.debug("_bpm_from_genre Fehler: %s", exc)
+    return None
+
+
 # ── Nodes ─────────────────────────────────────────────────────────────────────
 
 def plan_node(state: AgentState) -> dict:
@@ -121,7 +151,15 @@ def plan_node(state: AgentState) -> dict:
     cfg_bpm    = ui_cfg.get("bpm")
     cfg_beats  = ui_cfg.get("length_beats") or ui_cfg.get("beat_count")
 
-    bpm = float(cfg_bpm) if cfg_bpm is not None else _extract_bpm(user_text, 120.0)
+    # cfg_bpm=0 means "not specified" — Bitwig UI sends 0 as default
+    if cfg_bpm:
+        bpm = float(cfg_bpm)
+    else:
+        bpm = _extract_bpm(user_text, 0.0)  # 0.0 = not found in text
+        if not bpm:
+            genre_hint = _extract_genre(user_text)
+            bpm = (_bpm_from_genre(genre_hint) if genre_hint else None) or 120.0
+
     beat_count = float(cfg_beats) if cfg_beats is not None else float(
         _extract_beats(user_text) or _beats_from_time(bpm, user_text) or 16.0
     )

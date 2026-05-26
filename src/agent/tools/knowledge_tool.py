@@ -4,7 +4,7 @@ from langchain_core.tools import tool
 
 
 def _query_neo4j(query: str) -> str:
-    """Sucht im Neo4j-Graph nach Devices, Parametern, Presets und Genres."""
+    """Sucht im Neo4j-Graph nach Devices, Parametern, Presets, Concepts und Genres."""
     try:
         from src.knowledge.neo4j_graph import session as neo4j_session
     except Exception:
@@ -16,25 +16,45 @@ def _query_neo4j(query: str) -> str:
     # Schlüsselwörter extrahieren
     words = [w for w in re.findall(r'\b\w{3,}\b', q_lower)
              if w not in ("was","wie","für","mit","und","oder","der","die","das",
-                          "for","with","the","and","how","what","which")]
+                          "for","with","the","and","how","what","which","gibt","eine",
+                          "einen","einem","welche","welchen","kann","beim","bitte")]
 
     if not words:
         return ""
 
-    pattern = "|".join(f"(?i).*{w}.*" for w in words[:4])
-
     try:
         with neo4j_session() as s:
-            # 1. Passende Devices finden
+            # 1. Concepts (Bitwig-Konzepte aus dem Handbuch)
+            concepts = s.run("""
+                MATCH (c:Concept)
+                WHERE any(w IN $words WHERE toLower(c.name) CONTAINS w
+                       OR toLower(coalesce(c.description,'')) CONTAINS w
+                       OR toLower(coalesce(c.category,'')) CONTAINS w)
+                RETURN c.name AS name, c.description AS desc,
+                       c.use_case AS use_case, c.category AS category
+                LIMIT 3
+            """, words=words).data()
+
+            if concepts:
+                lines = []
+                for c in concepts:
+                    line = f"**{c['name']}** [{c.get('category','')}]\n  {c.get('desc','')}"
+                    if c.get('use_case'):
+                        line += f"\n  Wann: {c['use_case']}"
+                    lines.append(line)
+                parts.append("**Bitwig-Konzepte:**\n" + "\n\n".join(lines))
+
+            # 2. Passende Devices finden
             devices = s.run("""
                 MATCH (d:Device)
                 WHERE any(w IN $words WHERE toLower(d.name) CONTAINS w
-                       OR toLower(d.category) CONTAINS w
-                       OR toLower(coalesce(d.description,'')) CONTAINS w)
-                RETURN d.name AS name, d.type AS type,
+                       OR toLower(coalesce(d.category,'')) CONTAINS w
+                       OR toLower(coalesce(d.description,'')) CONTAINS w
+                       OR toLower(coalesce(d.use_case,'')) CONTAINS w)
+                RETURN d.name AS name, d.device_type AS type,
                        d.category AS category, d.description AS desc,
-                       d.browser_path AS path
-                LIMIT 6
+                       d.use_case AS use_case, d.tips AS tips
+                LIMIT 5
             """, words=words).data()
 
             if devices:
@@ -42,36 +62,49 @@ def _query_neo4j(query: str) -> str:
                 for d in devices:
                     params_result = s.run("""
                         MATCH (dev:Device {name: $name})-[:HAS_PARAMETER]->(p:Parameter)
-                        WHERE p.source = 'bitwig_install'
-                        RETURN p.key AS key LIMIT 12
+                        RETURN p.name AS name, coalesce(p.description, p.key, '') AS desc,
+                               p.tip AS tip, p.low_means AS low, p.high_means AS high
+                        LIMIT 8
                     """, name=d["name"]).data()
-                    params = [r["key"] for r in params_result]
 
                     chain_result = s.run("""
                         MATCH (dev:Device {name: $name})-[r:RECOMMENDED_WITH]->(fx:Device)
-                        RETURN fx.name AS fx, r.reason AS reason LIMIT 4
+                        RETURN fx.name AS fx, r.reason AS reason LIMIT 3
                     """, name=d["name"]).data()
 
-                    preset_count = s.run("""
-                        MATCH (p:Preset)-[:BELONGS_TO]->(d:Device {name: $name})
-                        RETURN count(p) AS cnt
-                    """, name=d["name"]).single()["cnt"]
-
-                    line = f"**{d['name']}** [{d.get('category','?')}] — {d.get('desc','')}"
-                    if d.get('path'):
-                        line += f"\n  Browser: {d['path']}"
-                    if params:
-                        line += f"\n  Parameter: {', '.join(params[:10])}"
+                    line = f"**{d['name']}**"
+                    if d.get('desc'):
+                        line += f" — {d['desc']}"
+                    if d.get('use_case'):
+                        line += f"\n  Für: {d['use_case']}"
+                    if params_result:
+                        param_strs = []
+                        for p in params_result:
+                            ps = f"  • {p['name']}"
+                            if p.get('desc'):
+                                ps += f": {p['desc']}"
+                            if p.get('low') and p.get('high'):
+                                ps += f" (niedrig={p['low']}, hoch={p['high']})"
+                            if p.get('tip'):
+                                ps += f" → {p['tip']}"
+                            param_strs.append(ps)
+                        line += "\n  Parameter:\n" + "\n".join(param_strs)
                     if chain_result:
-                        chain_str = ", ".join(f"{r['fx']} ({r['reason']})" for r in chain_result)
+                        chain_str = ", ".join(f"{r['fx']}" for r in chain_result)
                         line += f"\n  Empfohlen mit: {chain_str}"
-                    if preset_count > 0:
-                        line += f"\n  Presets: {preset_count}"
+                    if d.get('tips'):
+                        import json
+                        try:
+                            tips = json.loads(d['tips']) if isinstance(d['tips'], str) else d['tips']
+                            if tips:
+                                line += f"\n  Tipp: {tips[0]}"
+                        except Exception:
+                            pass
                     dev_lines.append(line)
 
-                parts.append("**Devices aus Bitwig-Installation:**\n" + "\n\n".join(dev_lines))
+                parts.append("**Devices:**\n" + "\n\n".join(dev_lines))
 
-            # 2. Genre-Empfehlungen
+            # 3. Genre-Empfehlungen
             genres = s.run("""
                 MATCH (g:Genre)
                 WHERE any(w IN $words WHERE toLower(g.name) CONTAINS w)
@@ -91,21 +124,32 @@ def _query_neo4j(query: str) -> str:
                     f"  Typische Devices: {dev_str}"
                 )
 
-            # 3. Workflows
+            # 4. Workflows
             workflows = s.run("""
                 MATCH (w:Workflow)
                 WHERE any(w2 IN $words WHERE toLower(w.name) CONTAINS w2
-                         OR toLower(w.description) CONTAINS w2)
-                RETURN w.name AS name, w.description AS desc, w.steps AS steps
-                LIMIT 2
+                         OR toLower(coalesce(w.description,'')) CONTAINS w2
+                         OR toLower(coalesce(w.use_case,'')) CONTAINS w2)
+                RETURN w.name AS name, w.description AS desc,
+                       w.steps AS steps, w.use_case AS use_case
+                LIMIT 3
             """, words=words).data()
 
             for wf in workflows:
-                parts.append(
-                    f"**Workflow: {wf['name']}**\n{wf['desc']}\n"
-                    + "\n".join(f"  {i+1}. {step}"
-                                for i, step in enumerate((wf.get("steps") or "").split("\n")[:6]))
-                )
+                wf_text = f"**Workflow: {wf['name']}**\n  {wf.get('desc','')}"
+                if wf.get('use_case'):
+                    wf_text += f"\n  Wann: {wf['use_case']}"
+                steps_raw = wf.get("steps") or ""
+                if steps_raw:
+                    import json
+                    try:
+                        steps = json.loads(steps_raw) if steps_raw.startswith("[") else steps_raw.split("\n")
+                    except Exception:
+                        steps = steps_raw.split("\n")
+                    step_lines = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(steps[:6]) if s)
+                    if step_lines:
+                        wf_text += "\n" + step_lines
+                parts.append(wf_text)
 
             # 4. Presets suchen
             presets = s.run("""

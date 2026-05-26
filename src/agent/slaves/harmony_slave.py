@@ -34,6 +34,9 @@ _SCALE_INTERVALS = {
 
 def _detect_genre(user_text: str) -> str:
     lower = user_text.lower()
+    # Multi-word genres first so they don't get swallowed by shorter substrings
+    if "drum and bass" in lower or "drum n bass" in lower or "dnb" in lower:
+        return "drum and bass"
     for g in ("rock", "metal", "blues", "pop", "techno", "house", "ambient", "trap", "hip-hop", "dubstep"):
         if g in lower:
             return g
@@ -57,18 +60,27 @@ def _neo4j_genre_context(user_text: str) -> dict[str, Any]:
             row = s.run(
                 """
                 MATCH (g:Genre)
-                WHERE any(w IN $words WHERE toLower(g.name) CONTAINS w
-                       OR toLower(coalesce(g.description, '')) CONTAINS w)
-                RETURN g.name AS name, g.key_mode AS key_mode
+                WITH g,
+                     size([w IN $words WHERE toLower(g.name) CONTAINS w]) * 3 +
+                     size([w IN $words WHERE toLower(coalesce(g.description, '')) CONTAINS w]) AS score
+                WHERE score > 0
+                ORDER BY score DESC
+                RETURN g.name AS name, g.key_mode AS key_mode,
+                       g.bpm_min AS bpm_min, g.bpm_max AS bpm_max
                 LIMIT 1
                 """,
                 words=words,
             ).single()
             if row:
-                return {
+                result: dict[str, Any] = {
                     "genre": (row.get("name") or "").lower(),
                     "key_mode": (row.get("key_mode") or "").lower(),
                 }
+                bpm_min = row.get("bpm_min")
+                bpm_max = row.get("bpm_max")
+                if bpm_min and bpm_max:
+                    result["bpm"] = (float(bpm_min) + float(bpm_max)) / 2
+                return result
     except Exception as exc:
         log.debug("HarmonySlave Neo4j-Query fehlgeschlagen: %s", exc)
     return {}
@@ -113,6 +125,9 @@ def _register_for_context(genre: str, instrument_hint: str) -> tuple[int, int]:
     genre_l = (genre or "").lower()
     if "phase-4" in instrument_hint.lower() or any(k in genre_l for k in ("rock", "blues", "metal")):
         return 40, 52
+    if any(k in genre_l for k in ("drum and bass", "dnb", "dubstep")):
+        # Low bass register (28=E1) for Reese/sub-bass; pads/leads reach up to 57
+        return 28, 57
     if "pop" in genre_l:
         return 48, 60
     return 45, 57

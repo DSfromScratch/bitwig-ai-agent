@@ -92,34 +92,13 @@ OSC_HOST = os.getenv("BITWIG_HOST", "127.0.0.1")
 OSC_PORT = int(os.getenv("BITWIG_DM_PORT", "8001"))
 
 
-OSC_PONG_PORT = 8002   # Port auf dem Python auf /pong hört
-
-
 def _check_connection(timeout: float = 1.0) -> bool:
-    """Sendet /ping und wartet auf /pong von der BitwigAgentBridge."""
-    import socket, threading
-    received = threading.Event()
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.settimeout(timeout)
+    """Prüft Verbindung zur BitwigAgentBridge via Ping/Pong auf Reply-Port 9001."""
     try:
-        sock.bind(("0.0.0.0", OSC_PONG_PORT))
-    except OSError:
-        return True  # Port belegt → anderer Prozess hört bereits → Bridge läuft
-
-    def _listen():
-        try:
-            sock.recv(64)
-            received.set()
-        except Exception:
-            pass
-
-    threading.Thread(target=_listen, daemon=True).start()
-    _osc("/ping", 1)
-    result = received.wait(timeout)
-    sock.close()
-    return result
+        from src.agent.tools.song_tools import _check_bridge
+        return _check_bridge(timeout=timeout)
+    except Exception:
+        return False
 
 
 def _osc(address: str, value=1, host: str = OSC_HOST, port: int = OSC_PORT):
@@ -240,6 +219,46 @@ def bitwig_add_audio_track() -> str:
     _osc("/track/add/audio", 1)
     time.sleep(0.2)
     return "Audio-Track erstellt"
+
+
+@mcp.tool()
+def bitwig_add_effect_track() -> str:
+    """Erstellt einen neuen Effect/Return-Track in Bitwig Studio.
+    Effect-Tracks sind globale Send-Busse (z.B. Reverb, Delay).
+    Tracks senden via /track/{n}/send/{m} an Effect-Track m (0-basiert).
+    """
+    if err := _require_bridge(): return err
+    _osc("/track/add/effect", 1)
+    time.sleep(0.3)
+    return "Effect/Return-Track erstellt"
+
+
+@mcp.tool()
+def bitwig_set_send_level(track_index: int, send_index: int, level: float) -> str:
+    """Setzt den Send-Pegel eines Tracks zu einem Effect/Return-Track.
+
+    Args:
+        track_index: Track-Nummer (1-basiert)
+        send_index:  Index des Effect-Tracks (0-basiert, entspricht Reihenfolge der Effect-Tracks)
+        level:       Send-Pegel 0.0 (kein Send) bis 1.0 (voller Send)
+    """
+    if err := _require_bridge(): return err
+    level = max(0.0, min(1.0, float(level)))
+    # Kurze Pause damit Bitwig den Track vollständig initialisiert hat
+    time.sleep(0.8)
+    _osc(f"/track/{track_index}/send/{send_index}", level)
+    return f"Track {track_index} → Send {send_index} = {level:.2f}"
+
+
+@mcp.tool()
+def bitwig_add_group_track() -> str:
+    """Erstellt einen neuen Group-Track in Bitwig Studio.
+    Group-Tracks dienen als Container für mehrere Sub-Tracks (Drum Bus, Synth Bus etc.).
+    """
+    if err := _require_bridge(): return err
+    _osc("/track/add/group", 1)
+    time.sleep(0.3)
+    return "Group-Track erstellt (falls Bitwig-Action verfügbar)"
 
 
 @mcp.tool()
@@ -1053,6 +1072,63 @@ if __name__ == "__main__":
     print("Bitwig MCP Server startet...")
     print(f"OSC → {OSC_HOST}:{OSC_PORT} (BitwigAgentBridge)")
     mcp.run(transport="stdio")
+
+# ── Launchpad MK2 ─────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def bitwig_launchpad_map(pad_note: int, action: str) -> str:
+    """Weist einem Launchpad-Pad eine Bitwig-Aktion zu und setzt die LED-Farbe.
+
+    Pad-Noten (Launchpad MK2 Session-Modus):
+      Untere Reihe: 11–18  |  Zweite Reihe: 21–28  |  Dritte Reihe: 31–38
+      Vierte Reihe: 41–48  |  Fünfte Reihe: 51–58  |  Sechste Reihe: 61–68
+      Siebte Reihe: 71–78  |  Oberste Reihe: 81–88
+      Rechte Buttons: 19, 29, 39, 49, 59, 69, 79, 89
+
+    Verfügbare Aktionen:
+      play_stop   — Transport Play/Stop umschalten (grüne LED)
+      stop        — Transport Stop (orange)
+      record      — Aufnahme starten (rote LED)
+      undo        — Letzten Schritt rückgängig (gelbe LED)
+      loop_toggle — Loop an/aus (lila LED)
+      mute_toggle — Aktuellen Track muten (bernstein LED)
+      next_track  — Nächsten Track auswählen (cyan LED)
+      prev_track  — Vorherigen Track auswählen (blaue LED)
+
+    Args:
+        pad_note: MIDI-Note des Pads (z.B. 11 = unten links)
+        action:   Aktion aus der Liste oben
+    """
+    if err := _require_bridge(): return err
+    _osc("/launchpad/map", [int(pad_note), str(action)])
+    return f"Pad {pad_note} → {action} (LED aktiv)"
+
+
+@mcp.tool()
+def bitwig_launchpad_led(pad_note: int, r: int, g: int, b: int) -> str:
+    """Setzt die LED-Farbe eines Launchpad-Pads direkt (ohne Aktion zuzuweisen).
+
+    Args:
+        pad_note: MIDI-Note des Pads
+        r:        Rot-Wert 0–63
+        g:        Grün-Wert 0–63
+        b:        Blau-Wert 0–63
+    """
+    if err := _require_bridge(): return err
+    r = max(0, min(63, int(r)))
+    g = max(0, min(63, int(g)))
+    b = max(0, min(63, int(b)))
+    _osc("/launchpad/led", [int(pad_note), r, g, b])
+    return f"Pad {pad_note} LED = ({r},{g},{b})"
+
+
+@mcp.tool()
+def bitwig_launchpad_clear() -> str:
+    """Löscht alle Launchpad-Pad-Mappings und schaltet alle LEDs aus."""
+    if err := _require_bridge(): return err
+    _osc("/launchpad/clear", 1)
+    return "Alle Launchpad-Mappings gelöscht, LEDs aus"
+
 
 # ── Note-Counter ──────────────────────────────────────────────────────────────
 

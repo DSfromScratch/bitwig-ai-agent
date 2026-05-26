@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from typing import Any
 
 # ── Persistentes Logging ──────────────────────────────────────────────────────
-LOG_DIR  = os.path.expanduser("~/bitwig-agent/logs")
+LOG_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, f"agent_{datetime.now().strftime('%Y%m%d')}.log")
 
@@ -41,10 +41,7 @@ from src.agent.state import AgentState, GenerationPhase
 from src.agent.prompts import SYSTEM_PROMPT
 from src.agent.tools import ALL_TOOLS
 from src.agent.events import get_event_bus
-from src.agent.policy import (
-    enforce_policy_on_response,
-    is_concrete_track_task,
-)
+from src.agent.policy import enforce_policy_on_response
 
 
 _LATEST_UI_CONFIG: dict[str, Any] | None = None
@@ -130,7 +127,7 @@ def _patch_langchain_tool_call_parser() -> None:
 
 _patch_langchain_tool_call_parser()
 
-POLICY_LOG_DIR = os.path.expanduser("~/bitwig-agent/logs/policy_feedback")
+POLICY_LOG_DIR = os.path.join(LOG_DIR, "policy_feedback")
 POLICY_LOG_FILE = os.path.join(POLICY_LOG_DIR, "policy_feedback.jsonl")
 
 
@@ -168,6 +165,47 @@ _NUDGE_PREFIXES = (
     "Deine Antwort war leer.",
     "Dein Tool-Call war ungültig",
 )
+
+_HELP_TEXT = """\
+Verfügbare Befehle (mit / einleiten):
+
+Transport
+  /play              — Play/Stop umschalten
+  /stop              — Transport stoppen
+  /record            — Aufnahme starten
+  /tempo <bpm>       — Tempo setzen  (z.B. /tempo 128)
+  /loop              — Loop an/aus
+
+Tracks
+  /add track         — Instrument-Track hinzufügen
+  /add effect        — Effect/Return-Track hinzufügen
+  /add group         — Group-Track hinzufügen
+  /select <n>        — Track n auswählen
+  /mute <n>          — Track n muten
+  /solo <n>          — Track n solo
+  /volume <n> <wert> — Lautstärke setzen  (z.B. /volume 1 0.8)
+
+Devices
+  /load <name>       — Instrument laden  (z.B. /load Phase-4)
+  /param <n> <wert>  — Parameter n setzen  (0.0–1.0)
+  /undo              — Letzten Schritt rückgängig
+
+Launchpad MK2
+  /map pad <n> <aktion>  — Pad belegen  (z.B. /map pad 1 play_stop)
+  /clear pads            — Alle Pad-Mappings löschen
+
+  Aktionen: play_stop  stop  record  undo
+            loop_toggle  mute_toggle  next_track  prev_track
+  Pad-Noten: Pad 1=11, Pad 2=12, … Pad 8=18
+
+Info
+  /status            — Aktuellen Bitwig-Status abfragen
+  /hilfe             — Diese Übersicht
+
+Für Erklärungen einfach normal fragen — kein /  nötig:
+  "Wie funktioniert FM-4?"
+  "Was ist ein Sidechain-Kompressor?"
+"""
 
 # Schlüsselwörter im Reasoning → GenerationPhase-Mapping (Reihenfolge: spezifisch zuerst)
 _PHASE_SIGNALS: list[tuple[list[str], GenerationPhase]] = [
@@ -217,26 +255,33 @@ def _latest_human_is_nudge(messages: list) -> bool:
     return False
 
 
-def _select_tools_for_context(all_messages: list):
-    """Begrenzt Tool-Schema bei konkreten Track-Aufgaben, um Kontext zu sparen."""
-    tools = _get_tools()
-    user_text = _latest_user_text(all_messages)
+# Kurze Zustimmungen die vorherigen Vorschlag bestätigen → ausführen
+_CONFIRMATIONS = frozenset([
+    "ja", "ja bitte", "ja!", "ok", "klar", "gut", "los",
+    "mach das", "mach es", "alles klar", "bitte", "mach",
+])
 
-    if user_text:
-        lower = user_text.lower()
-        is_music_generation = any(
-            k in lower for k in ("song", "beat", "riff", "track", "musik", "melodie", "genre")
-        )
-        if is_concrete_track_task(user_text) or is_music_generation:
-            minimal = {
-                "check_bitwig_connection",
-                "build_song",
-                "verify_song",
-            }
-            narrowed = [t for t in tools if getattr(t, "name", "") in minimal]
-            if narrowed:
-                return narrowed
-    return tools
+def _is_knowledge_question(text: str) -> bool:
+    """Alles ist Wissensfrage AUSSER: Slash-Commands oder kurze Zustimmungen."""
+    lower = text.lower().strip()
+    # Slash-Command (/play, /add track, /hilfe ...) → sofort ausführen
+    if lower.startswith("/"):
+        return False
+    # Kurze Zustimmung zum vorherigen Vorschlag → ausführen
+    if lower in _CONFIRMATIONS or any(
+        lower == c or lower.startswith(c + " ") or lower.startswith(c + ",")
+        for c in _CONFIRMATIONS
+    ):
+        return False
+    # Alles andere → Wissensfrage: nur erklären, keine Tools
+    return True
+
+
+def _select_tools_for_context(all_messages: list):
+    user_text = _latest_user_text(all_messages)
+    if user_text and _is_knowledge_question(user_text):
+        return []  # Keine Tools → LLM kann nur erklären, nicht ausführen
+    return _get_tools()
 
 
 def _extract_think(text: str) -> tuple[str, str]:
@@ -368,6 +413,12 @@ def _recover_xml_fragment_once(
 
 def call_llm(state: AgentState) -> dict:
     all_messages = state["messages"]
+
+    # /hilfe — statische Antwort ohne LLM-Call
+    user_text = _latest_user_text(all_messages)
+    if user_text.lower().strip() in ("/hilfe", "/help", "/befehle", "/commands"):
+        return {"messages": [AIMessage(content=_HELP_TEXT)]}
+
     messages = all_messages[-MAX_MESSAGES:]
     # Tool-Results kürzen: notes_json-Antworten können Hunderte Tokens sein
     from langchain_core.messages import ToolMessage
@@ -379,7 +430,7 @@ def call_llm(state: AgentState) -> dict:
             trimmed.append(m)
     messages = trimmed
     selected_tools = _select_tools_for_context(all_messages)
-    llm = _get_llm().bind_tools(selected_tools)
+    llm = _get_llm().bind_tools(selected_tools) if selected_tools else _get_llm()
     system = SystemMessage(content=SYSTEM_PROMPT)
     log.info("LLM call — %d Nachrichten, %d Tools", len(messages), len(selected_tools))
     try:
@@ -571,25 +622,13 @@ def should_continue(state: AgentState) -> str:
 
 
 def route_by_phase(state: AgentState) -> str:
-    """
-    Deterministisches Phase-Routing — kombiniert Tool-Call-Prüfung mit
-    dem aus dem Reasoning abgeleiteten generation_phase-Wert.
-
-    Priorität:
-        1. Explizite Tool-Calls im letzten Message → "tools"
-        2. Letztes Message ist HumanMessage (Nudge nach think-only) → "agent"
-        3. phase "done"/"error" → END
-        4. Retry-Limit überschritten → END
-        5. phase "generating"/"setup"/"planning"/"verifying" → "tools"
-        6. Fallback: should_continue()
-    """
     last = state["messages"][-1] if state.get("messages") else None
+
+    # Explizite Tool-Calls → ausführen
     if last and hasattr(last, "tool_calls") and last.tool_calls:
         return "tools"
 
-    phase = state.get("generation_phase", "idle")
-
-    # Retry-Limit (vor Nudge prüfen, damit keine Endlos-Schleife entsteht)
+    # Retry-Limit
     if state.get("retry_count", 0) >= 3:
         return END
 
@@ -597,12 +636,13 @@ def route_by_phase(state: AgentState) -> str:
     if isinstance(last, HumanMessage):
         return "agent"
 
+    phase = state.get("generation_phase", "idle")
     if phase in ("done", "error"):
         return END
 
-    # Wenn Reasoning eine aktive Phase signalisiert hat → weiter
-    if phase in ("generating", "setup", "planning", "verifying"):
-        return "tools"
+    # Hat der Agent eine echte Textantwort gegeben (kein leerer Think-Only) → fertig
+    if isinstance(last, AIMessage) and (last.content or "").strip():
+        return END
 
     return should_continue(state)
 
@@ -743,6 +783,9 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
             if not prompt:
                 _send_ui_response("Prompt ist leer")
                 return
+            # Bitwig UI-Prompts immer ausführen (User hat explizit "Send" gedrückt)
+            if not prompt.startswith("/"):
+                prompt = "/ " + prompt
             _set_latest_ui_config({"bpm": bpm} if bpm else {})
             log.info("Agent UI Config empfangen: prompt=%s bpm=%s", prompt[:80], bpm)
             threading.Thread(target=_process_prompt, args=(prompt,), daemon=True).start()
@@ -753,48 +796,68 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
     dispatcher = Dispatcher()
     dispatcher.map("/agent/ui/prompt", _handle_prompt)
     dispatcher.map("/agent/ui/config", _handle_config)
-    server = osc_server.ThreadingOSCUDPServer((listen_host, listen_port), dispatcher)
+
+    import socket as _socket
+    # SO_REUSEPORT erlaubt sofortigen Neustart ohne "Address already in use"
+    server = osc_server.ThreadingOSCUDPServer((listen_host, listen_port), dispatcher,
+                                              bind_and_activate=False)
+    server.socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    try:
+        server.socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
+    except AttributeError:
+        pass  # SO_REUSEPORT nicht auf allen Plattformen verfügbar
+    server.server_bind()
+    server.server_activate()
+
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log.info("Agent UI OSC Listener aktiv auf %s:%d", listen_host, listen_port)
     return server
 
 
 if __name__ == "__main__":
-    from src.agent.policy import is_concrete_track_task
-    from src.agent.master_graph import run_master
-
     history = []
     history_lock = threading.Lock()
 
     def _run_request(user: str) -> str:
         nonlocal_history = history
         ui_cfg = _consume_latest_ui_config()
-        if is_concrete_track_task(user):
-            log.info("Master-Graph: concrete_track_task erkannt → parallele Slaves")
-            reply_local = run_master(user, nonlocal_history, ui_song_config=ui_cfg)
-            nonlocal_history.append(HumanMessage(content=user))
-            nonlocal_history.append(AIMessage(content=reply_local))
-        else:
-            nonlocal_history.append(HumanMessage(content=user))
-            graph = get_graph()
-            state = _default_state()
-            state["messages"] = nonlocal_history
-            if ui_cfg:
-                state["ui_song_config"] = ui_cfg
-            result = graph.invoke(state)
-            nonlocal_history[:] = result["messages"]
-            reply_local = nonlocal_history[-1].content
+        nonlocal_history.append(HumanMessage(content=user))
+        graph = get_graph()
+        state = _default_state()
+        state["messages"] = nonlocal_history
+        if ui_cfg:
+            state["ui_song_config"] = ui_cfg
+        result = graph.invoke(state)
+        nonlocal_history[:] = result["messages"]
+        reply_local = nonlocal_history[-1].content
         return reply_local
 
+    import sys, signal as _signal, time as _time
+
+    IDLE_TIMEOUT = int(os.getenv("AGENT_IDLE_TIMEOUT", "600"))  # Sekunden, 0 = kein Timeout
+    _last_request = [_time.monotonic()]
+
     def _run_request_threadsafe(user: str) -> str:
+        _last_request[0] = _time.monotonic()
         with history_lock:
             return _run_request(user)
 
+    def _idle_watchdog():
+        while True:
+            _time.sleep(30)
+            if IDLE_TIMEOUT > 0 and (_time.monotonic() - _last_request[0]) > IDLE_TIMEOUT:
+                log.info("Idle-Timeout (%ds) erreicht — Agent beendet sich.", IDLE_TIMEOUT)
+                os.kill(os.getpid(), _signal.SIGTERM)
+                break
+
+    if IDLE_TIMEOUT > 0:
+        threading.Thread(target=_idle_watchdog, daemon=True).start()
+        log.info("Idle-Timeout aktiv: %ds (AGENT_IDLE_TIMEOUT)", IDLE_TIMEOUT)
+
     _start_agent_ui_osc_listener(_run_request_threadsafe)
 
-    import sys, signal as _signal
     if not sys.stdin.isatty():
-        # Daemon-Modus (systemd / kein Terminal): nur OSC-Listener
+        # Daemon-Modus: OSC-Listener + Idle-Watchdog
         log.info("Daemon-Modus: OSC-Listener aktiv auf Port 9003. SIGTERM zum Beenden.")
         _signal.pause()
     else:

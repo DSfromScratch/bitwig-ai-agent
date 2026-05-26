@@ -24,6 +24,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private static final int OSC_REPLY_PORT  = 9001;
     private static final int OSC_AGENT_UI_PORT = 9003;
     private static final int TRACK_BANK_SIZE = 16;
+    private static final int MAX_SENDS       = 8;
     private static final int BROWSER_SCAN    = 128;
     private static final int REMOTE_PARAMS   = 8;
     private static final int CLIP_STEPS      = 512;  // 32 bars @ 1/16 (128 Beats)
@@ -32,6 +33,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private ControllerHost       host;
     private Transport            transport;
     private TrackBank            trackBank;
+    private TrackBank            effectTrackBank;
     private CursorTrack          cursorTrack;
     private CursorDevice         cursorDevice;
     private PopupBrowser         popupBrowser;
@@ -56,6 +58,11 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private Browser                  deviceBrowser;
     private DeviceBrowsingSession    deviceSession;
     private CursorBrowserResultItem  cursorResult;
+
+    // Launchpad MK2 MIDI
+    private MidiIn  launchpadIn;
+    private MidiOut launchpadOut;
+    private final Map<Integer, String> padMappings = new HashMap<>();
 
     // Katalog: Browser-Ergebnisname (lowercase) → Position im Bank
     private final Map<String, Integer> deviceCatalog = new HashMap<>();
@@ -245,7 +252,8 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
         host = (ControllerHost) getHost();
 
         transport    = host.createTransport();
-        trackBank    = host.createMainTrackBank(TRACK_BANK_SIZE, 0, SLOT_BANK_SIZE);
+        trackBank       = host.createMainTrackBank(TRACK_BANK_SIZE, MAX_SENDS, SLOT_BANK_SIZE);
+        effectTrackBank = host.createEffectTrackBank(MAX_SENDS, SLOT_BANK_SIZE);
         cursorTrack  = host.createCursorTrack("agent-cursor", "Agent Cursor", 0, SLOT_BANK_SIZE, true);
         cursorDevice = cursorTrack.createCursorDevice();
         popupBrowser = host.createPopupBrowser();
@@ -297,6 +305,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
         setupTrackBank();
         setupOsc(host);
         setupAgentUi();
+        setupLaunchpad();
 
         host.showPopupNotification("Bitwig Agent Bridge v2 (Port " + OSC_PORT + ")");
         host.println("[BitwigAgent] v2 gestartet — Port " + OSC_PORT);
@@ -448,6 +457,11 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             Channel t = (Channel) trackBank.getItemAt(i);
             t.name().markInterested();
             t.exists().markInterested();
+        }
+        for (int i = 0; i < MAX_SENDS; i++) {
+            Channel et = (Channel) effectTrackBank.getItemAt(i);
+            et.name().markInterested();
+            et.exists().markInterested();
         }
         cursorDevice.name().markInterested();
         cursorTrack.name().markInterested();
@@ -636,6 +650,16 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                 (src, msg) -> application.createInstrumentTrack(-1));
         space.registerMethod("/track/add/audio", "*", "Add audio track",
                 (src, msg) -> application.createAudioTrack(-1));
+        space.registerMethod("/track/add/effect", "*", "Add effect/return track",
+                (src, msg) -> application.createEffectTrack(-1));
+        space.registerMethod("/track/add/group", "*", "Add group track via action",
+                (src, msg) -> {
+                    try {
+                        application.getAction("create_group_track").invoke();
+                    } catch (Exception e) {
+                        host.println("[BitwigAgent] create_group_track action nicht verfügbar: " + e.getMessage());
+                    }
+                });
         space.registerMethod("/track/delete/last", "*", "Delete last (selected) track",
                 (src, msg) -> { cursorTrack.deleteObject(); });
         space.registerMethod("/undo", "*", "Undo last action",
@@ -682,7 +706,48 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             space.registerMethod("/track/" + n + "/solo", "*", "Solo " + n,
                     (src, msg) -> { float v = argFloat(msg, 0, -1f);
                         if (v < 0) t.solo().toggle(); else t.solo().set(v > 0); });
+            // Send-Level: /track/{n}/send/{m} <level 0.0-1.0>
+            for (int s = 0; s < MAX_SENDS; s++) {
+                final int sendIdx = s;
+                space.registerMethod("/track/" + n + "/send/" + s, "*", "Send " + n + "→" + s,
+                        (src, msg) -> {
+                            Send send = ((Track) t).getSend(sendIdx);
+                            if (send != null) send.value().set(argFloat(msg, 0, 0f));
+                        });
+            }
         }
+
+        // ── Effect-Track-Steuerung (Return Tracks) ────────────────────────
+        for (int i = 1; i <= MAX_SENDS; i++) {
+            final Channel et = (Channel) effectTrackBank.getItemAt(i - 1);
+            final String   n = String.valueOf(i);
+            space.registerMethod("/effect/" + n + "/select", "*", "Select effect " + n,
+                    (src, msg) -> et.selectInMixer());
+            space.registerMethod("/effect/" + n + "/volume", "*", "Effect volume " + n,
+                    (src, msg) -> et.volume().value().set(argFloat(msg, 0, 0.8f)));
+        }
+
+        // ── Drum Machine — Pad-Device-Kette betreten ─────────────────────
+        // /drum/pad/pitch/enter <midiPitch>
+        // Navigiert CursorDevice in die Device-Kette des Drum-Pads für den angegebenen MIDI-Pitch.
+        // Danach kann /browser/device/load <name> das Instrument für diesen Pad laden.
+        space.registerMethod("/drum/pad/pitch/enter", "*", "Enter drum pad device chain by MIDI pitch",
+                (src, msg) -> {
+                    int pitch = Math.max(0, Math.min(127, (int) argFloat(msg, 0, 36f)));
+                    cursorDevice.selectFirstInKeyPad(pitch);
+                    host.println("[BitwigAgent] Drum Pad pitch=" + pitch + " betreten");
+                });
+
+        // ── Effect-Track Count abfragen ───────────────────────────────────
+        space.registerMethod("/agent/effect/count", "*", "Get effect track count",
+                (src, msg) -> {
+                    int count = 0;
+                    for (int i = 0; i < MAX_SENDS; i++) {
+                        if (effectTrackBank.getItemAt(i).exists().get()) count++;
+                    }
+                    sendReply(src, "/agent/effect/count/response", count);
+                    host.println("[BitwigAgent] Effect tracks: " + count);
+                });
 
         // ── Browser — Standard-Navigation ─────────────────────────────────
         space.registerMethod("/browser/next", "*", "Browser next",
@@ -924,6 +989,55 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
 
         setupClipOsc(space);
 
+        // ── Launchpad MK2 — Pad-Mapping per OSC ──────────────────────────────
+        // /launchpad/map <pad_note> <action>  — weist einem Pad eine Bitwig-Aktion zu
+        // Pad-Noten: untere Reihe=11–18, zweite Reihe=21–28 usw., rechte Buttons=19,29,...
+        // Aktionen: play_stop, stop, record, undo, loop_toggle, mute_toggle, next_track, prev_track
+        space.registerMethod("/launchpad/map", "*", "Map Launchpad pad to Bitwig action",
+                (src, msg) -> {
+                    int    pad    = (int) argFloat(msg, 0, 11f);
+                    String action = argStr(msg, 1);
+                    if (action == null || action.isBlank()) return;
+                    action = action.toLowerCase().trim();
+                    padMappings.put(pad, action);
+                    int[] color = getActionColor(action);
+                    setLaunchpadLed(pad, color[0], color[1], color[2]);
+                    sendReply(src, "/launchpad/map/response", pad, action, 1);
+                    host.println("[Launchpad] Pad " + pad + " → " + action);
+                });
+
+        // /launchpad/led <pad_note> <r> <g> <b>  — setzt LED-Farbe direkt (0–63)
+        space.registerMethod("/launchpad/led", "*", "Set Launchpad pad LED color",
+                (src, msg) -> {
+                    int pad = (int) argFloat(msg, 0, 11f);
+                    int r   = Math.max(0, Math.min(63, (int) argFloat(msg, 1, 0f)));
+                    int g   = Math.max(0, Math.min(63, (int) argFloat(msg, 2, 0f)));
+                    int b   = Math.max(0, Math.min(63, (int) argFloat(msg, 3, 0f)));
+                    setLaunchpadLed(pad, r, g, b);
+                    host.println("[Launchpad] LED " + pad + " = (" + r + "," + g + "," + b + ")");
+                });
+
+        // /launchpad/clear  — alle Mappings löschen + LEDs ausschalten
+        space.registerMethod("/launchpad/clear", "*", "Clear all Launchpad mappings",
+                (src, msg) -> {
+                    for (int note : padMappings.keySet()) setLaunchpadLed(note, 0, 0, 0);
+                    padMappings.clear();
+                    sendReply(src, "/launchpad/clear/response", 1);
+                    host.println("[Launchpad] Alle Mappings gelöscht");
+                });
+
+        // /launchpad/mappings  — aktuelle Mappings zurückgeben
+        space.registerMethod("/launchpad/mappings", "*", "Get current Launchpad mappings",
+                (src, msg) -> {
+                    StringBuilder sb = new StringBuilder();
+                    for (Map.Entry<Integer, String> e : padMappings.entrySet()) {
+                        if (sb.length() > 0) sb.append(";");
+                        sb.append(e.getKey()).append("=").append(e.getValue());
+                    }
+                    sendReply(src, "/launchpad/mappings/response", sb.toString());
+                    host.println("[Launchpad] Mappings: " + sb);
+                });
+
         space.registerDefaultMethod((src, msg) ->
             host.println("[BitwigAgent] Unbekannt: " + msg.getAddressPattern()));
 
@@ -956,6 +1070,61 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             } catch (Exception e) {
                 host.println("[BitwigAgent] direkte reply fehlgeschlagen: " + e.getMessage());
             }
+        }
+    }
+
+    // ── Launchpad MK2 — MIDI Setup & Hilfsmethoden ───────────────────────────
+
+    private void setupLaunchpad() {
+        try {
+            launchpadIn  = host.getMidiInPort(0);
+            launchpadOut = host.getMidiOutPort(0);
+            launchpadIn.setMidiCallback((status, data1, data2) -> {
+                int type = status & 0xF0;
+                if (type == 0x90 && data2 > 0) {
+                    String action = padMappings.get(data1);
+                    if (action != null) executeAction(action);
+                }
+            });
+            host.println("[Launchpad] MIDI bereit (Port 0)");
+        } catch (Exception e) {
+            host.println("[Launchpad] MIDI nicht verfügbar: " + e.getMessage());
+        }
+    }
+
+    private void setLaunchpadLed(int note, int r, int g, int b) {
+        if (launchpadOut == null) return;
+        // SysEx ohne F0/F7: Manufacturer=00 20 29, Model=02 18, Cmd=0B, note, r, g, b
+        String hex = String.format("00 20 29 02 18 0B %02X %02X %02X %02X", note, r, g, b);
+        launchpadOut.sendSysex(hex);
+    }
+
+    private int[] getActionColor(String action) {
+        switch (action) {
+            case "play_stop":   return new int[]{0,  63, 0};   // grün
+            case "stop":        return new int[]{63, 20, 0};   // orange
+            case "record":      return new int[]{63, 0,  0};   // rot
+            case "undo":        return new int[]{63, 63, 0};   // gelb
+            case "loop_toggle": return new int[]{63, 0,  63};  // lila
+            case "mute_toggle": return new int[]{63, 30, 0};   // bernstein
+            case "next_track":  return new int[]{0,  63, 63};  // cyan
+            case "prev_track":  return new int[]{0,  30, 63};  // blau
+            default:            return new int[]{20, 20, 20};  // grau
+        }
+    }
+
+    private void executeAction(String action) {
+        host.println("[Launchpad] Aktion: " + action);
+        switch (action) {
+            case "play_stop":   transport.play(); break;
+            case "stop":        transport.stop(); break;
+            case "record":      transport.record(); break;
+            case "undo":        application.undo(); break;
+            case "loop_toggle": transport.isArrangerLoopEnabled().toggle(); break;
+            case "mute_toggle": cursorTrack.mute().toggle(); break;
+            case "next_track":  cursorTrack.selectNext(); break;
+            case "prev_track":  cursorTrack.selectPrevious(); break;
+            default: host.println("[Launchpad] Unbekannte Aktion: " + action);
         }
     }
 

@@ -49,18 +49,21 @@ public class BitwigAgentBridgeDefinition extends ControllerExtensionDefinition {
 
     @Override
     public int getNumMidiInPorts() {
-        return 0;
+        return 1;
     }
 
     @Override
     public int getNumMidiOutPorts() {
-        return 0;
+        return 1;
     }
 
     @Override
     public void listAutoDetectionMidiPortNames(
         AutoDetectionMidiPortNamesList list, PlatformType platformType) {
-        // Kein MIDI-Autodetect nötig
+        list.add(
+            new String[]{"Launchpad MK2 MIDI 1"},
+            new String[]{"Launchpad MK2 MIDI 1"}
+        );
     }
 
     @Override

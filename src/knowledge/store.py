@@ -57,10 +57,11 @@ def get_embeddings():
             check_embedding_ctx_length=False,
         )
     else:
-        # Fallback: Direkt aus lokalem HF-Cache laden (kein Download)
+        # Fallback: Direkt aus lokalem HF-Cache laden (CPU — GPU kann durch vLLM belegt sein)
         os.environ.setdefault("HF_HUB_OFFLINE", "1")  # kein Netzwerk-Check
         from langchain_huggingface import HuggingFaceEmbeddings
         return HuggingFaceEmbeddings(
             model_name=EMBED_MODEL,
+            model_kwargs={"device": "cpu"},
             encode_kwargs={"normalize_embeddings": True},
         )

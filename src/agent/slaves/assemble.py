@@ -1,9 +1,4 @@
-"""Assemble-Node — merged Slave-Outputs zu einem build_song JSON.
-
-InstrumentSlave liefert jetzt eine vollständige Track-Manifest-Liste.
-Für jede Rolle werden Noten programmatisch generiert (Drums) oder
-aus dem NoteSlave-Output abgeleitet (Bass, Chords, Lead, Pad, Melody).
-"""
+"""Assemble-Node — merged Slave-Outputs zu einem build_song JSON."""
 from __future__ import annotations
 
 import json
@@ -14,73 +9,6 @@ from src.agent.state import AgentState
 log = logging.getLogger("bitwig-agent.assemble")
 
 _MAX_SLAVE_RETRIES = 3
-
-
-# ── Programmatische Noten-Generatoren pro Rolle ───────────────────────────────
-
-def _build_kick_notes(target_beats: float) -> list[dict]:
-    notes = []
-    beat = 0.0
-    while beat < target_beats:
-        if int(beat) % 4 in (0, 2):
-            notes.append({"step": round(beat, 4), "pitch": 36, "vel": 0.90, "dur": 0.25})
-        beat += 1.0
-    return notes
-
-
-def _build_snare_notes(target_beats: float) -> list[dict]:
-    notes = []
-    beat = 0.0
-    while beat < target_beats:
-        if int(beat) % 4 in (1, 3):
-            notes.append({"step": round(beat, 4), "pitch": 38, "vel": 0.82, "dur": 0.25})
-        beat += 1.0
-    return notes
-
-
-def _build_hihat_notes(target_beats: float) -> list[dict]:
-    notes = []
-    step = 0.0
-    while step < target_beats:
-        vel = 0.55 if round(step % 1.0, 4) == 0.0 else 0.42
-        notes.append({"step": round(step, 4), "pitch": 42, "vel": vel, "dur": 0.1})
-        step = round(step + 0.5, 4)
-    return notes
-
-
-def _build_bass_notes(target_beats: float, harmony_result: dict) -> list[dict]:
-    preferred = [int(p) for p in (harmony_result.get("preferred_pitches") or [])]
-    root = preferred[0] if preferred else 40
-    # Root eine Oktave tiefer, auf dem Downbeat
-    root_low = max(28, root - 12)
-    notes = []
-    beat = 0.0
-    while beat < target_beats:
-        notes.append({"step": round(beat, 4), "pitch": root_low, "vel": 0.82, "dur": 0.75})
-        beat += 2.0
-    return notes
-
-
-def _build_chord_notes(target_beats: float, harmony_result: dict) -> list[dict]:
-    preferred = [int(p) for p in (harmony_result.get("preferred_pitches") or [])]
-    if len(preferred) < 3:
-        preferred = [48, 52, 55]
-    notes = []
-    step = 0.0
-    while step < target_beats:
-        for p in preferred[:3]:
-            notes.append({"step": round(step, 4), "pitch": int(p), "vel": 0.62, "dur": 1.75})
-        step += 2.0
-    return notes
-
-
-def _build_pad_notes(target_beats: float, harmony_result: dict) -> list[dict]:
-    preferred = [int(p) for p in (harmony_result.get("preferred_pitches") or [48, 52, 55])]
-    notes = []
-    for i in range(0, int(target_beats), 4):
-        for p in preferred[:3]:
-            notes.append({"step": float(i), "pitch": int(p), "vel": 0.42, "dur": 3.5})
-    return notes
 
 
 def _expand_notes(notes: list[dict], target_beats: float, pattern_beats: float) -> list[dict]:
@@ -96,64 +24,6 @@ def _expand_notes(notes: list[dict], target_beats: float, pattern_beats: float) 
             expanded.append({**n, "step": new_step})
         offset += pattern_beats
     return expanded
-
-
-def _clamp(notes: list[dict], low: int, high: int) -> list[dict]:
-    return [{**n, "pitch": max(low, min(high, int(n["pitch"])))} for n in notes]
-
-
-def _transpose(notes: list[dict], semitones: int) -> list[dict]:
-    return [{**n, "pitch": int(n["pitch"]) + semitones} for n in notes]
-
-
-# ── MIDI-Bereiche je Rolle (aus instrument_registry) ─────────────────────────
-
-def _midi_range(role: str) -> tuple[int, int]:
-    try:
-        from src.audio.instrument_registry import get_instrument
-        tmpl = get_instrument(role)
-        return tmpl["midi_low"], tmpl["midi_high"]
-    except Exception:
-        pass
-    defaults = {
-        "kick": (36, 36), "snare": (38, 38), "hihat": (42, 42),
-        "bass": (28, 52), "chords": (48, 72), "lead": (55, 84),
-        "pad": (48, 72), "melody": (55, 84),
-    }
-    return defaults.get(role, (36, 84))
-
-
-# ── Noten für eine Rolle ──────────────────────────────────────────────────────
-
-def _notes_for_role(
-    role: str,
-    notes_result: dict,
-    harmony_result: dict,
-    target_beats: float,
-) -> list[dict]:
-    pattern_beats = float(notes_result["length_beats"])
-    raw_notes = notes_result["notes"]
-
-    if role == "kick":
-        return _build_kick_notes(target_beats)
-    if role == "snare":
-        return _build_snare_notes(target_beats)
-    if role == "hihat":
-        return _build_hihat_notes(target_beats)
-    if role == "bass":
-        notes = _build_bass_notes(target_beats, harmony_result)
-        low, high = _midi_range("bass")
-        return _clamp(notes, low, high)
-    if role == "chords":
-        return _build_chord_notes(target_beats, harmony_result)
-    if role == "pad":
-        return _build_pad_notes(target_beats, harmony_result)
-    if role in ("lead", "melody"):
-        low, high = _midi_range(role)
-        notes = _expand_notes(raw_notes, target_beats, pattern_beats)
-        return _clamp(notes, low, high)
-    # Unbekannte Rolle → expandierte LLM-Noten
-    return _expand_notes(raw_notes, target_beats, pattern_beats)
 
 
 # ── Assemble-Node ─────────────────────────────────────────────────────────────
@@ -193,31 +63,91 @@ def assemble_node(state: AgentState) -> dict:
         log.error("Assemble: InstrumentSlave lieferte leere Track-Liste")
         return {"assembled_json": None, "generation_phase": "error"}
 
-    target_beats = float(plan.get("beat_count", notes_result["length_beats"]))
+    target_beats  = float(plan.get("beat_count", notes_result["length_beats"]))
+    pattern_beats = float(notes_result["length_beats"])
+    notes_by_role: dict[str, list] = notes_result.get("roles", {})
+
+    _DRUM_ROLES = {"kick", "snare", "hihat", "clap", "tom", "openhat", "crash"}
+
+    drum_defs    = [td for td in tracks_manifest if td["role"] in _DRUM_ROLES]
+    melodic_defs = [td for td in tracks_manifest if td["role"] not in _DRUM_ROLES]
 
     tracks: list[dict] = []
-    for i, track_def in enumerate(tracks_manifest, start=1):
-        role = track_def["role"]
-        notes = _notes_for_role(role, notes_result, harmony_result, target_beats)
+    track_idx = 1
+
+    # Jede Drum-Rolle → eigener Instrument-Track (vermeidet Drum-Machine-Pad-Navigation via OSC)
+    for td in drum_defs:
+        role = td["role"]
+        role_notes = notes_by_role.get(role, [])
+        expanded = _expand_notes(role_notes, target_beats, pattern_beats)
         tracks.append({
-            "index": i,
+            "index": track_idx,
+            "instrument": td["instrument"],
+            "preset": td.get("preset", "") or "",
+            "fx_preset": td.get("fx_preset", "") or "",
+            "fx": td.get("fx", []),
+            "clip": {
+                "slot": 0,
+                "length_beats": target_beats,
+                "notes": expanded,
+            },
+        })
+        track_idx += 1
+
+    # Melodische Tracks
+    for track_def in melodic_defs:
+        role  = track_def["role"]
+        notes = _expand_notes(notes_by_role.get(role, []), target_beats, pattern_beats)
+        tracks.append({
+            "index": track_idx,
             "instrument": track_def["instrument"],
-            "preset": track_def.get("preset", "") or "",
+            "preset":    track_def.get("preset", "") or "",
             "fx_preset": track_def.get("fx_preset", "") or "",
-            "fx": track_def.get("fx", []),
+            "fx":        track_def.get("fx", []),
             "clip": {
                 "slot": 0,
                 "length_beats": target_beats,
                 "notes": notes,
             },
         })
+        track_idx += 1
 
-    project = {"bpm": notes_result["bpm"], "tracks": tracks}
+    # ── Return-Tracks aus fx_hint ableiten ───────────────────────────────────
+    fx_hint   = (plan.get("fx_hint") or "").lower()
+    user_text = (plan.get("user_text") or "").lower()
+    return_tracks: list[dict] = []
+    if any(kw in fx_hint or kw in user_text for kw in ("reverb", "hall", "room", "plate", "return", "send")):
+        return_tracks.append({"name": "Reverb Send", "device": "Reverb"})
+    if any(kw in fx_hint or kw in user_text for kw in ("delay", "echo")):
+        return_tracks.append({"name": "Delay Send", "device": "Delay+"})
+
+    # Sends: nur melodische Rollen bekommen Reverb/Delay
+    _WET_ROLES = {"bass", "pad", "chords", "lead", "melody", "keys", "synth"}
+    if return_tracks:
+        for t in tracks:
+            role = next(
+                (td["role"] for td in tracks_manifest if td["instrument"] == t["instrument"]),
+                "",
+            )
+            sends = []
+            for rt in return_tracks:
+                if role in _WET_ROLES:
+                    sends.append(0.55 if "reverb" in rt["name"].lower() else 0.35)
+                else:
+                    sends.append(0.0)
+            if any(s > 0 for s in sends):
+                t["sends"] = sends
+
+    project: dict = {"bpm": notes_result["bpm"], "tracks": tracks}
+    if return_tracks:
+        project["return_tracks"] = return_tracks
+
     assembled = json.dumps(project, ensure_ascii=False)
 
     roles = [t["role"] for t in tracks_manifest]
+    rt_info = f", {len(return_tracks)} Return-Track(s)" if return_tracks else ""
     log.info(
-        "Assemble: %d Track(s) %s, %.0f Beats → %d Bytes",
-        len(tracks), roles, target_beats, len(assembled),
+        "Assemble: %d Track(s) %s%s, %.0f Beats → %d Bytes",
+        len(tracks), roles, rt_info, target_beats, len(assembled),
     )
     return {"assembled_json": assembled, "generation_phase": "generating"}
