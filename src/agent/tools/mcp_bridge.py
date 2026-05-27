@@ -96,31 +96,21 @@ _SETTINGS_TOOLS_WHITELIST = {
     "check_bitwig_connection",
     "bitwig_check_connection",
     "get_bitwig_track_state",
-    # Transport
+    # Transport (Einzel-Aktionen)
     "bitwig_play",
     "bitwig_stop",
     "bitwig_set_tempo",
-    # Tracks
-    "bitwig_add_instrument_track",
-    "bitwig_add_audio_track",
-    "bitwig_add_effect_track",
-    "bitwig_add_group_track",
+    # Mixer (nicht in execute_result abgedeckt)
     "bitwig_select_track",
     "bitwig_set_track_volume",
     "bitwig_pan_track",
     "bitwig_solo_track",
     "bitwig_mute_track",
-    "bitwig_set_send_level",
-    # Devices laden & steuern
-    "bitwig_load_instrument",
-    "bitwig_browser_commit",
-    "bitwig_browser_next",
-    "bitwig_set_parameter",
-    "bitwig_set_named_parameter",
     "bitwig_eq_band",
+    # Result-Executor — Multi-Step-Operationen (Track-Setup, Song, Objekte)
+    "execute_result",
     # Allgemeine Bitwig-Kontrolle
     "control_bitwig",
-    "setup_instrument_track",
     # Launchpad MK2
     "bitwig_launchpad_map",
     "bitwig_launchpad_led",

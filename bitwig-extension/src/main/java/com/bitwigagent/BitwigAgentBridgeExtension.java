@@ -884,6 +884,37 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                     host.println("[BitwigAgent] Browser-Suche: " + name);
                 });
 
+        // /browser/device/append <name>  — fügt Device ANS ENDE der Chain ein (afterDeviceInsertionPoint)
+        // Für Effects nach einem Instrument: Delay-2, Reverb, Chorus etc.
+        space.registerMethod("/browser/device/append", "*", "Append device after current (end of chain)",
+                (src, msg) -> {
+                    String name = argStr(msg, 0);
+                    if (name == null || name.isBlank()) return;
+                    String key = name.toLowerCase().trim();
+
+                    // Built-in Device via UUID — afterDeviceInsertionPoint
+                    String uuidStr = BUILTIN_UUIDS.get(key);
+                    if (uuidStr != null) {
+                        try {
+                            UUID uuid = UUID.fromString(uuidStr);
+                            cursorDevice.afterDeviceInsertionPoint().insertBitwigDevice(uuid);
+                            host.println("[BitwigAgent] UUID-Append: " + name + " (" + uuidStr + ")");
+                            host.showPopupNotification("Hinzugefügt: " + name);
+                            return;
+                        } catch (Exception e) {
+                            host.println("[BitwigAgent] UUID-Fehler für " + name + ": " + e.getMessage());
+                        }
+                    }
+
+                    // Fallback: Browser mit browseToInsertAfterDevice
+                    popupBrowser.cancel();
+                    cursorDevice.browseToInsertAfterDevice();
+                    loadTarget      = key;
+                    pendingLoadName = key;
+                    loadWaitLeft    = 3;
+                    host.println("[BitwigAgent] Browser-Append-Suche: " + name);
+                });
+
         space.registerMethod("/browser/preset", "*", "Open preset browser",
                 (src, msg) -> cursorDevice.browseToReplaceDevice());
 

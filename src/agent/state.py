@@ -27,6 +27,44 @@ class BitwigTrack(TypedDict):
     has_clips:  list[int]   # Slot-Indizes mit Clips
 
 
+# ── Result-Objekt: kontextabhängiger Ausführungsplan ──────────────────────────
+#
+# Der LLM erstellt ein BitwigResult wenn eine Anfrage ≥2 Schritte erfordert.
+# Der execute_result-Executor läuft die Steps einmal sequentiell ab — kein
+# ad-hoc Tool-Calling, keine Retry-Schleifen.
+#
+# context_type steuert welche Felder in `target` erwartet werden:
+#   "track"  → target: {track_index: int}
+#   "song"   → target: {bpm: float, genre: str}
+#   "object" → target: {type: str, ...}  (bestehendes Bitwig-Objekt)
+#
+# Step-Typen (type-Feld):
+#   load_instrument  args: {track_index, name}
+#   append_effect    args: {track_index, name}
+#   set_param        args: {track_index, index, value}
+#   set_param_named  args: {track_index, param_name, value}
+#   set_send         args: {track_index, send_index, level}
+#   set_tempo        args: {bpm}
+#   add_track        args: {track_type}   (instrument/audio/return)
+#   select_track     args: {track_index}
+#   play             args: {}
+#   stop             args: {}
+
+class ResultStep(TypedDict):
+    type:   str             # Step-Typ (s.o.)
+    args:   dict            # Tool-spezifische Parameter
+    status: str             # "pending" | "done" | "error"
+    note:   Optional[str]   # Optionale Begründung vom LLM
+
+
+class BitwigResult(TypedDict):
+    context_type:   str              # "track" | "song" | "object"
+    target:         dict             # Was bearbeitet wird
+    neo4j_context:  list             # Findings aus Knowledge Base
+    steps:          list             # list[ResultStep] — Ausführungsplan
+    summary:        Optional[str]    # Kurzbeschreibung was das Result darstellt
+
+
 # ── Song-Kompositionsplan (wird vor erster OSC-Nachricht erstellt) ─────────────
 
 class SongBlueprint(TypedDict):
@@ -73,6 +111,8 @@ class AgentState(TypedDict):
     tracks:        list[BitwigTrack]
     tempo:         float
     bridge_ok:     bool
+    # Result-Objekt: aktueller Ausführungsplan (None wenn kein aktives Result)
+    bitwig_result: Optional[BitwigResult]
     # Song-Generierungs-Kontext
     generation_phase:   GenerationPhase
     song_blueprint:     Optional[SongBlueprint]

@@ -57,11 +57,7 @@ def get_embeddings():
             check_embedding_ctx_length=False,
         )
     else:
-        # Fallback: Direkt aus lokalem HF-Cache laden (CPU — GPU kann durch vLLM belegt sein)
-        os.environ.setdefault("HF_HUB_OFFLINE", "1")  # kein Netzwerk-Check
-        from langchain_huggingface import HuggingFaceEmbeddings
-        return HuggingFaceEmbeddings(
-            model_name=EMBED_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
+        raise RuntimeError(
+            f"Embedding-Server nicht erreichbar ({EMBEDDING_SERVER}). "
+            "Starte den Server mit: python src/knowledge/embedding_server.py"
         )

@@ -34,6 +34,10 @@ EventType = Literal[
     "reasoning",        # LLM <think>-Inhalt — enthält phase_hint für State-Steuerung
     "phase_change",     # generation_phase hat sich geändert
     "invalid_tool_output",  # LLM lieferte kaputten/abgeschnittenen Tool-Call
+    # ── Result-Executor Events ────────────────────────────────────────────────
+    "result_step_done", # Ein Step erfolgreich ausgeführt: {type, args, index}
+    "result_step_error",# Step fehlgeschlagen: {type, args, index, error}
+    "result_done",      # Alle Steps abgearbeitet: {context_type, target, done, errors}
 ]
 
 

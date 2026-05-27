@@ -160,7 +160,7 @@ load_dotenv()
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 _THINK_OPEN = re.compile(r"<think>.*", re.DOTALL)
 _TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
-MAX_MESSAGES = 10  # Kontext-Budget: 10 reichen; mehr → Kontext-Overflow bei 16k-Limit
+MAX_MESSAGES = 30  # Kontext-Budget für mehrstufige Setups (Phase-4 + FX = ~15 Schritte)
 _NUDGE_PREFIXES = (
     "Deine Antwort war leer.",
     "Dein Tool-Call war ungültig",
@@ -278,9 +278,6 @@ def _is_knowledge_question(text: str) -> bool:
 
 
 def _select_tools_for_context(all_messages: list):
-    user_text = _latest_user_text(all_messages)
-    if user_text and _is_knowledge_question(user_text):
-        return []  # Keine Tools → LLM kann nur erklären, nicht ausführen
     return _get_tools()
 
 
@@ -321,7 +318,8 @@ def _recover_tool_calls(response: AIMessage, state: AgentState | None = None) ->
 
 _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
     "query_bitwig_docs", "control_bitwig", "build_song",
-    "check_bitwig_connection", "get_bitwig_track_state", "setup_instrument_track",
+    "check_bitwig_connection", "get_bitwig_track_state",
+    "execute_result",
     "write_notes_to_clip", "verify_song", "get_pattern_context", "compose_arrangement",
     "create_song_structure", "get_song_form",
     "get_genre_overview", "get_section_proposal",
@@ -666,6 +664,7 @@ def _default_state() -> "AgentState":
         "tracks":            [],
         "tempo":             120.0,
         "bridge_ok":         False,
+        "bitwig_result":     None,
         # Song-Generierungs-Kontext
         "generation_phase":  "idle",
         "song_blueprint":    None,

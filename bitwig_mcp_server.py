@@ -384,6 +384,30 @@ def bitwig_load_instrument(
 
 
 @mcp.tool()
+def bitwig_append_effect(
+    track_index: int,
+    effect_name: str,
+) -> str:
+    """Fügt einen Effekt ans ENDE der Device-Chain eines Tracks an.
+
+    Benutze dieses Tool für FX auf Instrument-Tracks (Reverb, Delay-2, Chorus etc.)
+    — NICHT bitwig_load_instrument, das fügt vor dem Cursor ein und kann Reihenfolge
+    durcheinander bringen.
+
+    Args:
+        track_index: Track-Nummer (1-basiert)
+        effect_name: Bitwig-Device-Name (z.B. 'Reverb', 'Delay-2', 'Chorus', 'Compressor')
+    """
+    from pythonosc import udp_client
+    client = udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT)
+    client.send_message(f"/track/{track_index}/select", 1)
+    time.sleep(0.3)
+    client.send_message("/browser/device/append", effect_name)
+    time.sleep(0.5)
+    return f"'{effect_name}' ans Ende der Chain von Track {track_index} angehängt"
+
+
+@mcp.tool()
 def bitwig_browser_commit() -> str:
     """Bestätigt die aktuelle Browser-Auswahl in Bitwig."""
     _osc("/browser/commit", 1)
@@ -1149,3 +1173,163 @@ def bitwig_get_note_counts() -> str:
     lines.append(f"  ──────────────────────")
     lines.append(f"  TOTAL: {total} Noten")
     return "\n".join(lines)
+
+
+# ── execute_result — deterministischer Step-Executor ──────────────────────────
+
+@mcp.tool()
+def execute_result(result: dict) -> str:
+    """Führt ein BitwigResult-Objekt deterministisch aus.
+
+    Das Result-Objekt wird vom LLM basierend auf dem Kontext (Track-Setup,
+    Song, bestehendes Objekt) erstellt. Dieser Executor läuft alle Steps mit
+    status="pending" sequentiell ab — ein Tool-Call für den gesamten Plan.
+
+    Unterstützte Step-Typen:
+      load_instrument  args: {track_index, name}
+      append_effect    args: {track_index, name}
+      set_param        args: {track_index, index, value}
+      set_param_named  args: {track_index, param_name, value}
+      set_send         args: {track_index, send_index, level}
+      set_tempo        args: {bpm}
+      add_track        args: {track_type}
+      select_track     args: {track_index}
+      play             args: {}
+      stop             args: {}
+
+    Args:
+        result: BitwigResult dict mit steps[]-Liste
+    """
+    from pythonosc import udp_client
+    from src.agent.events import get_event_bus
+
+    if not _check_connection(timeout=1.5):
+        return "[execute_result] FEHLER: BitwigAgentBridge nicht erreichbar — Bitwig starten und Extension aktivieren"
+
+    client = udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT)
+    bus = get_event_bus()
+
+    def osc(addr: str, *vals):
+        if vals:
+            client.send_message(addr, list(vals) if len(vals) > 1 else vals[0])
+        else:
+            client.send_message(addr, 1)
+
+    steps = result.get("steps", [])
+    done: list[str] = []
+    errors: list[str] = []
+
+    for i, step in enumerate(steps):
+        if step.get("status") == "done":
+            continue
+
+        stype = step.get("type", "")
+        args  = step.get("args", {})
+
+        try:
+            if stype == "load_instrument":
+                track = int(args["track_index"])
+                name  = str(args["name"])
+                osc(f"/track/{track}/select", 1)
+                time.sleep(0.3)
+                osc("/browser/device/load", name)
+                time.sleep(0.5)
+                done.append(f"load_instrument '{name}' → Track {track}")
+
+            elif stype == "append_effect":
+                track = int(args["track_index"])
+                name  = str(args["name"])
+                osc(f"/track/{track}/select", 1)
+                time.sleep(0.3)
+                osc("/browser/device/append", name)
+                time.sleep(0.5)
+                done.append(f"append_effect '{name}' → Track {track}")
+
+            elif stype == "set_param":
+                track = int(args.get("track_index", 0))
+                idx   = int(args["index"])
+                val   = float(args["value"])
+                if track > 0:
+                    osc(f"/track/{track}/select", 1)
+                    time.sleep(0.1)
+                osc(f"/device/param/{idx}/value", val)
+                done.append(f"set_param [{idx}]={val}")
+
+            elif stype == "set_param_named":
+                track = int(args.get("track_index", 0))
+                pname = str(args["param_name"])
+                val   = float(args["value"])
+                if track > 0:
+                    osc(f"/track/{track}/select", 1)
+                    time.sleep(0.1)
+                client.send_message("/device/param/named", [pname, val])
+                done.append(f"set_param_named '{pname}'={val}")
+
+            elif stype == "set_send":
+                track      = int(args["track_index"])
+                send_index = int(args["send_index"])
+                level      = float(args["level"])
+                osc(f"/track/{track}/send/{send_index}/volume", level)
+                done.append(f"set_send Track {track} send[{send_index}]={level}")
+
+            elif stype == "set_tempo":
+                bpm = float(args["bpm"])
+                osc("/transport/tempo", bpm)
+                done.append(f"set_tempo {bpm} BPM")
+
+            elif stype == "add_track":
+                ttype = str(args.get("track_type", "instrument"))
+                osc(f"/track/add/{ttype}", 1)
+                time.sleep(0.2)
+                done.append(f"add_track type={ttype}")
+
+            elif stype == "select_track":
+                track = int(args["track_index"])
+                osc(f"/track/{track}/select", 1)
+                done.append(f"select_track {track}")
+
+            elif stype == "play":
+                osc("/transport/play", 1)
+                done.append("play")
+
+            elif stype == "stop":
+                osc("/transport/stop", 1)
+                done.append("stop")
+
+            else:
+                errors.append(f"step[{i}] unbekannter Typ: '{stype}'")
+                bus.emit("result_step_error", {"index": i, "type": stype, "args": args,
+                                               "error": f"unbekannter Typ: '{stype}'"})
+                continue
+
+            step["status"] = "done"
+            bus.emit("result_step_done", {"index": i, "type": stype, "args": args})
+
+        except Exception as exc:
+            step["status"] = "error"
+            err_msg = str(exc)
+            errors.append(f"step[{i}] {stype} FEHLER: {err_msg}")
+            bus.emit("result_step_error", {"index": i, "type": stype, "args": args,
+                                           "error": err_msg})
+
+    context_type = result.get("context_type", "?")
+    target = result.get("target", {})
+
+    bus.emit("result_done", {
+        "context_type": context_type,
+        "target":       target,
+        "summary":      result.get("summary", ""),
+        "steps_total":  len(steps),
+        "done":         len(done),
+        "errors":       errors,
+    })
+
+    summary_parts = [
+        f"✓ {len(done)} Steps ausgeführt",
+        *[f"  • {d}" for d in done],
+    ]
+    if errors:
+        summary_parts += [f"✗ {len(errors)} Fehler:", *[f"  • {e}" for e in errors]]
+
+    header = f"[execute_result] context={context_type} target={target}"
+    return header + "\n" + "\n".join(summary_parts)

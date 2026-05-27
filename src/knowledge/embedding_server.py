@@ -51,7 +51,7 @@ def _get_model():
 
     print(f"[EmbeddingServer] Lade Modell: {MODEL_NAME}")
     t = time.time()
-    model = SentenceTransformer(MODEL_NAME)
+    model = SentenceTransformer(MODEL_NAME, device="cpu")
     print(f"[EmbeddingServer] Modell geladen in {time.time()-t:.1f}s")
     return model
 

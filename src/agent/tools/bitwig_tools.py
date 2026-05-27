@@ -187,6 +187,17 @@ def control_bitwig(
         s("/browser/device/load", track_name or "Phase-4")
         sent.append(f"# Lade Instrument: {track_name} auf Track {track_index}")
 
+    # ── Effect ans Ende der Chain anhängen ───────────────────────────────
+    elif action == "append_effect":
+        # Fügt Effect NACH dem aktuellen Cursor-Device ein (End of Chain)
+        # Verhindert versehentliches Einfügen vor Phase-4 o.ä.
+        if track_index > 0:
+            s(f"/track/{track_index}/select", 1)
+            wait(200)
+        s("/browser/device/append", track_name or "Reverb")
+        wait(400)
+        sent.append(f"# Füge Effect ans Ende der Chain an: {track_name} auf Track {track_index}")
+
     # ── Parameter nach Name setzen ────────────────────────────────────────
     elif action == "set_param_named":
         # track_name = Parameter-Name, value = Wert 0.0-1.0
@@ -222,6 +233,7 @@ def control_bitwig(
             "browser_commit, browser_cancel, set_param, "
             "eq_freq, eq_gain, eq_q, "
             "launch_clip, create_clip, record_clip, "
+            "load_instrument, append_effect, "
             "setup_synth_project"
         )}
 
