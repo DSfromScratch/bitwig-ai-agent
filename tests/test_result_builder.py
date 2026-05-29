@@ -92,6 +92,7 @@ def _run_and_capture(prompt: str) -> dict | None:
     try:
         with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
+             patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
              patch("time.sleep"):
 
             graph = get_graph()
@@ -226,7 +227,9 @@ class TestResultBuilder:
         from langchain_core.messages import AIMessage
 
         with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
-             patch("pythonosc.udp_client.SimpleUDPClient"):
+             patch("pythonosc.udp_client.SimpleUDPClient"), \
+             patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
+             patch("time.sleep"):
 
             from src.agent.core import get_graph, _default_state
             from langchain_core.messages import HumanMessage
@@ -249,6 +252,103 @@ class TestResultBuilder:
             f"LLM rief bitwig_load_instrument direkt auf ({len(direct_load_calls)}x) "
             "statt es in execute_result Steps zu verpacken"
         )
+
+    @pytest.mark.integration
+    def test_song_context_multi_track(self, vllm_available):
+        """Für Beat/Song-Aufgaben nutzt LLM context_type='song' mit mehreren Tracks."""
+        if not vllm_available:
+            pytest.skip("vLLM nicht erreichbar")
+
+        result = _run_and_capture(
+            "Erstelle einen Gangster-Rap-Beat auf 88 BPM: "
+            "Kick auf Track 1 (Phase-4, Sine, Cutoff 0.2), "
+            "Snare auf Track 2 (FM-4), Hi-Hat auf Track 3 (Phase-4, Cutoff 0.7)."
+        )
+
+        assert result is not None, "execute_result nicht aufgerufen"
+        assert result.get("context_type") == "song", (
+            f"Erwartet context_type='song', got '{result.get('context_type')}'"
+        )
+        steps = result.get("steps", [])
+        tempo_steps = [s for s in steps if s.get("type") == "set_tempo"]
+        load_steps  = [s for s in steps if s.get("type") == "load_instrument"]
+        assert tempo_steps, "Kein set_tempo-Step für BPM 88"
+        assert len(load_steps) >= 2, f"Zu wenige load_instrument-Steps für Multi-Track: {len(load_steps)}"
+
+    @pytest.mark.integration
+    def test_ja_confirmation_executes(self, vllm_available):
+        """Nach einem Vorschlag + 'ja' führt der Agent execute_result aus."""
+        if not vllm_available:
+            pytest.skip("vLLM nicht erreichbar")
+
+        from langchain_core.messages import HumanMessage, AIMessage
+        from src.agent.core import get_graph, _default_state
+        from src.agent.events import get_event_bus, reset_event_bus
+
+        reset_event_bus()
+        bus = get_event_bus()
+        executed: list[dict] = []
+        bus.subscribe("result_done", lambda e: executed.append(e["payload"]))
+
+        try:
+            with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
+                 patch("pythonosc.udp_client.SimpleUDPClient"), \
+                 patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
+                 patch("time.sleep"):
+
+                graph = get_graph()
+                state = _default_state()
+                # Erster Turn: Beschreibung (kein execute_result erwartet)
+                first_response = "Ich würde Phase-4 auf Track 1 laden, Cutoff 0.35, Reverb drauf. Soll ich das einrichten?"
+                state["messages"] = [
+                    HumanMessage(content="Schlag mir einen warmen Pad-Sound auf Track 1 vor."),
+                    AIMessage(content=first_response),
+                    HumanMessage(content="ja"),
+                ]
+                graph.invoke(state)
+        finally:
+            bus.unsubscribe("result_done", lambda e: executed.append(e["payload"]))
+
+        assert len(executed) > 0, (
+            "Nach 'ja'-Bestätigung wurde execute_result nicht aufgerufen. "
+            "Agent ignoriert Kontext aus der History."
+        )
+
+    @pytest.mark.integration
+    def test_no_hallucinated_tools(self, vllm_available):
+        """LLM erfindet keine nicht-existenten Tools."""
+        if not vllm_available:
+            pytest.skip("vLLM nicht erreichbar")
+
+        from langchain_core.messages import HumanMessage, AIMessage
+
+        hallucinated = {
+            "bitwig_load_sample", "add_track", "setup_instrument_track",
+            "bitwig_add_instrument_track", "bitwig_set_parameter",
+            "bitwig_load_instrument",
+        }
+
+        with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
+             patch("pythonosc.udp_client.SimpleUDPClient"), \
+             patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
+             patch("time.sleep"):
+
+            from src.agent.core import get_graph, _default_state
+            graph = get_graph()
+            state = _default_state()
+            state["messages"] = [HumanMessage(
+                content="Lade Samples für Kick, Snare und Hi-Hat auf die Tracks 1, 2, 3."
+            )]
+            final = graph.invoke(state)
+
+        bad_calls = [
+            tc.get("name")
+            for msg in final.get("messages", [])
+            if isinstance(msg, AIMessage)
+            for tc in (msg.tool_calls or [])
+            if tc.get("name") in hallucinated
+        ]
+        assert not bad_calls, f"Halluzinierte Tool-Calls: {bad_calls}"
 
 
 # ── Unit-Test: Validator-Logik selbst ────────────────────────────────────────

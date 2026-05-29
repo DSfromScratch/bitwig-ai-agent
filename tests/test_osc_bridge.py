@@ -27,7 +27,7 @@ class TestOscConnection:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.settimeout(2.0)
             try:
-                sock.bind(("0.0.0.0", 8002))
+                sock.bind(("0.0.0.0", 9001))
                 data, _ = sock.recvfrom(512)
                 raw = data.decode("latin-1")
                 tag_idx = raw.find(",i")
@@ -113,10 +113,11 @@ class TestSongTools:
     def test_verify_song_structure(self, osc_available):
         if not osc_available:
             pytest.skip("BitwigAgentBridge nicht erreichbar")
-        import json
         from src.agent.tools.song_tools import verify_song
-        raw = verify_song.invoke({"play_seconds": 2.0})
-        result = json.loads(raw)
+        result = verify_song.invoke({"play_seconds": 2.0})
+        if isinstance(result, str):
+            import json
+            result = json.loads(result)
         assert "ok" in result
         assert "track_count" in result
         assert "warnings" in result

@@ -4,6 +4,7 @@ import com.bitwig.extension.api.opensoundcontrol.*;
 import com.bitwig.extension.callback.BooleanValueChangedCallback;
 import com.bitwig.extension.callback.StringValueChangedCallback;
 import com.bitwig.extension.controller.ControllerExtension;
+import com.bitwig.extension.controller.ControllerExtensionDefinition;
 import com.bitwig.extension.controller.api.*;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,7 +31,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private static final int CLIP_STEPS      = 512;  // 32 bars @ 1/16 (128 Beats)
     private static final int SLOT_BANK_SIZE  = 8;
 
-    private ControllerHost       host;
+    protected ControllerHost     host;
     private Transport            transport;
     private TrackBank            trackBank;
     private TrackBank            effectTrackBank;
@@ -243,7 +244,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private volatile String  fxCategoryTarget = null;
 
     protected BitwigAgentBridgeExtension(
-            BitwigAgentBridgeDefinition definition, ControllerHost host) {
+            ControllerExtensionDefinition definition, ControllerHost host) {
         super(definition, host);
     }
 
@@ -304,11 +305,16 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
         setupParamCatalog();
         setupTrackBank();
         setupOsc(host);
-        setupAgentUi();
-        setupLaunchpad();
+        setupExtras();
 
         host.showPopupNotification("Bitwig Agent Bridge v2 (Port " + OSC_PORT + ")");
         host.println("[BitwigAgent] v2 gestartet — Port " + OSC_PORT);
+    }
+
+    /** Optionale Extras — überschreibbar für Subklassen (z.B. BitwigOscBridgeExtension). */
+    protected void setupExtras() {
+        setupAgentUi();
+        setupLaunchpad();
     }
 
     // ── Bitwig-internes Agent-UI (Preferences) ──────────────────────────────
@@ -869,6 +875,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                             cursorDevice.beforeDeviceInsertionPoint().insertBitwigDevice(uuid);
                             host.println("[BitwigAgent] UUID-Insert: " + name + " (" + uuidStr + ")");
                             host.showPopupNotification("Geladen: " + name);
+                            sendReply(null, "/browser/device/loaded", name, 1);
                             return;
                         } catch (Exception e) {
                             host.println("[BitwigAgent] UUID-Fehler für " + name + ": " + e.getMessage());
@@ -900,6 +907,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                             cursorDevice.afterDeviceInsertionPoint().insertBitwigDevice(uuid);
                             host.println("[BitwigAgent] UUID-Append: " + name + " (" + uuidStr + ")");
                             host.showPopupNotification("Hinzugefügt: " + name);
+                            sendReply(null, "/browser/device/loaded", name, 1);
                             return;
                         } catch (Exception e) {
                             host.println("[BitwigAgent] UUID-Fehler für " + name + ": " + e.getMessage());

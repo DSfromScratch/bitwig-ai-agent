@@ -114,26 +114,28 @@ def get_bitwig_track_state() -> str:
     if not ok:
         return "Bridge nicht erreichbar. Bitwig starten und Extension aktivieren."
 
-    # ── Strategie 1: OSC-Rückkanal für Track-Count ───────────────────────────
+    # ── Strategie 1: OSC-Rückkanal für Track-Count + Track-Namen ────────────
     result_holder = {}
     client = _bound_osc_client(timeout=2.0)
     try:
         client.send_message("/agent/track/count", 1)
         data, _ = client._sock.recvfrom(4096)
         raw = data.decode("latin-1")
-        idx = raw.find(",i")
-        if idx > 0:
+        # OSC-Format: address | ",is\0" | int32(count) | string(names,comma-sep)
+        idx_s = raw.find(",is")
+        if idx_s >= 0:
+            count_bytes = data[idx_s + 4 : idx_s + 8]
+            if len(count_bytes) == 4:
+                result_holder["count"] = struct.unpack(">i", count_bytes)[0]
+            str_start = idx_s + 8
+            null_pos  = data.find(b"\x00", str_start)
+            if null_pos > str_start:
+                result_holder["names"] = data[str_start:null_pos].decode("utf-8", errors="ignore")
+        elif raw.find(",i") >= 0:
+            idx = raw.find(",i")
             count_bytes = data[idx + 4 : idx + 8]
             if len(count_bytes) == 4:
                 result_holder["count"] = struct.unpack(">i", count_bytes)[0]
-        idx_s = raw.find(",is")
-        if idx_s > 0:
-            after = data[idx_s + 4:]
-            name_start = after.find(b"\x00\x00") + 2
-            names_raw = after[name_start:]
-            end = names_raw.find(b"\x00")
-            if end > 0:
-                result_holder["names"] = names_raw[:end].decode("utf-8", errors="ignore")
     except OSError:
         pass
     finally:
@@ -143,17 +145,26 @@ def get_bitwig_track_state() -> str:
             pass
 
     if "count" in result_holder:
-        count = result_holder["count"]
-        names = result_holder.get("names", "")
-        next_idx = count + 1
-        track_list = names.split(",") if names else []
-        return (
-            f"Bitwig Track-Zustand:\n"
-            f"  Vorhandene Tracks: {count}\n"
-            f"  Track-Namen: {', '.join(track_list) if track_list else '(keine)'}\n"
-            f"  start_track_index für nächsten Song: {next_idx}\n"
-            f"  {'Leeres Projekt → start_track_index=1 verwenden' if count == 0 else f'{count} Tracks vorhanden → start_track_index={next_idx}'}"
+        count      = result_holder["count"]
+        names_raw  = result_holder.get("names", "")
+        track_list = [n.strip() for n in names_raw.split(",") if n.strip()] if names_raw else []
+        next_idx   = count + 1
+
+        if count == 0:
+            return "Bitwig Track-Zustand: Leeres Projekt — start_track_index=1"
+
+        lines = ["Bitwig Track-Zustand:"]
+        for idx_t, name in enumerate(track_list, start=1):
+            lines.append(f"  Track {idx_t}: {name}")
+        if len(track_list) < count:
+            lines.append(f"  ... ({count} Tracks gesamt)")
+        lines.append(f"Vorhandene Tracks: {count}")
+        lines.append(
+            f"→ Diese Tracks bereits belegt — nur Noten schreiben (write_drum_pattern/write_notes) "
+            f"mit track_index 1..{count}, KEIN add_track, KEIN load_instrument."
         )
+        lines.append(f"→ Neue Tracks (falls nötig) ab track_index={next_idx}.")
+        return "\n".join(lines)
 
     return "Track-Zustand unbekannt — Annahme: leeres Projekt, start_track_index=1"
 

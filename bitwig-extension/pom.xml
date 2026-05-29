@@ -101,12 +101,11 @@
           </dependency>
         </dependencies>
       </plugin>
-      <!-- Alle Klassen in eine JAR packen (.bwextension = JAR) -->
+      <!-- Drei Extensions als separate JARs bauen -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.4.1</version>
-        <!-- Fix CVE-2024-47554, CVE-2021-29425 (commons-io:2.11.0) -->
         <dependencies>
           <dependency>
             <groupId>commons-io</groupId>
@@ -114,17 +113,68 @@
             <version>2.16.1</version>
           </dependency>
         </dependencies>
+        <!-- Standard-JAR deaktivieren — wir bauen drei separate via executions -->
         <configuration>
-          <outputDirectory>${project.basedir}/dist</outputDirectory>
-          <finalName>BitwigAgentBridge</finalName>
-          <archive>
-            <manifest>
-              <mainClass>com.bitwigagent.BitwigAgentBridgeDefinition</mainClass>
-            </manifest>
-          </archive>
+          <skipIfEmpty>true</skipIfEmpty>
         </configuration>
+        <executions>
+          <!-- 1. BitwigAgentBridge (legacy — Agent + Launchpad kombiniert) -->
+          <execution>
+            <id>jar-agent-bridge</id>
+            <phase>package</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classifier>agent-bridge</classifier>
+              <excludes>
+                <exclude>com/bitwigagent/BitwigOscBridge*.class</exclude>
+                <exclude>com/bitwigagent/LaunchpadController*.class</exclude>
+              </excludes>
+              <archive>
+                <manifest>
+                  <mainClass>com.bitwigagent.BitwigAgentBridgeDefinition</mainClass>
+                </manifest>
+              </archive>
+            </configuration>
+          </execution>
+          <!-- 2. BitwigOscBridge (pure OSC, kein MIDI, kein Agent-UI) -->
+          <execution>
+            <id>jar-osc-bridge</id>
+            <phase>package</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classifier>osc-bridge</classifier>
+              <excludes>
+                <exclude>com/bitwigagent/BitwigAgentBridgeDefinition.class</exclude>
+                <exclude>com/bitwigagent/LaunchpadController*.class</exclude>
+              </excludes>
+              <archive>
+                <manifest>
+                  <mainClass>com.bitwigagent.BitwigOscBridgeDefinition</mainClass>
+                </manifest>
+              </archive>
+            </configuration>
+          </execution>
+          <!-- 3. LaunchpadController (standalone, 3 Modi: Control/Drum/Instrument) -->
+          <execution>
+            <id>jar-launchpad</id>
+            <phase>package</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classifier>launchpad</classifier>
+              <excludes>
+                <exclude>com/bitwigagent/BitwigAgentBridge*.class</exclude>
+                <exclude>com/bitwigagent/BitwigOscBridge*.class</exclude>
+              </excludes>
+              <archive>
+                <manifest>
+                  <mainClass>com.bitwigagent.LaunchpadControllerDefinition</mainClass>
+                </manifest>
+              </archive>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
-      <!-- Nach dem Build: JAR als .bwextension kopieren -->
+      <!-- Nach dem Build: JARs als .bwextension kopieren -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-antrun-plugin</artifactId>
@@ -135,11 +185,42 @@
             <goals><goal>run</goal></goals>
             <configuration>
               <target>
-                <copy file="${project.basedir}/dist/BitwigAgentBridge.jar"
+                <property name="build.dir"  value="${project.build.directory}"/>
+                <property name="art.ver"    value="${project.artifactId}-${project.version}"/>
+
+                <!-- 1. BitwigAgentBridge — services unverändert -->
+                <copy file="${build.dir}/${art.ver}-agent-bridge.jar"
                       tofile="${project.basedir}/dist/BitwigAgentBridge.bwextension"/>
+
+                <!-- 2. BitwigOscBridge — services auf OscBridgeDefinition korrigieren -->
+                <copy file="${build.dir}/${art.ver}-osc-bridge.jar"
+                      tofile="${build.dir}/BitwigOscBridge-fix.jar"/>
+                <echo file="${build.dir}/osc-service.txt"
+                      message="com.bitwigagent.BitwigOscBridgeDefinition"/>
+                <zip destfile="${build.dir}/BitwigOscBridge-fix.jar" update="true">
+                  <zipfileset file="${build.dir}/osc-service.txt"
+                    fullpath="META-INF/services/com.bitwig.extension.ExtensionDefinition"/>
+                </zip>
+                <copy file="${build.dir}/BitwigOscBridge-fix.jar"
+                      tofile="${project.basedir}/dist/BitwigOscBridge.bwextension"/>
+
+                <!-- 3. LaunchpadController — services auf LaunchpadControllerDefinition korrigieren -->
+                <copy file="${build.dir}/${art.ver}-launchpad.jar"
+                      tofile="${build.dir}/LaunchpadController-fix.jar"/>
+                <echo file="${build.dir}/lp-service.txt"
+                      message="com.bitwigagent.LaunchpadControllerDefinition"/>
+                <zip destfile="${build.dir}/LaunchpadController-fix.jar" update="true">
+                  <zipfileset file="${build.dir}/lp-service.txt"
+                    fullpath="META-INF/services/com.bitwig.extension.ExtensionDefinition"/>
+                </zip>
+                <copy file="${build.dir}/LaunchpadController-fix.jar"
+                      tofile="${project.basedir}/dist/LaunchpadController.bwextension"/>
+
                 <echo>
-Extension gebaut: dist/BitwigAgentBridge.bwextension
-Installieren: nach C:\Users\[User]\Documents\Bitwig Studio\Extensions\ kopieren
+Extensions gebaut:
+  dist/BitwigAgentBridge.bwextension   (legacy)
+  dist/BitwigOscBridge.bwextension     (pure OSC Bridge)
+  dist/LaunchpadController.bwextension (Launchpad: Control/Drum/Instrument)
                 </echo>
               </target>
             </configuration>

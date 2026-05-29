@@ -166,9 +166,17 @@ def _query_neo4j(query: str) -> str:
                 devs = sorted(g["devices"], key=lambda x: -(x.get("weight") or 0))
                 dev_str = ", ".join(f"{d['device']} ({d['role']})" for d in devs[:8])
 
+                # InstrumentTemplates für dieses Genre
+                templates = s.run("""
+                    MATCH (t:InstrumentTemplate)
+                    WHERE $genre IN t.genres
+                    RETURN t.role AS role, t.device_name AS device, t.uuid AS uuid
+                    ORDER BY t.role
+                """, genre=g["genre"].lower()).data()
+
                 # Traverse: Workflows die zu diesem Genre passen
                 genre_wfs = s.run("""
-                    MATCH (g:Genre {name: $name})-[:USES]->(d:Device)<-[:REQUIRES]-(w:Workflow)
+                    MATCH (g:Genre {name: $name})-[:USED_IN|USES*1..2]-(w:Workflow)
                     RETURN DISTINCT w.name AS n LIMIT 5
                 """, name=g["genre"]).data()
 
@@ -176,6 +184,12 @@ def _query_neo4j(query: str) -> str:
                     f"**Genre: {g['genre']}** ({g['bmin']}–{g['bmax']} BPM)\n"
                     f"  Typische Devices: {dev_str}"
                 )
+                if templates:
+                    tmpl_str = ", ".join(
+                        f"{t['role']}={t['device']}" + (" [builtin]" if t["uuid"] else "")
+                        for t in templates
+                    )
+                    genre_text += f"\n  Empfohlene Instrumente: {tmpl_str}"
                 if g.get('gdesc'):
                     genre_text += f"\n  {g['gdesc']}"
                 if genre_wfs:

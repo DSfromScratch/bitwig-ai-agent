@@ -318,7 +318,7 @@ def _recover_tool_calls(response: AIMessage, state: AgentState | None = None) ->
 
 _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
     "query_bitwig_docs", "control_bitwig", "build_song",
-    "check_bitwig_connection", "get_bitwig_track_state",
+    "check_bitwig_connection", "bitwig_check_connection", "get_bitwig_track_state",
     "execute_result",
     "write_notes_to_clip", "verify_song", "get_pattern_context", "compose_arrangement",
     "create_song_structure", "get_song_form",
