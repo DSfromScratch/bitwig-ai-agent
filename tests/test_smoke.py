@@ -314,30 +314,33 @@ def _bd_score(entry: str) -> float:
 
 
 class TestScoring:
-    """score_guitar_state: Drums/Bass/Gitarre werden korrekt bewertet."""
+    """score_guitar_state: Drums/Bass/Gitarre werden korrekt bewertet.
+
+    Launchpad-Workflow: Drums/Bass nach Track-Existenz (track_names), nicht Noten.
+    Gewichtung: Drums=0.30, Bass=0.30, Guitar=0.30, Tempo=0.10.
+    """
 
     @pytest.mark.unit
     def test_drums_full_score(self):
-        """8+ Drum-Noten → vollen Drum-Score (0.25)."""
+        """3 Drum-Tracks in Bitwig → vollen Drum-Score (0.30)."""
         from test_e2e_guitar import score_guitar_state
-        note_counts = {"__total__": 24, "v9 kick": 8, "v9 snare": 8, "v9 hi-hat": 8}
-        _, bd = score_guitar_state(4, note_counts)
-        assert _bd_score(bd["drums"]) == pytest.approx(0.25), f"Drums: {bd['drums']}"
+        track_names = ["v9 kick", "v9 snare", "v9 hat closed"]
+        _, bd = score_guitar_state(3, {}, track_names=track_names)
+        assert _bd_score(bd["drums"]) == pytest.approx(0.30), f"Drums: {bd['drums']}"
 
     @pytest.mark.unit
     def test_bass_fm4_score(self):
-        """FM-4 mit 4 Noten → vollen Bass-Score (0.25)."""
+        """FM-4 Track in Bitwig → vollen Bass-Score (0.30)."""
         from test_e2e_guitar import score_guitar_state
-        note_counts = {"__total__": 4, "fm-4 bass": 4}
-        _, bd = score_guitar_state(2, note_counts)
-        assert _bd_score(bd["bass"]) == pytest.approx(0.25), f"Bass: {bd['bass']}"
+        _, bd = score_guitar_state(1, {}, track_names=["fm-4 bass"])
+        assert _bd_score(bd["bass"]) == pytest.approx(0.30), f"Bass: {bd['bass']}"
 
     @pytest.mark.unit
     def test_phase4_not_counted_as_bass(self):
         """Phase-4 wird als Gitarre (nicht Bass) gewertet — kritischer Fehler wenn falsch."""
         from test_e2e_guitar import score_guitar_state
-        note_counts = {"__total__": 4, "phase-4": 4}
-        _, bd = score_guitar_state(2, note_counts)
+        note_counts = {"phase-4": 4}
+        _, bd = score_guitar_state(1, note_counts, track_names=["phase-4"])
         assert _bd_score(bd["bass"])   == pytest.approx(0.0), f"Phase-4 fälschlicherweise als Bass: {bd['bass']}"
         assert _bd_score(bd["guitar"]) >  0.0,                f"Phase-4 nicht als Gitarre erkannt: {bd['guitar']}"
 
@@ -345,16 +348,11 @@ class TestScoring:
     def test_full_arrangement_component_scores(self):
         """Drums + Bass + Gitarre + Tempo → jede Komponente korrekt bewertet."""
         from test_e2e_guitar import score_guitar_state
-        note_counts = {
-            "__total__": 32,  # Summe der Einzeltracks: 8+8+8+4+4
-            "v9 kick":   8,
-            "v9 snare":  8,
-            "v9 hi-hat": 8,
-            "fm-4 bass": 4,
-            "phase-4":   4,
-        }
-        score, bd = score_guitar_state(5, note_counts, result_text="Tempo: 120 BPM")
-        assert _bd_score(bd["drums"])  == pytest.approx(0.25), f"Drums: {bd['drums']}"
-        assert _bd_score(bd["bass"])   == pytest.approx(0.25), f"Bass:  {bd['bass']}"
+        track_names = ["v9 kick", "v9 snare", "v9 hat closed", "fm-4 bass", "phase-4"]
+        note_counts = {"phase-4": 4}   # nur Gitarren-Noten (OOP-Pfad)
+        score, bd = score_guitar_state(5, note_counts, result_text="Tempo: 120 BPM",
+                                        track_names=track_names)
+        assert _bd_score(bd["drums"])  == pytest.approx(0.30), f"Drums: {bd['drums']}"
+        assert _bd_score(bd["bass"])   == pytest.approx(0.30), f"Bass:  {bd['bass']}"
         assert _bd_score(bd["guitar"]) == pytest.approx(0.30), f"Guitar:{bd['guitar']}"
         assert score == pytest.approx(1.00), f"Gesamt-Score falsch: {score}\n{bd}"

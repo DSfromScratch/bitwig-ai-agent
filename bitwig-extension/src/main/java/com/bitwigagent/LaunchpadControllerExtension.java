@@ -90,8 +90,10 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private enum Mode { CONTROL, DRUM, INSTRUMENT }
     private Mode currentMode = Mode.CONTROL;
 
-    private MidiIn  midiIn;
-    private MidiOut midiOut;
+    private MidiIn    midiIn;
+    private MidiOut   midiOut;
+    private NoteInput drumNoteInput;
+    private NoteInput instNoteInput;
 
     private ControllerHost host;
     private Transport      transport;
@@ -117,6 +119,20 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         midiIn  = host.getMidiInPort(0);
         midiOut = host.getMidiOutPort(0);
+
+        // NoteInput für Drum-Modus: alle MIDI-Noten auf Kanal 1 (Launchpad-Standard)
+        drumNoteInput = midiIn.createNoteInput("LP Drums", "9?????", "8?????");
+        drumNoteInput.setShouldConsumeEvents(true);
+        drumNoteInput.setKeyTranslationTable(buildDrumTranslationTable());
+
+        // NoteInput für Instrument-Modus: eigener virtueller Kanal
+        instNoteInput = midiIn.createNoteInput("LP Instrument", "9?????", "8?????");
+        instNoteInput.setShouldConsumeEvents(true);
+        instNoteInput.setKeyTranslationTable(buildInstTranslationTable());
+
+        // Beide NoteInputs starten blockiert — MIDI-Callback übernimmt LED + Routing
+        drumNoteInput.setShouldConsumeEvents(false);
+        instNoteInput.setShouldConsumeEvents(false);
 
         midiIn.setMidiCallback(this::onMidi);
 
@@ -246,10 +262,11 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         if (pressed) {
             int vel = Math.max(1, Math.min(127, velocity));
-            midiOut.sendMidi(0x90 | DRUM_MIDI_CHANNEL, drumNote, vel);
+            // Note an Bitwig-Track via NoteInput senden (korrekte API, kein Loopback)
+            drumNoteInput.sendRawMidiEvent(0x99, drumNote, vel); // Kanal 10 (9)
             setLed(note, DRUM_COLOR_HIT[0], DRUM_COLOR_HIT[1], DRUM_COLOR_HIT[2]);
         } else {
-            midiOut.sendMidi(0x80 | DRUM_MIDI_CHANNEL, drumNote, 0);
+            drumNoteInput.sendRawMidiEvent(0x89, drumNote, 0);
             int[] col = drumColor(drumIdx);
             setLed(note, col[0], col[1], col[2]);
         }
@@ -292,10 +309,11 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         if (pressed) {
             int vel = Math.max(1, Math.min(127, velocity));
-            midiOut.sendMidi(0x90 | INST_MIDI_CHANNEL, midiNote, vel);
+            // Note an Bitwig-Track via NoteInput senden (Kanal 1)
+            instNoteInput.sendRawMidiEvent(0x90, midiNote, vel);
             setLed(note, INST_COLOR_HIT[0], INST_COLOR_HIT[1], INST_COLOR_HIT[2]);
         } else {
-            midiOut.sendMidi(0x80 | INST_MIDI_CHANNEL, midiNote, 0);
+            instNoteInput.sendRawMidiEvent(0x80, midiNote, 0);
             int[] col = instPadColor(midiNote);
             setLed(note, col[0], col[1], col[2]);
         }
@@ -333,6 +351,35 @@ public class LaunchpadControllerExtension extends ControllerExtension {
                 setLed(padNote, color[0], color[1], color[2]);
             }
         }
+    }
+
+    // ── Translation Tables für NoteInput ─────────────────────────────────────
+
+    private Integer[] buildDrumTranslationTable() {
+        Integer[] table = new Integer[128];
+        java.util.Arrays.fill(table, -1); // alle blockieren
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                int padNote  = DRUM_GRID_NOTES[row][col];
+                int drumNote = DRUM_NOTES[row * 4 + col];
+                if (padNote < 128) table[padNote] = drumNote;
+            }
+        }
+        return table;
+    }
+
+    private Integer[] buildInstTranslationTable() {
+        Integer[] table = new Integer[128];
+        java.util.Arrays.fill(table, -1);
+        for (int row = 1; row <= 8; row++) {
+            for (int col = 1; col <= 8; col++) {
+                int padNote  = row * 10 + col;
+                int midiNote = instNoteForPad(padNote);
+                if (padNote < 128 && midiNote >= 0 && midiNote <= 127)
+                    table[padNote] = midiNote;
+            }
+        }
+        return table;
     }
 
     // ── Modus wechseln ────────────────────────────────────────────────────────

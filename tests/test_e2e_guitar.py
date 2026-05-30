@@ -1,14 +1,14 @@
 """
 E2E Guitar Score Loop Test.
 
-Erstellt ein vollständiges Rock-Band-Arrangement (Drums + Bass + Gitarren-Lead)
-in zwei getrennten Agent-Calls (löst JSON-Truncation-Problem bei Full-Band).
+Erstellt ein vollständiges Rock-Band-Arrangement (Drums + Bass + Gitarren-Lead).
+Launchpad-Workflow: Agent legt nur Tracks und Instrumente an — keine Noten-Generierung.
+Gitarren-Lead wird direkt via BitwigResultBuilder (OOP) eingespielt.
 
 Score-Kriterien:
-  25 % — Drums vorhanden (v9 Kick/Snare/Hat in Bitwig-Tracks)
-  25 % — Bass vorhanden (FM-4 mit Noten)
-  30 % — Gitarren-Lead vorhanden (Phase-4 Track mit Noten)
-  10 % — Noten gesamt >= 16
+  30 % — Drum-Tracks vorhanden (v9 Kick/Snare/Hat in Bitwig-Tracks)
+  30 % — Bass-Track vorhanden (FM-4)
+  30 % — Gitarren-Lead vorhanden (Phase-4 Track mit Noten via OOP)
   10 % — Tempo gesetzt (120 BPM)
 
 Benötigt: Bitwig + BitwigAgentBridge + vLLM aktiv.
@@ -20,22 +20,18 @@ import pytest
 SCORE_THRESHOLD = 0.75
 MAX_ITERATIONS = 3
 
-# Zwei-Phasen-Workflow: execute_setup → get_bitwig_track_state → compose_notes pro Track
+# Launchpad-Workflow: Agent legt Tracks + Instrumente an, keine Noten
 # v9 Kick/Snare/Hat = Bitwig Built-in Sampler → laden sofort, kein Browser-Timeout
 DRUMS_BASS_PROMPT = (
-    "Erstelle Rock-Drums und Bass — 16 Beats, 120 BPM. Genau 4 Tracks, KEIN Lead. "
+    "Erstelle Rock-Drums und Bass — 120 BPM. Genau 4 Tracks, KEIN Lead. "
     "Instrumente: 'v9 Kick' (Track 1), 'v9 Snare' (Track 2), 'v9 Hat Closed' (Track 3), 'FM-4' (Track 4). "
-    "Ablauf: execute_setup (Tracks + Instrumente + Tempo), "
-    "dann get_bitwig_track_state, "
-    "dann compose_notes für jeden Track einzeln."
+    "Ablauf: execute_setup (Tracks + Instrumente + Tempo), dann get_bitwig_track_state."
 )
 
-# Kurzer, präziser Prompt → wenig Thinking-Tokens → kein Truncation
+# Kurzer Prompt für Gitarren-Track (wird via BitwigResultBuilder direkt ausgeführt, kein LLM)
 GUITAR_PROMPT = (
     "Füge Track 5 hinzu: Phase-4, Gitarren-Lead. "
-    "execute_setup: add_track + load_instrument(5,'Phase-4'). "
-    "compose_notes: 4 Noten step=0 pitch=52, step=4 pitch=55, step=8 pitch=57, step=12 pitch=59, "
-    "vel=0.8 dur=2, dann play."
+    "execute_setup: add_track + load_instrument(5,'Phase-4')."
 )
 
 _DRUM_KEYWORDS   = ("v9 kick", "v9 snare", "v9 hat", "drum machine", "e-kick", "e-snare")
@@ -53,8 +49,10 @@ def score_guitar_state(
 ) -> tuple[float, dict[str, str]]:
     """Bewertet ob ein vollständiges Rock-Arrangement mit Gitarre erstellt wurde.
 
-    track_names: Live-Track-Namen aus Bitwig (/agent/track/count) —
-                 ergänzt note_counts bei Timing-Problemen des noteCountMap.
+    Launchpad-Workflow: Drums/Bass werden nur nach Track-Existenz bewertet (keine Noten-Pflicht).
+    Gitarren-Lead wird nach Track-Existenz + Noten bewertet (OOP direkt via BitwigResultBuilder).
+
+    track_names: Live-Track-Namen aus Bitwig.
     """
     bd: dict[str, str] = {}
     _names = [n.lower() for n in (track_names or [])]
@@ -67,20 +65,20 @@ def score_guitar_state(
         """Prüft ob ein Track mit passendem Namen in Bitwig existiert."""
         return any(any(kw in name for kw in keywords) for name in _names)
 
-    # 1. Drums (25 %)
-    drum_notes  = _track_notes(_DRUM_KEYWORDS)
-    drum_tracks = sum(1 for k in note_counts
-                      if k != "__total__" and any(kw in k.lower() for kw in _DRUM_KEYWORDS))
-    ds = min(drum_notes / 8, 1.0) * 0.25
-    bd["drums"] = f"{drum_tracks} Tracks, {drum_notes} Noten → {ds:.2f}"
+    def _track_count_by(keywords: tuple[str, ...]) -> int:
+        return sum(1 for name in _names if any(kw in name for kw in keywords))
 
-    # 2. Bass (25 %)
-    bass_notes = _track_notes(_BASS_KEYWORDS)
-    bs = min(bass_notes / 4, 1.0) * 0.25
-    bd["bass"] = f"{bass_notes} Noten → {bs:.2f}"
+    # 1. Drums (30 %) — Launchpad-Workflow: Track-Existenz zählt, nicht Noten
+    drum_track_count = _track_count_by(_DRUM_KEYWORDS)
+    ds = min(drum_track_count / 3, 1.0) * 0.30   # 3 Drum-Tracks = voll
+    bd["drums"] = f"{drum_track_count} Tracks (v9 Kick/Snare/Hat) → {ds:.2f}"
 
-    # 3. Gitarren-Lead (30 %) — Kernkriterium
-    #    10 % für Track-Existenz (Phase-4 angelegt), 20 % für Noten
+    # 2. Bass (30 %) — Track-Existenz
+    bass_exists = _track_exists(_BASS_KEYWORDS)
+    bs = 0.30 if bass_exists else 0.0
+    bd["bass"] = f"exists={bass_exists} → {bs:.2f}"
+
+    # 3. Gitarren-Lead (30 %) — 10 % Track-Existenz + 20 % Noten (OOP-Pfad)
     guitar_notes  = _track_notes(_GUITAR_KEYWORDS)
     guitar_tracks = [k for k in note_counts
                      if k != "__total__" and any(kw in k.lower() for kw in _GUITAR_KEYWORDS)]
@@ -94,12 +92,7 @@ def score_guitar_state(
     )
     bd["guitar"] = f"[{label}] exists={guitar_exists} {guitar_notes} Noten → {gs:.2f}"
 
-    # 4. Gesamt-Noten (10 %)
-    total = sum(v for k, v in note_counts.items() if k != "__total__")
-    ns = min(total / 16, 1.0) * 0.10
-    bd["total_notes"] = f"{total} gesamt → {ns:.2f}"
-
-    # 5. Tempo (10 %)
+    # 4. Tempo (10 %)
     ts = (
         0.10
         if result_text and "120" in result_text
@@ -108,53 +101,34 @@ def score_guitar_state(
     )
     bd["tempo"] = f"→ {ts:.2f}"
 
-    return round(ds + bs + gs + ns + ts, 3), bd
+    return round(ds + bs + gs + ts, 3), bd
 
 
 def _build_guitar_feedback(
     score: float,
     breakdown: dict[str, str],
-    note_counts: dict[str, int],
-) -> tuple[str, str]:
-    """Gibt (drums_bass_feedback, guitar_feedback) zurück."""
-    guitar_score = float(breakdown["guitar"].split("→")[-1].strip())
-    drum_score   = float(breakdown["drums"].split("→")[-1].strip())
-    bass_score   = float(breakdown["bass"].split("→")[-1].strip())
+    track_names: list[str],
+) -> str:
+    """Gibt drums_bass_feedback zurück (guitar wird via OOP ausgeführt, kein Feedback nötig)."""
+    drum_score = float(breakdown["drums"].split("→")[-1].strip())
+    bass_score = float(breakdown["bass"].split("→")[-1].strip())
 
-    db_issues, g_issues = [], []
-    if drum_score < 0.12:
+    db_issues = []
+    if drum_score < 0.10:
         db_issues.append(
-            "Drum-Tracks fehlen. Verwende write_drum_pattern für "
-            "Kick (pitch=36), Snare (38), Hi-Hat (42)."
+            "Drum-Tracks fehlen. Exakt 3 Tracks anlegen: 'v9 Kick' (Track 1), "
+            "'v9 Snare' (Track 2), 'v9 Hat Closed' (Track 3)."
         )
-    if bass_score < 0.12:
-        db_issues.append(
-            "Bass fehlt. FM-4 Track mit Noten E2(40), A2(45), D2(38)."
-        )
-    if guitar_score < 0.15:
-        g_issues.append(
-            "Gitarren-Lead fehlt. Phase-4 Track mit mindestens 8 Noten "
-            "in E-Moll (E3=52, G3=55, A3=57, B3=59)."
-        )
+    if bass_score < 0.10:
+        db_issues.append("Bass-Track fehlt. FM-4 auf Track 4 laden.")
 
-    total_notes = sum(note_counts.values())
-    db_prompt = DRUMS_BASS_PROMPT
     if db_issues:
-        db_prompt = (
+        return (
             f"Vorheriges Ergebnis unvollständig (Score {score:.0%}):\n"
             + "\n".join(f"  - {m}" for m in db_issues)
             + "\n\n" + DRUMS_BASS_PROMPT
         )
-
-    g_prompt = GUITAR_PROMPT
-    if g_issues:
-        g_prompt = (
-            f"Gitarren-Spur fehlt (aktuell {total_notes} Noten gesamt):\n"
-            + "\n".join(f"  - {m}" for m in g_issues)
-            + "\n\n" + GUITAR_PROMPT
-        )
-
-    return db_prompt, g_prompt
+    return DRUMS_BASS_PROMPT
 
 
 # ── Unit Tests für Scoring und Modelle ───────────────────────────────────────
@@ -168,27 +142,29 @@ class TestGuitarScoreFunction:
 
     @pytest.mark.unit
     def test_full_band_scores_high(self):
+        track_names = ["v9 Kick", "v9 Snare", "v9 Hat Closed", "FM-4", "Phase-4"]
         score, bd = score_guitar_state(
             track_count=5,
-            note_counts={"v9 Kick": 8, "v9 Snare": 8, "v9 Hat Closed": 8,
-                         "FM-4": 4, "Phase-4": 8},
+            note_counts={"Phase-4": 8},
             result_text="set_tempo 120 BPM",
+            track_names=track_names,
         )
         assert score >= SCORE_THRESHOLD, f"Full-Band zu tief: {score} {bd}"
 
     @pytest.mark.unit
     def test_guitar_detected_by_phase4(self):
-        _, bd = score_guitar_state(1, {"Phase-4": 8})
+        _, bd = score_guitar_state(1, {"Phase-4": 8}, track_names=["Phase-4"])
         guitar_score = float(bd["guitar"].split("→")[-1].strip())
         assert guitar_score >= 0.20
 
     @pytest.mark.unit
     def test_missing_guitar_penalized(self):
-        s_no,  _ = score_guitar_state(3, {"v9 Kick": 8, "v9 Snare": 8, "FM-4": 8},
-                                       result_text="120 BPM")
-        s_yes, _ = score_guitar_state(4, {"v9 Kick": 8, "v9 Snare": 8, "FM-4": 8, "Phase-4": 8},
-                                       result_text="120 BPM")
-        assert s_yes > s_no + 0.25
+        names_no  = ["v9 Kick", "v9 Snare", "v9 Hat Closed", "FM-4"]
+        names_yes = ["v9 Kick", "v9 Snare", "v9 Hat Closed", "FM-4", "Phase-4"]
+        s_no,  _ = score_guitar_state(4, {}, result_text="120 BPM", track_names=names_no)
+        s_yes, _ = score_guitar_state(5, {"Phase-4": 4}, result_text="120 BPM",
+                                       track_names=names_yes)
+        assert s_yes > s_no + 0.20
 
 
 class TestBitwigResultModels:
@@ -333,24 +309,22 @@ class TestE2EGuitarLoop:
         return execute_plan(result)
 
     def test_guitar_score_loop(self, osc_available):
-        """Rock-Band mit Gitarre: Agent für Drums+Bass, OOP für Gitarre."""
+        """Rock-Band mit Gitarre: Agent für Tracks/Instrumente, OOP für Gitarren-Noten."""
         if not osc_available:
             pytest.fail("Vorbedingung nicht erfüllt: Bitwig / OSC Bridge nicht erreichbar (Port 8001)")
 
-        all_notes: list[dict] = []
         scores:    list[float] = []
         db_prompt = DRUMS_BASS_PROMPT
 
         for iteration in range(1, MAX_ITERATIONS + 1):
             _divider(f"ITERATION {iteration}/{MAX_ITERATIONS}")
 
-            # Phase 1: Drums + Bass via Agent
+            # Phase 1: Drums + Bass via Agent (nur Tracks/Instrumente anlegen)
             print(f"Phase 1 — Agent Drums+Bass: {db_prompt[:120]}")
             db_result, notes_db, db_step_errors = self._agent_drums_bass(db_prompt, reset=True)
-            track_count_after_db = len([k for k in notes_db if k != "__total__"])
-            print(f"  Drums+Bass Noten: {notes_db}")
+            print(f"  Drums+Bass Notes: {notes_db}")
 
-            # Vorbedingung: Phase 1 darf keine Browser-Timeouts gehabt haben
+            # Vorbedingung: keine Browser-Timeouts
             browser_errors = [e for e in db_step_errors if "browser_timeout" in e]
             if browser_errors:
                 pytest.fail(
@@ -358,54 +332,33 @@ class TestE2EGuitarLoop:
                     f"(Iteration {iteration}).\nFehler: {browser_errors}"
                 )
 
-            # Vorbedingung: Phase 1 muss Noten erzeugt haben
-            real_notes_db = {k: v for k, v in notes_db.items() if k != "__total__" and v > 0}
-            if not real_notes_db:
-                pytest.fail(
-                    f"Vorbedingung nicht erfüllt: Phase 1 hat keine Noten erzeugt — "
-                    f"Browser-Load oder Step-Timeout (Iteration {iteration}).\n"
-                    f"notes_db={notes_db}"
-                )
-
-            # Phase 2: Gitarren-Lead via BitwigResultBuilder (OOP direkt)
-            # Echten Track-Count aus Bitwig holen — notes_db-Keys können doppelt sein
-            # (Tracks werden nach load_instrument umbenannt, alter + neuer Name erscheinen)
-            try:
-                from src.agent.tools.song_tools import _get_current_track_count
-                real_track_count = _get_current_track_count()
-            except Exception:
-                real_track_count = track_count_after_db
+            # Phase 2: Gitarren-Lead via BitwigResultBuilder (OOP direkt, kein LLM)
+            from src.agent.tools.song_tools import _get_current_track_count
+            real_track_count = _get_current_track_count()
             guitar_track_idx = real_track_count + 1
             print(f"Phase 2 — OOP Gitarre (Track {guitar_track_idx})")
             guitar_result = self._execute_guitar(guitar_track_idx)
             time.sleep(0.5)
 
-            # Vorbedingung: Browser-Load darf nicht fehlgeschlagen sein
             if "error:browser_timeout" in guitar_result or (
                 "FEHLER" in guitar_result and "0 Steps" not in guitar_result
             ):
                 pytest.fail(
-                    f"Vorbedingung nicht erfüllt: Browser-Load fehlgeschlagen (Phase 2).\n"
+                    f"Vorbedingung nicht erfüllt: Phase 2 fehlgeschlagen.\n"
                     f"Ergebnis: {guitar_result[:400]}"
                 )
 
-            from src.agent.tools.song_tools import _get_current_track_count, _get_note_counts, _get_track_names
-            track_count   = _get_current_track_count()
-            notes_guitar  = _get_note_counts()
-            track_names   = _get_track_names()
+            from src.agent.tools.song_tools import _get_note_counts, _get_track_names
+            track_count  = _get_current_track_count()
+            notes_guitar = _get_note_counts()
+            track_names  = _get_track_names()
 
-            # Track-Anzahl muss stimmen
-            if track_count > 0 and track_count != guitar_track_idx:
-                print(f"  ⚠ Track-Anzahl: erwartet {guitar_track_idx}, tatsächlich {track_count}")
             print(f"  Track-Namen: {track_names}")
             print(f"  Gitarre Noten: {notes_guitar}")
 
-            combined_notes = {**notes_db, **notes_guitar}
-            all_notes.append(combined_notes)
-
             combined_text = db_result + "\n" + guitar_result
             score, breakdown = score_guitar_state(
-                track_count, combined_notes, combined_text, track_names
+                track_count, notes_guitar, combined_text, track_names
             )
             scores.append(score)
             _print_report(score, breakdown, combined_text)
@@ -415,18 +368,16 @@ class TestE2EGuitarLoop:
                 break
 
             if iteration < MAX_ITERATIONS:
-                db_prompt, _ = _build_guitar_feedback(score, breakdown, combined_notes)
+                db_prompt = _build_guitar_feedback(score, breakdown, track_names)
 
         final_score = scores[-1]
         _divider("ERGEBNIS")
         print(f"Score: {final_score:.2f} nach {len(scores)} Iteration(en)")
         print(f"Alle Scores: {[f'{s:.2f}' for s in scores]}")
-        print(f"Finale Note-Counts: {all_notes[-1]}")
 
         assert final_score >= SCORE_THRESHOLD, (
             f"Score {final_score:.2f} < {SCORE_THRESHOLD} "
-            f"nach {len(scores)} Iterationen.\n"
-            f"Note-Counts: {all_notes[-1]}"
+            f"nach {len(scores)} Iterationen."
         )
 
 
