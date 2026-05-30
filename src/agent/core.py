@@ -140,19 +140,7 @@ def _append_policy_feedback(entry: dict) -> None:
     except Exception as exc:
         log.debug("Policy-Feedback konnte nicht geschrieben werden: %s", exc)
 
-# MCP-Bridge: optionale direkte Anbindung an bitwig_mcp_server.py
-USE_MCP_BRIDGE = os.getenv("AGENT_USE_MCP_BRIDGE", "1") == "1"
-
 def _get_tools() -> list:
-    """Gibt Tool-Liste zurück — MCP-Bridge wenn verfügbar, sonst Standard."""
-    if USE_MCP_BRIDGE:
-        try:
-            from src.agent.tools.mcp_bridge import get_all_tools_combined
-            tools = get_all_tools_combined()
-            log.info("MCP-Bridge aktiv: %d Tools (%d MCP + Agent)", len(tools), len(tools) - len(ALL_TOOLS))
-            return tools
-        except Exception as e:
-            log.warning("MCP-Bridge fehlgeschlagen: %s — Standard-Tools", e)
     return ALL_TOOLS
 
 load_dotenv()

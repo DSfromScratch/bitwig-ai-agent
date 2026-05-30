@@ -56,6 +56,40 @@ LangGraph Agent (core.py)
 - Neo4j (lokal oder Docker)
 - vLLM-Server mit Qwen3-14B-AWQ (kann remote sein, via `.env` konfigurierbar)
 
+## VST3 Plugins
+
+Bitwig lädt VST3-Plugins aus `~/.vst3/`. Getestete Plugins (Linux, VST3):
+
+| Plugin | Quelle | Genre / Zweck |
+|--------|--------|---------------|
+| **MT Power Drum Kit 2** | [powerdrumkit.com](https://www.powerdrumkit.com/linux.php) | Acoustic Drums — Rock, Pop, Jazz |
+| **Decent Sampler** | [decentsamples.com](https://www.decentsamples.com/product/decent-sampler-plugin/) | Sampler-Engine für alle Sample-Libraries |
+| **Surge XT** | [surge-synthesizer.github.io](https://surge-synthesizer.github.io/) | Synth — Wavetable, 808-Bass, alle elektronischen Genres |
+| **Surge XT Effects** | (im Surge-XT-Paket enthalten) | FX-Version von Surge XT |
+
+### Decent Sampler Libraries
+
+Libraries liegen unter `~/Music/DecentSampler/`:
+
+| Library | Quelle | Inhalt |
+|---------|--------|--------|
+| **VirtualPlayingOrchestra** | [github.com/eodowd](https://github.com/eodowd/VirtualPlayingOrchestra) | 37 Presets: Streicher, Bläser, Chor, Harfe, Pauken |
+| **UprightPianoKW** | [freepats.zenvoid.org](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html) | Echtes Upright-Klavier (26 Velocity-Samples) |
+| **808TK** | [github.com/sourc3array](https://github.com/sourc3array/808TK) | Hip-Hop 808 Drums |
+
+```bash
+# VST3 Installation (Linux)
+mkdir -p ~/.vst3
+# Plugin-ZIP/-tar.gz entpacken → Ordner *.vst3 nach ~/.vst3/ kopieren
+
+# Decent Sampler Libraries klonen
+mkdir -p ~/Music/DecentSampler
+git clone --depth=1 https://github.com/eodowd/VirtualPlayingOrchestra.git ~/Music/DecentSampler/VirtualPlayingOrchestra
+git clone --depth=1 https://github.com/sourc3array/808TK.git ~/Music/DecentSampler/808TK
+```
+
+Nach der Installation Bitwig neu starten und unter **Settings → Plug-ins → Rescan** den Plugin-Scan auslösen.
+
 ## Installation
 
 ```bash

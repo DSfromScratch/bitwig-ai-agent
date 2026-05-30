@@ -1230,282 +1230,42 @@ def bitwig_get_note_counts() -> str:
     return "\n".join(lines)
 
 
-# ── execute_result — BitwigStepPlugin Command Dispatcher ─────────────────────
+# ── execute_result — Thin Wrapper um src/bitwig_executor.py ──────────────────
+# Logik lebt in src/bitwig_executor.py — hier nur MCP-Dekoratoren.
 
-_SETUP_TYPES = {"set_tempo", "add_track", "load_instrument", "append_effect",
-                "set_param", "set_param_named", "set_send", "select_track"}
-_NOTE_TYPES  = {"write_notes", "write_drum_pattern"}
+from src.bitwig_executor import (
+    execute_setup  as _exec_setup,
+    compose_notes  as _compose_notes,
+    execute_result as _exec_result,
+    _SETUP_TYPES,
+    _NOTE_TYPES,
+    _exec_step_and_wait,
+)
 
 
-def _exec_step_and_wait(client, step_json: str, timeout: float = 12.0) -> str:
-    """Bindet Reply-Socket VOR dem Senden, wartet auf /step/done.
+@mcp.tool()
+def execute_setup(result: dict) -> str:
+    """Phase 1: Tracks, Instrumente, FX, Tempo anlegen. Keine Noten.
 
-    Returns: Reply-Inhalt (z.B. "add_track", "error:precondition:track_not_found:3"),
-             oder "error:timeout" bei Timeout.
+    Nach execute_setup: get_bitwig_track_state aufrufen, dann pro Track compose_notes.
     """
-    import socket as _socket
-    import threading
-
-    received = threading.Event()
-    reply    = ["error:timeout"]
-
-    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-    sock.settimeout(timeout)
-    try:
-        sock.bind(("", OSC_STEP_REPLY_PORT))
-    except OSError:
-        sock.close()
-        client.send_message("/step/exec", step_json)
-        time.sleep(min(timeout, 0.5))
-        return "ok:fallback"
-
-    def _listen():
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                data, _ = sock.recvfrom(4096)
-                addr_end = data.find(b"\x00")
-                if addr_end < 0:
-                    continue
-                osc_addr = data[:addr_end].decode("ascii", errors="ignore")
-                if osc_addr == "/step/done":
-                    # OSC-String-Argument parsen: ,s\0\0 + padded string
-                    tag_start = (addr_end + 4) & ~3
-                    if tag_start + 2 < len(data) and data[tag_start:tag_start+2] == b",s":
-                        str_start = (tag_start + 4) & ~3
-                        null_pos  = data.find(b"\x00", str_start)
-                        if null_pos > str_start:
-                            reply[0] = data[str_start:null_pos].decode("utf-8", errors="ignore")
-                        else:
-                            reply[0] = "ok"
-                    else:
-                        reply[0] = "ok"
-                    received.set()
-                    return
-            except (_socket.timeout, OSError):
-                break
-
-    threading.Thread(target=_listen, daemon=True).start()
-    client.send_message("/step/exec", step_json)
-    received.wait(timeout)
-    try:
-        sock.close()
-    except Exception:
-        pass
-    return reply[0]
+    return _exec_setup(result)
 
 
-def _resolve_drum_pattern(step: dict) -> dict:
-    """Konvertiert write_drum_pattern → write_notes via Neo4j-Lookup."""
-    args    = step.get("args", {}) or {}
-    track   = int(args["track_index"])
-    genre   = str(args.get("genre",   "rock")).lower()
-    section = str(args.get("section", "verse")).lower()
-    role    = str(args.get("role",    "kick")).lower()
-    pitch   = int(args.get("pitch",   36))
-    slot    = int(args.get("slot",    0))
-    length  = float(args.get("length_beats", 8.0))
+@mcp.tool()
+def compose_notes(result: dict) -> str:
+    """Phase 2: Noten für EINEN Track schreiben. Pro Instrument ein separater Call.
 
-    try:
-        from src.knowledge.repositories import DrumPatternRepository
-        pattern = DrumPatternRepository().find(genre=genre, section=section, energy_max=1.0)
-    except Exception:
-        pattern = None
-
-    vel_on = vel_off = 0.55
-    if pattern is None:
-        beats = {"kick": [0.0, 2.0, 4.0, 6.0], "snare": [2.0, 6.0]}.get(
-            role, [round(b * 0.5, 3) for b in range(int(length * 2))]
-        )
-        vel = 0.88 if role == "kick" else 0.80 if role == "snare" else 0.55
-    else:
-        if role == "kick":
-            raw = pattern.kick_beats
-            beats, vel = (raw if not isinstance(raw, str) else [0.0, 2.0, 4.0, 6.0]), pattern.kick_vel
-        elif role == "snare":
-            raw = pattern.snare_beats
-            beats, vel = (raw if not isinstance(raw, str) else [2.0, 6.0]), pattern.snare_vel
-        else:
-            hat_step   = pattern.hat_step
-            beats      = [round(b * hat_step, 3) for b in range(int(length / hat_step))]
-            vel_on, vel_off = pattern.hat_vel_on, pattern.hat_vel_off
-            vel        = vel_on
-
-    notes = [
-        {"step": float(b), "pitch": float(pitch),
-         "vel": round(float(vel if role != "hihat" else (vel_on if i % 2 == 0 else vel_off)), 4),
-         "dur": 0.5}
-        for i, b in enumerate(beats)
-    ]
-    return {**step, "type": "write_notes", "args": {
-        "track_index": track, "slot": slot, "length_beats": length, "notes": notes,
-    }}
+    result enthält: track, all_tracks, target (bpm/genre/key/chord_progression), steps.
+    Musikalische Reihenfolge: Kick → Snare → Hat → Bass → Chords → Lead (letzter + play).
+    """
+    return _compose_notes(result)
 
 
 @mcp.tool()
 def execute_result(result: dict) -> str:
-    """Führt ein BitwigResult-Objekt deterministisch aus.
+    """Rückwärtskompatibel: Setup + Noten in einem Call.
 
-    Sendet jeden Step einzeln via /step/exec an das BitwigStepPlugin
-    und wartet auf /step/done bevor der nächste Step gesendet wird.
-    Alle Setup-Steps (Tracks, Instrumente, FX) laufen VOR Note-Steps.
-
-    Unterstützte Step-Typen:
-      set_tempo      args: {bpm}
-      add_track      args: {track_type}
-      load_instrument args: {track_index, name}
-      append_effect  args: {track_index, name}
-      set_param      args: {track_index, index, value}
-      set_param_named args: {track_index, param_name, value}
-      set_send       args: {track_index, send_index, level}
-      select_track   args: {track_index}
-      write_notes    args: {track_index, notes, slot?, length_beats?, instrument?}
-      write_drum_pattern args: {track_index, genre, section, role, pitch, slot?, length_beats?, instrument?}
-      play           args: {}
-      stop           args: {}
-
-    Args:
-        result: BitwigResult dict oder BitwigResult-Pydantic-Objekt
+    Für neuen Code execute_setup() + compose_notes() pro Track verwenden.
     """
-    import json as _json
-    from src.agent.events import get_event_bus
-    from pythonosc import udp_client as _udp
-
-    if hasattr(result, "to_dict"):
-        result = result.to_dict()
-    elif hasattr(result, "model_dump") and not isinstance(result, dict):
-        result = result.model_dump()
-
-    if not _check_connection(timeout=1.5):
-        return "[execute_result] BitwigStepPlugin nicht erreichbar — Bitwig starten und Extension aktivieren"
-
-    # UUID-Cache von Extension befüllen bevor irgendein Step-Socket Port 9002 belegt
-    try:
-        from src.agent.tools.song_tools import _SYNCED_FROM_EXTENSION, _sync_device_uuids_from_extension
-        if not _SYNCED_FROM_EXTENSION:
-            _sync_device_uuids_from_extension()
-    except Exception:
-        pass
-
-    steps = result.get("steps", [])
-    bus   = get_event_bus()
-
-    # Zwei-Phasen-Sortierung: setup → notes → andere
-    # Falls write_notes/write_drum_pattern ein 'instrument'-Feld hat → load_instrument extrahieren
-    setup_steps, note_steps, other_steps = [], [], []
-    seen_instruments: set[int] = set()
-
-    for s in steps:
-        if s.get("status") == "done":
-            continue
-        stype = s.get("type", "")
-        args  = s.get("args", {}) or {}
-        if stype in _NOTE_TYPES and args.get("instrument"):
-            track = int(args.get("track_index", 0))
-            if track not in seen_instruments:
-                setup_steps.append({"type": "load_instrument",
-                                     "args": {"track_index": track, "name": args["instrument"]}})
-                seen_instruments.add(track)
-            note_steps.append({**s, "args": {k: v for k, v in args.items() if k != "instrument"}})
-        elif stype in _SETUP_TYPES:
-            setup_steps.append(s)
-        elif stype in _NOTE_TYPES:
-            note_steps.append(s)
-        else:
-            other_steps.append(s)
-
-    ordered = setup_steps + note_steps + other_steps
-    client  = _udp.SimpleUDPClient(OSC_HOST, OSC_STEP_PORT)
-    done_log: list[str] = []
-    errors:   list[str] = []
-
-    # State Machine: einmal laden, dann lokal aktualisieren
-    try:
-        from src.agent.project_state import BitwigProjectState
-        state = BitwigProjectState.from_bitwig()
-    except Exception:
-        state = None
-
-    for i, step in enumerate(ordered):
-        stype = step.get("type", "")
-        args  = step.get("args", {}) or {}
-
-        if stype == "write_drum_pattern":
-            try:
-                step  = _resolve_drum_pattern(step)
-                stype = "write_notes"
-                args  = step.get("args", {})
-            except Exception as e:
-                errors.append(f"write_drum_pattern resolve: {e}")
-                bus.emit("result_step_error", {"index": i, "type": stype, "error": str(e)})
-                continue
-
-        # UUID-Auflösung: für load_instrument + append_effect via Neo4j
-        if stype in ("load_instrument", "append_effect") and "uuid" not in args:
-            device_name = args.get("name", "")
-            if device_name:
-                try:
-                    from src.agent.tools.song_tools import _lookup_device_uuid
-                    resolved_uuid = _lookup_device_uuid(device_name)
-                    if resolved_uuid:
-                        args = {**args, "uuid": resolved_uuid}
-                except Exception:
-                    pass
-
-        step_json = _json.dumps({"type": stype, "args": args})
-        reply     = _exec_step_and_wait(client, step_json, timeout=12.0)
-
-        # Precondition-Fehler: fehlende Tracks auto-injizieren und Step wiederholen
-        if reply.startswith("error:precondition:track_not_found:"):
-            try:
-                missing_idx = int(reply.split(":")[-1])
-                missing     = (state.missing_tracks_for(missing_idx)
-                               if state else missing_idx)
-                for _ in range(max(1, missing)):
-                    inj      = {"type": "add_track", "args": {"track_type": "instrument"}}
-                    inj_json = _json.dumps({"type": "add_track",
-                                            "args": {"track_type": "instrument"}})
-                    inj_reply = _exec_step_and_wait(client, inj_json, timeout=8.0)
-                    if not inj_reply.startswith("error:"):
-                        done_log.append("add_track✓(auto)")
-                        if state:
-                            state.apply_step(inj)
-                # Step neu senden
-                reply = _exec_step_and_wait(client, step_json, timeout=12.0)
-            except Exception as e:
-                errors.append(f"{stype}✗(auto-inject failed:{e})")
-                continue
-
-        ok  = not reply.startswith("error:")
-        tag = f"{stype}✓" if ok else f"{stype}✗({reply})"
-        (done_log if ok else errors).append(tag)
-        bus.emit("result_step_done" if ok else "result_step_error",
-                 {"index": i, "type": stype, "args": args, "error": reply if not ok else ""})
-        if ok and state:
-            state.apply_step({**step, "type": stype, "args": args})
-
-    context_type = result.get("context_type", "?")
-    target       = result.get("target", {})
-    bus.emit("result_done", {
-        "context_type": context_type, "target": target,
-        "summary": result.get("summary", ""),
-        "steps_total": len(ordered), "done": len(done_log), "errors": errors,
-    })
-
-    try:
-        from src.agent.tools.song_tools import _get_current_track_count
-        track_count = _get_current_track_count()
-        status_line = f"Bitwig-Status: {track_count} Track(s)" if track_count > 0 else ""
-    except Exception:
-        status_line = ""
-
-    parts = [
-        f"[execute_result] context={context_type} target={target}",
-        f"✓ {len(done_log)} Steps: {', '.join(done_log)}" if done_log else "Keine Steps",
-    ]
-    if errors:
-        parts.append(f"✗ Fehler: {', '.join(errors)}")
-    if status_line:
-        parts.append(status_line)
-    return "\n".join(parts)
+    return _exec_result(result)

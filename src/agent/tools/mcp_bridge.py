@@ -108,6 +108,8 @@ _SETTINGS_TOOLS_WHITELIST = {
     "bitwig_mute_track",
     "bitwig_eq_band",
     # Result-Executor — Multi-Step-Operationen (Track-Setup, Song, Objekte)
+    "execute_setup",
+    "compose_notes",
     "execute_result",
     # Allgemeine Bitwig-Kontrolle
     "control_bitwig",

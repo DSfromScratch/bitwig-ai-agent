@@ -20,18 +20,22 @@ import pytest
 SCORE_THRESHOLD = 0.75
 MAX_ITERATIONS = 3
 
-# Zwei separate Prompts — jeder bleibt unter ~1500 Zeichen JSON
+# Zwei-Phasen-Workflow: execute_setup → get_bitwig_track_state → compose_notes pro Track
+# v9 Kick/Snare/Hat = Bitwig Built-in Sampler → laden sofort, kein Browser-Timeout
 DRUMS_BASS_PROMPT = (
-    "Erstelle Drums (Kick, Snare, Hi-Hat) und Bass — 4 Takte, 120 BPM, Rock. "
-    "Genau diese 4 Tracks, KEIN Lead, KEIN Gitarren-Track. "
-    "Einmal execute_result aufrufen, dann fertig."
+    "Erstelle Rock-Drums und Bass — 16 Beats, 120 BPM. Genau 4 Tracks, KEIN Lead. "
+    "Instrumente: 'v9 Kick' (Track 1), 'v9 Snare' (Track 2), 'v9 Hat Closed' (Track 3), 'FM-4' (Track 4). "
+    "Ablauf: execute_setup (Tracks + Instrumente + Tempo), "
+    "dann get_bitwig_track_state, "
+    "dann compose_notes für jeden Track einzeln."
 )
 
 # Kurzer, präziser Prompt → wenig Thinking-Tokens → kein Truncation
 GUITAR_PROMPT = (
-    "Füge Track 5 hinzu: Phase-4. "
-    "write_notes: 4 Noten step=0 pitch=52, step=4 pitch=55, step=8 pitch=57, step=12 pitch=59. "
-    "vel=0.8 dur=2. execute_result mit 3 Steps: add_track, load_instrument(5,'Phase-4'), write_notes."
+    "Füge Track 5 hinzu: Phase-4, Gitarren-Lead. "
+    "execute_setup: add_track + load_instrument(5,'Phase-4'). "
+    "compose_notes: 4 Noten step=0 pitch=52, step=4 pitch=55, step=8 pitch=57, step=12 pitch=59, "
+    "vel=0.8 dur=2, dann play."
 )
 
 _DRUM_KEYWORDS   = ("v9 kick", "v9 snare", "v9 hat", "drum machine", "e-kick", "e-snare")
@@ -364,7 +368,14 @@ class TestE2EGuitarLoop:
                 )
 
             # Phase 2: Gitarren-Lead via BitwigResultBuilder (OOP direkt)
-            guitar_track_idx = max(track_count_after_db + 1, 5)
+            # Echten Track-Count aus Bitwig holen — notes_db-Keys können doppelt sein
+            # (Tracks werden nach load_instrument umbenannt, alter + neuer Name erscheinen)
+            try:
+                from src.agent.tools.song_tools import _get_current_track_count
+                real_track_count = _get_current_track_count()
+            except Exception:
+                real_track_count = track_count_after_db
+            guitar_track_idx = real_track_count + 1
             print(f"Phase 2 — OOP Gitarre (Track {guitar_track_idx})")
             guitar_result = self._execute_guitar(guitar_track_idx)
             time.sleep(0.5)
