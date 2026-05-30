@@ -7,6 +7,9 @@ Prüft:
   3. _KNOWN_TOOL_NAMES deckt alle erwarteten Tools ab
   4. Tool-Whitelist enthält execute_result und schließt halluzinierte Tools aus
   5. Alle Kern-Module importierbar
+  6. Tool-Call-Parser (QwenXML, Truncated, Composite)
+  7. UUID-Lookup: exakter Match, Aliase, Reverse-Subset, kein Match
+  8. Scoring: Drums/Bass/Gitarre werden korrekt bewertet
 """
 import sys
 import os
@@ -14,6 +17,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(__file__))  # peer test imports (test_e2e_guitar)
 
 # ── Halluzinierte Tools die NIE in der Whitelist sein dürfen ─────────────────
 
@@ -51,6 +55,7 @@ class TestFeedbackLoop:
         with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
              patch("src.agent.tools.song_tools._get_current_track_count", return_value=3), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
+             patch("bitwig_mcp_server._exec_step_and_wait", return_value="select_track"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
             result = execute_result(_make_result())
@@ -61,21 +66,17 @@ class TestFeedbackLoop:
     @pytest.mark.unit
     def test_no_feedback_on_error(self):
         """execute_result gibt kein Bitwig-Status aus wenn Steps fehlschlagen."""
-        def _bad_step(*_a, **_kw):
-            raise RuntimeError("Step fehlgeschlagen")
-
         with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
              patch("src.agent.tools.song_tools._get_current_track_count", return_value=2), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
+             patch("bitwig_mcp_server._exec_step_and_wait", return_value="error:timeout"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
-            # Ein Step-Typ der intern eine Exception wirft → steps haben errors
             result = execute_result({
                 "context_type": "track",
                 "target": {},
                 "summary": "Fehler-Test",
                 "steps": [
-                    # set_param mit ungültigem index → KeyError
                     {"type": "set_param", "args": {}, "status": "pending", "note": ""},
                 ],
             })
@@ -88,6 +89,7 @@ class TestFeedbackLoop:
         with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
              patch("src.agent.tools.song_tools._get_current_track_count", return_value=0), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
+             patch("bitwig_mcp_server._exec_step_and_wait", return_value="select_track"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
             result = execute_result(_make_result())
@@ -181,3 +183,178 @@ class TestProjectSmoke:
         bus.emit("test_event", {"x": 1})
         assert len(fired) == 1
         assert fired[0]["payload"] == {"x": 1}
+
+
+# ── Tool-Call-Parser Tests ────────────────────────────────────────────────────
+
+class TestToolCallParsers:
+    """Parser-Kette: QwenXML, Truncated (Brace/Array-Truncation), Composite."""
+
+    @pytest.mark.unit
+    def test_qwen_xml_parser_complete(self):
+        """QwenXMLParser erkennt vollständiges <tool_call>{...}</tool_call>."""
+        from langchain_core.messages import AIMessage
+        from src.agent.parsing.tool_call_parsers import QwenXMLParser
+
+        content = '<tool_call>{"name":"execute_result","arguments":{"plan":{"steps":[]}}}</tool_call>'
+        result = QwenXMLParser().parse(AIMessage(content=content))
+        assert result is not None and len(result) == 1
+        assert result[0]["name"] == "execute_result"
+        assert result[0]["args"] == {"plan": {"steps": []}}
+
+    @pytest.mark.unit
+    def test_truncated_xml_unclosed_brace(self):
+        """TruncatedXMLParser repariert fehlendes } am Ende des JSON."""
+        from langchain_core.messages import AIMessage
+        from src.agent.parsing.tool_call_parsers import TruncatedXMLParser
+
+        content = '<tool_call>{"name":"execute_result","arguments":{"track_index":1}'
+        result = TruncatedXMLParser().parse(AIMessage(content=content))
+        assert result is not None, "TruncatedXMLParser gab None zurück für unclosed-brace"
+        assert result[0]["name"] == "execute_result"
+
+    @pytest.mark.unit
+    def test_truncated_xml_unclosed_array(self):
+        """TruncatedXMLParser repariert fehlendes ] in verschachteltem Array."""
+        from langchain_core.messages import AIMessage
+        from src.agent.parsing.tool_call_parsers import TruncatedXMLParser
+
+        content = '<tool_call>{"name":"write_notes","arguments":{"notes":[{"pitch":60,"step":0}'
+        result = TruncatedXMLParser().parse(AIMessage(content=content))
+        assert result is not None, "TruncatedXMLParser gab None zurück für unclosed-array"
+        assert result[0]["name"] == "write_notes"
+        assert isinstance(result[0]["args"].get("notes"), list)
+
+    @pytest.mark.unit
+    def test_composite_parser_falls_through_to_qwen(self):
+        """CompositeParser fällt von OpenAI-Format auf QwenXML durch."""
+        from langchain_core.messages import AIMessage
+        from src.agent.parsing.tool_call_parsers import TOOL_CALL_PARSER
+
+        content = '<tool_call>{"name":"get_bitwig_track_state","arguments":{}}</tool_call>'
+        result = TOOL_CALL_PARSER.extract(AIMessage(content=content))
+        assert len(result) == 1
+        assert result[0]["name"] == "get_bitwig_track_state"
+
+    @pytest.mark.unit
+    def test_patch_message_sets_tool_calls_and_strips_xml(self):
+        """patch_message füllt tool_calls und entfernt <tool_call>-Tags aus Content."""
+        from langchain_core.messages import AIMessage
+        from src.agent.parsing.tool_call_parsers import TOOL_CALL_PARSER
+
+        content = 'Denke nach... <tool_call>{"name":"execute_result","arguments":{"x":1}}</tool_call>'
+        patched = TOOL_CALL_PARSER.patch_message(AIMessage(content=content))
+        assert patched.tool_calls, "tool_calls leer nach patch_message"
+        assert patched.tool_calls[0]["name"] == "execute_result"
+        assert "<tool_call>" not in (patched.content or ""), "XML-Tag nicht entfernt"
+
+
+# ── UUID-Lookup Tests ─────────────────────────────────────────────────────────
+
+# Minimal-Map: deckt alle Lookup-Pfade ab ohne Neo4j/Extension-Abhängigkeit
+_TEST_UUID_MAP = {
+    "phase-4":        "uuid-phase4",
+    "fm-4":           "uuid-fm4",
+    "v9 kick":        "uuid-kick",
+    "v9 snare":       "uuid-snare",
+    "v9 hi-hat":      "uuid-hihat-closed",
+    "v9 open hi-hat": "uuid-hihat-open",
+    "hi-hat":         "uuid-hihat-closed",  # plain alias (wie in Java BUILTIN_UUIDS)
+}
+
+
+class TestUUIDLookup:
+    """_lookup_device_uuid: exakter Match, Aliase, Reverse-Subset, kein Treffer."""
+
+    def _lookup(self, name: str) -> str | None:
+        with patch("src.agent.tools.song_tools._DEVICE_UUID_CACHE", _TEST_UUID_MAP):
+            from src.agent.tools.song_tools import _lookup_device_uuid
+            return _lookup_device_uuid(name)
+
+    @pytest.mark.unit
+    def test_exact_match(self):
+        """Exakter Name → sofortiger Cache-Hit."""
+        assert self._lookup("phase-4") == "uuid-phase4"
+
+    @pytest.mark.unit
+    def test_plain_alias_match(self):
+        """Kurzform 'hi-hat' (plain alias) → exakter Cache-Hit."""
+        assert self._lookup("hi-hat") == "uuid-hihat-closed"
+
+    @pytest.mark.unit
+    def test_word_subset_match(self):
+        """'v9 Closed Hi-Hat' → 'v9 hi-hat' via Wort-Teilmenge (closed ignoriert)."""
+        result = self._lookup("v9 Closed Hi-Hat")
+        assert result == "uuid-hihat-closed", f"Wort-Subset fehlgeschlagen: {result}"
+
+    @pytest.mark.unit
+    def test_reverse_subset_match(self):
+        """'Hat' ohne Alias in Map → 'v9 hi-hat' via Reverse-Subset-Matching."""
+        # _TEST_UUID_MAP hat kein "hat" allein, aber "v9 hi-hat" ⊇ {"hat"}
+        result = self._lookup("Hat")
+        assert result == "uuid-hihat-closed", f"Reverse-Subset fehlgeschlagen: {result}"
+
+    @pytest.mark.unit
+    def test_no_match_returns_none(self):
+        """Unbekannter Name → None (kein Crash, kein False-Positive)."""
+        result = self._lookup("Imaginary Synth 9000 XYZ")
+        assert result is None, f"Kein-Treffer lieferte unerwartet: {result}"
+
+
+# ── Scoring Tests ─────────────────────────────────────────────────────────────
+
+def _bd_score(entry: str) -> float:
+    """Extrahiert Float-Score aus Breakdown-String '… → 0.25'.
+    Wirft AssertionError (nicht ValueError) wenn Format unerwartet ist.
+    """
+    try:
+        return float(entry.split("→")[-1].strip())
+    except ValueError:
+        raise AssertionError(f"Kann Score nicht aus Breakdown parsen: {entry!r}")
+
+
+class TestScoring:
+    """score_guitar_state: Drums/Bass/Gitarre werden korrekt bewertet."""
+
+    @pytest.mark.unit
+    def test_drums_full_score(self):
+        """8+ Drum-Noten → vollen Drum-Score (0.25)."""
+        from test_e2e_guitar import score_guitar_state
+        note_counts = {"__total__": 24, "v9 kick": 8, "v9 snare": 8, "v9 hi-hat": 8}
+        _, bd = score_guitar_state(4, note_counts)
+        assert _bd_score(bd["drums"]) == pytest.approx(0.25), f"Drums: {bd['drums']}"
+
+    @pytest.mark.unit
+    def test_bass_fm4_score(self):
+        """FM-4 mit 4 Noten → vollen Bass-Score (0.25)."""
+        from test_e2e_guitar import score_guitar_state
+        note_counts = {"__total__": 4, "fm-4 bass": 4}
+        _, bd = score_guitar_state(2, note_counts)
+        assert _bd_score(bd["bass"]) == pytest.approx(0.25), f"Bass: {bd['bass']}"
+
+    @pytest.mark.unit
+    def test_phase4_not_counted_as_bass(self):
+        """Phase-4 wird als Gitarre (nicht Bass) gewertet — kritischer Fehler wenn falsch."""
+        from test_e2e_guitar import score_guitar_state
+        note_counts = {"__total__": 4, "phase-4": 4}
+        _, bd = score_guitar_state(2, note_counts)
+        assert _bd_score(bd["bass"])   == pytest.approx(0.0), f"Phase-4 fälschlicherweise als Bass: {bd['bass']}"
+        assert _bd_score(bd["guitar"]) >  0.0,                f"Phase-4 nicht als Gitarre erkannt: {bd['guitar']}"
+
+    @pytest.mark.unit
+    def test_full_arrangement_component_scores(self):
+        """Drums + Bass + Gitarre + Tempo → jede Komponente korrekt bewertet."""
+        from test_e2e_guitar import score_guitar_state
+        note_counts = {
+            "__total__": 32,  # Summe der Einzeltracks: 8+8+8+4+4
+            "v9 kick":   8,
+            "v9 snare":  8,
+            "v9 hi-hat": 8,
+            "fm-4 bass": 4,
+            "phase-4":   4,
+        }
+        score, bd = score_guitar_state(5, note_counts, result_text="Tempo: 120 BPM")
+        assert _bd_score(bd["drums"])  == pytest.approx(0.25), f"Drums: {bd['drums']}"
+        assert _bd_score(bd["bass"])   == pytest.approx(0.25), f"Bass:  {bd['bass']}"
+        assert _bd_score(bd["guitar"]) == pytest.approx(0.30), f"Guitar:{bd['guitar']}"
+        assert score == pytest.approx(1.00), f"Gesamt-Score falsch: {score}\n{bd}"

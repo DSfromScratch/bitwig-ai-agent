@@ -105,9 +105,30 @@ class TruncatedXMLParser:
         if "<tool_call>" not in content or "</tool_call>" in content:
             return None
         inner = content.split("<tool_call>", 1)[-1].strip()
-        # Fehlende schließende Klammern ergänzen
-        open_count  = inner.count("{") - inner.count("}")
-        inner_fixed = inner + "}" * max(0, open_count)
+
+        # Stack-basierte Reparatur: fehlende } und ] in richtiger Reihenfolge schließen
+        stack = []
+        in_string = False
+        escape_next = False
+        for ch in inner:
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == "\\" and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch in "{[":
+                stack.append("}" if ch == "{" else "]")
+            elif ch in "}]":
+                if stack and stack[-1] == ch:
+                    stack.pop()
+        inner_fixed = inner + "".join(reversed(stack))
+
         try:
             data = json.loads(inner_fixed)
             name = data.get("name")

@@ -643,7 +643,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
         space.registerMethod("/transport/stop", "*", "Stop",
                 (src, msg) -> transport.stop());
         space.registerMethod("/transport/tempo", "*", "Tempo",
-                (src, msg) -> transport.tempo().setRaw(argFloat(msg, 0, 120f)));
+                (src, msg) -> { transport.tempo().setRaw(argFloat(msg, 0, 120f)); sendReply(src, "/ack/tempo/set", 1); });
         space.registerMethod("/record", "*", "Record",
                 (src, msg) -> transport.record());
         space.registerMethod("/repeat", "*", "Loop",
@@ -653,11 +653,11 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
 
         // ── Tracks erstellen / löschen ─────────────────────────────────────
         space.registerMethod("/track/add/instrument", "*", "Add instrument track",
-                (src, msg) -> application.createInstrumentTrack(-1));
+                (src, msg) -> { application.createInstrumentTrack(-1); host.scheduleTask(() -> sendReply(src, "/ack/track/added", 1), 80); });
         space.registerMethod("/track/add/audio", "*", "Add audio track",
-                (src, msg) -> application.createAudioTrack(-1));
+                (src, msg) -> { application.createAudioTrack(-1); host.scheduleTask(() -> sendReply(src, "/ack/track/added", 1), 80); });
         space.registerMethod("/track/add/effect", "*", "Add effect/return track",
-                (src, msg) -> application.createEffectTrack(-1));
+                (src, msg) -> { application.createEffectTrack(-1); host.scheduleTask(() -> sendReply(src, "/ack/track/added", 1), 80); });
         space.registerMethod("/track/add/group", "*", "Add group track via action",
                 (src, msg) -> {
                     try {
@@ -668,6 +668,41 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                 });
         space.registerMethod("/track/delete/last", "*", "Delete last (selected) track",
                 (src, msg) -> { cursorTrack.deleteObject(); });
+
+        // /agent/tracks/clear  → Alle Instrument-Tracks löschen + noteCountMap leeren
+        // Verwendet scheduleTask mit Delay zwischen Löschungen, weil trackBank und
+        // cursorTrack async sind — gleichzeitige deleteObject()-Calls löschen nur Track 0.
+        space.registerMethod("/agent/tracks/clear", "*", "Delete all instrument tracks",
+                (src, msg) -> {
+                    int n = 0;
+                    for (int i = 0; i < TRACK_BANK_SIZE; i++) {
+                        if (trackBank.getItemAt(i).exists().get()) n++;
+                    }
+                    final int total = n;
+                    noteCountMap.clear();
+                    if (total == 0) {
+                        sendReply(src, "/agent/tracks/clear/response", 0);
+                        host.println("[BitwigAgent] Keine Tracks vorhanden");
+                        return;
+                    }
+                    // Jede Löschung mit 80ms Abstand damit Bitwig die Bank aktualisieren kann
+                    for (int i = 0; i < total; i++) {
+                        final long delayMs = i * 80L;
+                        host.scheduleTask(() -> {
+                            Channel first = (Channel) trackBank.getItemAt(0);
+                            if (first.exists().get()) {
+                                first.selectInMixer();
+                                cursorTrack.deleteObject();
+                            }
+                        }, delayMs);
+                    }
+                    // ACK erst nach allen Löschungen + 200ms Sicherheitspuffer
+                    host.scheduleTask(() -> {
+                        sendReply(src, "/agent/tracks/clear/response", total);
+                        host.println("[BitwigAgent] " + total + " Tracks gelöscht und Counter zurückgesetzt");
+                    }, total * 80L + 200L);
+                });
+
         space.registerMethod("/undo", "*", "Undo last action",
                 (src, msg) -> application.undo());
 
@@ -698,10 +733,11 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
 
         // ── Track-Steuerung ────────────────────────────────────────────────
         for (int i = 1; i <= TRACK_BANK_SIZE; i++) {
-            final Channel t = (Channel) trackBank.getItemAt(i - 1);
-            final String  n = String.valueOf(i);
+            final Channel t        = (Channel) trackBank.getItemAt(i - 1);
+            final String  n        = String.valueOf(i);
+            final int     trackNum = i;
             space.registerMethod("/track/" + n + "/select", "*", "Select " + n,
-                    (src, msg) -> t.selectInMixer());
+                    (src, msg) -> { t.selectInMixer(); host.scheduleTask(() -> sendReply(src, "/ack/track/selected", trackNum), 40); });
             space.registerMethod("/track/" + n + "/volume", "*", "Volume " + n,
                     (src, msg) -> t.volume().value().set(argFloat(msg, 0, 0.8f)));
             space.registerMethod("/track/" + n + "/pan", "*", "Pan " + n,
@@ -1186,6 +1222,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                     clipSlotBank.createEmptyClip(slot, len);
                     clipSlotBank.select(slot);
                     host.println("[BitwigAgent] Clip erstellt: Slot " + slot + ", " + len + " Beats");
+                    host.scheduleTask(() -> sendReply(src, "/ack/clip/created", 1), 150);
                 });
 
         // /clip/launch <slot>  — Clip starten

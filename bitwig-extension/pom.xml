@@ -172,6 +172,25 @@
               </archive>
             </configuration>
           </execution>
+          <!-- 4. BitwigStepPlugin — State Machine + Step Executor (Port 8001) -->
+          <execution>
+            <id>jar-step-plugin</id>
+            <phase>package</phase>
+            <goals><goal>jar</goal></goals>
+            <configuration>
+              <classifier>step-plugin</classifier>
+              <excludes>
+                <exclude>com/bitwigagent/BitwigAgentBridge*.class</exclude>
+                <exclude>com/bitwigagent/BitwigOscBridge*.class</exclude>
+                <exclude>com/bitwigagent/LaunchpadController*.class</exclude>
+              </excludes>
+              <archive>
+                <manifest>
+                  <mainClass>com.bitwigagent.BitwigStepPluginDefinition</mainClass>
+                </manifest>
+              </archive>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <!-- Nach dem Build: JARs als .bwextension kopieren -->
@@ -216,11 +235,24 @@
                 <copy file="${build.dir}/LaunchpadController-fix.jar"
                       tofile="${project.basedir}/dist/LaunchpadController.bwextension"/>
 
+                <!-- 4. BitwigStepPlugin — services auf BitwigStepPluginDefinition -->
+                <copy file="${build.dir}/${art.ver}-step-plugin.jar"
+                      tofile="${build.dir}/BitwigStepPlugin-fix.jar"/>
+                <echo file="${build.dir}/step-service.txt"
+                      message="com.bitwigagent.BitwigStepPluginDefinition"/>
+                <zip destfile="${build.dir}/BitwigStepPlugin-fix.jar" update="true">
+                  <zipfileset file="${build.dir}/step-service.txt"
+                    fullpath="META-INF/services/com.bitwig.extension.ExtensionDefinition"/>
+                </zip>
+                <copy file="${build.dir}/BitwigStepPlugin-fix.jar"
+                      tofile="${project.basedir}/dist/BitwigStepPlugin.bwextension"/>
+
                 <echo>
 Extensions gebaut:
   dist/BitwigAgentBridge.bwextension   (legacy)
   dist/BitwigOscBridge.bwextension     (pure OSC Bridge)
   dist/LaunchpadController.bwextension (Launchpad: Control/Drum/Instrument)
+  dist/BitwigStepPlugin.bwextension    (Step Executor — Port 8001)
                 </echo>
               </target>
             </configuration>

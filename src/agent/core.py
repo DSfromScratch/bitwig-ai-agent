@@ -38,7 +38,7 @@ from langgraph.prebuilt import ToolNode
 from openai import BadRequestError
 
 from src.agent.state import AgentState, GenerationPhase
-from src.agent.prompts import SYSTEM_PROMPT
+from src.agent.prompts import SYSTEM_PROMPT, PROMPT_SONG, PROMPT_CONTROL, PROMPT_LAUNCHPAD
 from src.agent.tools import ALL_TOOLS
 from src.agent.events import get_event_bus
 from src.agent.policy import enforce_policy_on_response
@@ -218,14 +218,68 @@ _PHASE_SIGNALS: list[tuple[list[str], GenerationPhase]] = [
 ]
 
 
-def _get_llm(max_tokens: int = 1500) -> BaseChatModel:
+def _log_token_usage(response: AIMessage, label: str = "") -> dict:
+    """Loggt Token-Nutzung mit Thinking- vs. Rest-Aufschlüsselung."""
+    meta = getattr(response, "usage_metadata", None) or {}
+    input_tok  = meta.get("input_tokens", 0)
+    output_tok = meta.get("output_tokens", 0)
+    total_tok  = meta.get("total_tokens", input_tok + output_tok)
+
+    # Thinking-Tokens: vLLM liefert ggf. completion_tokens_details.reasoning_tokens
+    think_tok = 0
+    resp_meta = getattr(response, "response_metadata", None) or {}
+    usage_raw = resp_meta.get("usage", resp_meta.get("token_usage", {})) or {}
+    details   = usage_raw.get("completion_tokens_details") or {}
+    think_tok = details.get("reasoning_tokens", 0) if isinstance(details, dict) else 0
+
+    # Fallback: Schätzung aus <think>-Block-Länge (~4 Zeichen pro Token)
+    think_estimated = False
+    if think_tok == 0:
+        raw_content = getattr(response, "content", "") or ""
+        m = _THINK_RE.search(raw_content)
+        if m:
+            think_tok = len(m.group(1)) // 4
+            think_estimated = True
+
+    non_think = max(0, output_tok - think_tok)
+    prefix = f" [{label}]" if label else ""
+    est_mark = "≈" if think_estimated else ""
+    line = (
+        f"TOKENS{prefix}  "
+        f"input={input_tok} | "
+        f"output={output_tok}  "
+        f"(thinking{est_mark}={think_tok} [{(think_tok/output_tok*100):.0f}%]  "
+        f"rest={non_think} [{(non_think/output_tok*100):.0f}%])  "
+        f"| total={total_tok}"
+        if output_tok else
+        f"TOKENS{prefix}  input={input_tok} | output={output_tok} | total={total_tok}  [keine Usage-Daten]"
+    )
+    log.info(line)
+    print(line, flush=True)
+
+    usage = {
+        "input_tokens":    input_tok,
+        "output_tokens":   output_tok,
+        "thinking_tokens": think_tok,
+        "rest_tokens":     non_think,
+        "total_tokens":    total_tok,
+        "label":           label,
+    }
+    try:
+        get_event_bus().emit("token_usage", usage)
+    except Exception:
+        pass
+    return usage
+
+
+def _get_llm(max_tokens: int = 3000) -> BaseChatModel:
     test_mode = os.getenv("BITWIG_TEST_MODE", "").lower() == "mock"
     
     if test_mode:
         log.info("TEST_MODE: Verwende Mock-LLM statt vLLM-Backend")
         return MockLLM()
     else:
-        base = os.getenv("VLLM_BASE_URL", "http://192.168.0.4:8000") + "/v1"
+        base = os.getenv("VLLM_BASE_URL", "http://192.168.0.3:8100") + "/v1"
         model = os.getenv("VLLM_MODEL", "./models/Qwen3-14B-AWQ")
         return ChatOpenAI(
             base_url=base,
@@ -264,21 +318,81 @@ _CONFIRMATIONS = frozenset([
 def _is_knowledge_question(text: str) -> bool:
     """Alles ist Wissensfrage AUSSER: Slash-Commands oder kurze Zustimmungen."""
     lower = text.lower().strip()
-    # Slash-Command (/play, /add track, /hilfe ...) → sofort ausführen
     if lower.startswith("/"):
         return False
-    # Kurze Zustimmung zum vorherigen Vorschlag → ausführen
     if lower in _CONFIRMATIONS or any(
         lower == c or lower.startswith(c + " ") or lower.startswith(c + ",")
         for c in _CONFIRMATIONS
     ):
         return False
-    # Alles andere → Wissensfrage: nur erklären, keine Tools
     return True
 
 
-def _select_tools_for_context(all_messages: list):
-    return _get_tools()
+# ── Master Router ─────────────────────────────────────────────────────────────
+# Bestimmt aus dem User-Prompt welche Phase (und damit welche Tools + Prompt)
+# benötigt werden. Kein LLM-Call — reines Keyword-Routing.
+
+_CONTROL_COMMANDS = frozenset(["/play", "/stop", "/tempo", "/select", "/mute", "/solo", "/volume", "/status", "/record", "/loop", "/undo"])
+_LAUNCHPAD_KEYWORDS = frozenset(["launchpad", "/map pad", "/clear pads", "pad belegen", "pad zuweisen"])
+
+# Tool-Namen pro Modus (aus dem kombinierten MCP+Agent-Pool filtern)
+_SONG_TOOL_NAMES = frozenset([
+    "check_bitwig_connection", "execute_result",
+    "get_bitwig_track_state", "query_bitwig_docs",
+])
+_CONTROL_TOOL_NAMES = frozenset([
+    "check_bitwig_connection", "control_bitwig",
+    "bitwig_play", "bitwig_stop", "bitwig_set_tempo",
+    "bitwig_select_track", "bitwig_set_track_volume",
+    "bitwig_pan_track", "bitwig_solo_track", "bitwig_mute_track",
+    "bitwig_eq_band",
+])
+_LAUNCHPAD_TOOL_NAMES = frozenset([
+    "check_bitwig_connection",
+    "bitwig_launchpad_map", "bitwig_launchpad_led", "bitwig_launchpad_clear",
+])
+
+
+def _route_request(text: str) -> str:
+    """Gibt 'song' | 'control' | 'launchpad' zurück."""
+    lower = text.lower().strip()
+    if any(kw in lower for kw in _LAUNCHPAD_KEYWORDS):
+        return "launchpad"
+    if lower.startswith("/"):
+        cmd = lower.split()[0]
+        if cmd in _CONTROL_COMMANDS:
+            return "control"
+    return "song"
+
+
+def _get_prompt_for_mode(mode: str) -> str:
+    if mode == "control":
+        return PROMPT_CONTROL
+    if mode == "launchpad":
+        return PROMPT_LAUNCHPAD
+    return PROMPT_SONG
+
+
+def _filter_tools_for_mode(mode: str, all_tools: list) -> list:
+    """Gibt nur die für den Modus relevanten Tools zurück."""
+    allowed = {"song": _SONG_TOOL_NAMES, "control": _CONTROL_TOOL_NAMES,
+               "launchpad": _LAUNCHPAD_TOOL_NAMES}.get(mode, _SONG_TOOL_NAMES)
+    filtered = [t for t in all_tools if getattr(t, "name", "") in allowed]
+    # Fallback: mind. check_bitwig_connection immer dabei
+    if not filtered:
+        return [t for t in all_tools if getattr(t, "name", "") == "check_bitwig_connection"] or all_tools
+    return filtered
+
+
+def _select_tools_for_context(all_messages: list) -> list:
+    """Gibt Tool-Set basierend auf der letzten User-Nachricht zurück."""
+    user_text = _latest_user_text(all_messages)
+    mode = _route_request(user_text)
+    all_tools = _get_tools()
+    tools = _filter_tools_for_mode(mode, all_tools)
+    log.info("Router: mode=%s → %d Tools: %s", mode, len(tools),
+             [getattr(t, "name", "?") for t in tools])
+    return tools
 
 
 def _extract_think(text: str) -> tuple[str, str]:
@@ -381,21 +495,22 @@ def _recover_xml_fragment_once(
         t for t in _get_tools()
         if getattr(t, "name", "") in {
             "check_bitwig_connection",
-            "build_song",
-            "verify_song",
+            "execute_result",
+            "query_bitwig_docs",
         }
     ]
-    llm = _get_llm(max_tokens=500).bind_tools(fallback_tools or selected_tools)
+    llm = _get_llm(max_tokens=4000).bind_tools(fallback_tools or selected_tools)
     hard_nudge = HumanMessage(
         content=(
-            "Deine letzte Antwort war ein XML-Fragment. "
-            "Antworte jetzt ausschließlich mit genau EINEM gültigen Tool-Call. "
-            "Keine XML-Tags, kein Markdown, kein Freitext. "
-            "Falls Parameter nötig sind, liefere valides JSON-Objekt als Args."
+            "Deine letzte Antwort war ein XML-Fragment — der Tool-Call wurde abgeschnitten. "
+            "Führe die ursprüngliche Aufgabe vollständig aus: "
+            "Generiere denselben execute_result-Call erneut, diesmal komplett und valide. "
+            "Keine XML-Tags, kein Markdown, kein Freitext — nur ein ausführbarer Tool-Call."
         )
     )
     try:
         candidate = llm.invoke([system] + messages[-6:] + [hard_nudge])
+        _log_token_usage(candidate, label="xml-recovery")
     except BadRequestError as exc:
         log.debug("XML-Recovery fehlgeschlagen (BadRequest): %s", exc)
         return None
@@ -428,11 +543,14 @@ def call_llm(state: AgentState) -> dict:
             trimmed.append(m)
     messages = trimmed
     selected_tools = _select_tools_for_context(all_messages)
+    mode = _route_request(_latest_user_text(all_messages))
+    prompt_text = _get_prompt_for_mode(mode)
     llm = _get_llm().bind_tools(selected_tools) if selected_tools else _get_llm()
-    system = SystemMessage(content=SYSTEM_PROMPT)
-    log.info("LLM call — %d Nachrichten, %d Tools", len(messages), len(selected_tools))
+    system = SystemMessage(content=prompt_text)
+    log.info("LLM call — mode=%s %d Nachrichten, %d Tools", mode, len(messages), len(selected_tools))
     try:
         response = llm.invoke([system] + messages)
+        _log_token_usage(response, label="main")
     except BadRequestError as exc:
         msg = str(exc)
         # Kontext-Overflow: mit kleinerem Toolset + weniger Output-Tokens erneut versuchen.
@@ -452,7 +570,19 @@ def call_llm(state: AgentState) -> dict:
                 len(fallback_tools or selected_tools),
                 len(fallback_messages),
             )
-            response = fallback_llm.invoke([system] + fallback_messages)
+            try:
+                response = fallback_llm.invoke([SystemMessage(content=PROMPT_CONTROL)] + fallback_messages)
+                _log_token_usage(response, label="fallback")
+            except Exception as fallback_exc:
+                log.error("LLM Fallback-Invoke fehlgeschlagen: %s", fallback_exc, exc_info=True)
+                get_event_bus().emit("agent_error", {
+                    "source": "llm_fallback",
+                    "error": type(fallback_exc).__name__,
+                    "message": str(fallback_exc),
+                })
+                raise RuntimeError(
+                    f"LLM nicht erreichbar — Kontext zu groß, Fallback ebenfalls fehlgeschlagen: {fallback_exc}"
+                ) from fallback_exc
         else:
             raise
 
@@ -699,7 +829,7 @@ def get_graph():
 
 def chat(message: str, history: list | None = None) -> str:
     """Einfacher Chat-Einstieg für Streamlit."""
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import HumanMessage, AIMessage as _AIMsg
     log.info("=== Neue Anfrage: %s", message[:100])
     graph = get_graph()
     state = _default_state()
@@ -708,11 +838,52 @@ def chat(message: str, history: list | None = None) -> str:
     try:
         result = graph.invoke(state)
         answer = result["messages"][-1].content
+
+        # Token-Zusammenfassung: alle AI-Messages des Runs aufsummieren
+        total_in = total_out = total_think = 0
+        llm_calls = 0
+        for m in result["messages"]:
+            if isinstance(m, _AIMsg):
+                meta = getattr(m, "usage_metadata", None) or {}
+                if meta.get("total_tokens"):
+                    total_in    += meta.get("input_tokens", 0)
+                    total_out   += meta.get("output_tokens", 0)
+                    total_think += (meta.get("output_tokens", 0) - meta.get("input_tokens", 0)) // 2
+                    llm_calls   += 1
+        if llm_calls:
+            summary = (
+                f"=== TOKEN SUMMARY ({llm_calls} LLM-Calls): "
+                f"input={total_in} | output={total_out} | total={total_in + total_out}"
+            )
+            log.info(summary)
+            print(summary, flush=True)
+
         log.info("=== Fertig. Antwort: %s", answer[:200])
         return answer
     except Exception as e:
-        log.error("=== Fehler: %s", e)
-        raise
+        log.error("=== Fehler: %s", e, exc_info=True)
+        try:
+            get_event_bus().emit("agent_error", {
+                "source": "chat",
+                "error": type(e).__name__,
+                "message": str(e),
+            })
+        except Exception:
+            pass
+        return f"[Fehler] {type(e).__name__}: {e}"
+
+
+def execute_plan(result: "BitwigResult") -> str:  # type: ignore[name-defined]
+    """Workflow-Orchestrator: führt ein BitwigResult aus und gibt den Status-String zurück.
+
+    Core.py kennt die Ausführungs-Phasen (plan → execute → score → retry).
+    Die kreative Entscheidung (welche Instrumente, welche Patterns) trifft weiterhin das LLM.
+
+    Args:
+        result: BitwigResult-Objekt (Pydantic) oder kompatibles dict
+    """
+    from bitwig_mcp_server import execute_result
+    return execute_result(result)
 
 
 def _start_agent_ui_osc_listener(on_prompt) -> object | None:
@@ -826,10 +997,22 @@ if __name__ == "__main__":
         state["messages"] = nonlocal_history
         if ui_cfg:
             state["ui_song_config"] = ui_cfg
-        result = graph.invoke(state)
-        nonlocal_history[:] = result["messages"]
-        reply_local = nonlocal_history[-1].content
-        return reply_local
+        try:
+            result = graph.invoke(state)
+            nonlocal_history[:] = result["messages"]
+            reply_local = nonlocal_history[-1].content
+            return reply_local
+        except Exception as e:
+            # History-Rollback: User-Message entfernen damit der State konsistent bleibt
+            if nonlocal_history and isinstance(nonlocal_history[-1], HumanMessage):
+                nonlocal_history.pop()
+            log.error("graph.invoke fehlgeschlagen: %s", e, exc_info=True)
+            get_event_bus().emit("agent_error", {
+                "source": "_run_request",
+                "error": type(e).__name__,
+                "message": str(e),
+            })
+            raise
 
     import sys, signal as _signal, time as _time
 
