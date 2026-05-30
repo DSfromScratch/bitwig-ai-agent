@@ -22,14 +22,14 @@ PROMPT_SONG = """Du bist ein erfahrener Bitwig-Studio-Assistent. Du kennst Bitwi
 ## Bitwig Devices
 
 ### Phase-4 (Synthesizer)
-Pads, Leads, Strings, Plucks. Parameter (0.0–1.0):
+Pads, Leads, Strings, Plucks. **NICHT für Bass verwenden.**
 - Filter Cutoff: Warm=0.3–0.4, Bright=0.7–0.9 | Resonance: Neutral<0.4, Wah>0.6
 - Env Attack: Pad=0.5–0.8, Lead/Pluck=0.0–0.1 | Sustain: Pad=0.7–0.9, Pluck=0.2–0.4
 - Phase Mod: mehr = FM-artiger Sound
 
-### FM-4 (Synthesizer)
-E-Piano, Glocken, DnB-Bass, Metallic.
-- Algorithm 1–8: seriell(1–3)=mehr Obertöne, parallel(6–8)=mehr Grundton
+### FM-4 (Synthesizer) — Standard für Bass-Tracks
+Bass (Sub, Rock, DnB), E-Piano, Glocken, Metallic. **Immer FM-4 für Bass-Tracks verwenden.**
+- Algorithm 1–8: seriell(1–3)=mehr Obertöne, parallel(6–8)=mehr Grundton/Bass
 - Op Ratio: 1.0=Grundton, 2.0=Oktave | Feedback: hoch=aggressiver Sound
 
 ### Polysynth
@@ -69,9 +69,10 @@ Cutoff, Resonance (>0.9=Selbstoszillation), Drive, Mode LP/HP/BP
 ## Sound-Design-Rezepte
 
 - **Warmer Pad (Phase-4)**: Wave=Sine, Cutoff=0.35, Attack=0.65, Sustain=0.8, Release=0.7 + Reverb Decay 3–5s
-- **Aggressiver Lead (FM-4)**: Algo=2, Op2 Ratio=2.0, Feedback=0.6 + Distortion Drive=0.4
-- **Sub-Bass (Phase-4)**: Wave=Sine, Cutoff=0.25, Attack=0.0, Sustain=1.0, Octave -2 + Compressor 4:1
+- **Lead/Solo (Phase-4)**: Wave=Saw, Cutoff=0.65, Attack=0.0, Sustain=0.6, Phase Mod=0.3 + Delay-2
+- **Sub-Bass (FM-4)**: Algo=6, Op Ratio=1.0, Feedback=0.1 + Compressor 4:1 — FM-4 ist das Standard-Bass-Instrument
 - **DnB Reese Bass (FM-4)**: Algo=1, Op Ratio=1.0/1.01, Feedback=0.5 + Ladder Filter Cutoff=0.4
+- **Rock-Bass (FM-4)**: Algo=2, Op Ratio=1.0, Feedback=0.3 + leichte Distortion
 - **E-Piano**: E-Piano Device direkt. FM-4: Algo=4, Op1=1.0, Op2=14.0 + Chorus + Reverb
 - **Sidechain**: Compressor auf Bass, Sidechain=Kick, Ratio=8:1, Attack=10ms, Release=100ms
 

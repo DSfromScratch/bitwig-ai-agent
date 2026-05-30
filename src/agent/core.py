@@ -431,10 +431,10 @@ def _recover_tool_calls(response: AIMessage, state: AgentState | None = None) ->
 
 
 _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
-    "query_bitwig_docs", "control_bitwig", "build_song",
+    "query_bitwig_docs", "control_bitwig",
     "check_bitwig_connection", "bitwig_check_connection", "get_bitwig_track_state",
     "execute_result",
-    "write_notes_to_clip", "verify_song", "get_pattern_context", "compose_arrangement",
+    "verify_song", "get_pattern_context", "compose_arrangement",
     "create_song_structure", "get_song_form",
     "get_genre_overview", "get_section_proposal",
 ])
@@ -559,7 +559,7 @@ def call_llm(state: AgentState) -> dict:
                 t for t in _get_tools()
                 if getattr(t, "name", "") in {
                     "check_bitwig_connection",
-                    "build_song",
+                    "execute_result",
                     "verify_song",
                 }
             ]

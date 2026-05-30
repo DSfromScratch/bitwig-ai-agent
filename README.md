@@ -1,194 +1,237 @@
 # Bitwig AI Agent
 
-AI-powered music composition agent for Bitwig Studio 6. Generates multi-track songs directly into Bitwig via OSC — no audio files, no round-trips, pure LLM-driven MIDI composition.
+KI-gesteuerter Musik-Kompositions-Agent für Bitwig Studio 6. Generiert mehrstimmige Songs direkt in Bitwig via OSC — kein Audio-Export, keine Round-Trips, reines LLM-gesteuertes MIDI-Composing.
 
-## How It Works
+## Architektur
 
 ```
-User Prompt
-    │
-    ▼
-LangGraph Master Graph
-    ├── plan_node          (extracts BPM, key, style, instrument hints)
-    ├── instrument_slave ─┐
-    ├── harmony_slave    ─┤─ parallel via Send-API
-    └── note_slave        │  (waits for both)
-         │                │
-         ▼                │
-    assemble_node ◄───────┘
-         │
-    execute_build ──► build_song tool ──► OSC ──► BitwigAgentBridge.java
-         │                                              │
-    verify_node ◄── quality score ◄── verify_song      ▼
-    (Observer)       retry if < 0.75          Bitwig Studio 6
-         │
-    reply_node
+User-Prompt (Streamlit / CLI / OSC)
+        │
+        ▼
+LangGraph Agent (core.py)
+  ├── Router: song | control | launchpad
+  ├── LLM: Qwen3-14B-AWQ (vLLM, remote)
+  ├── Parser-Chain: OpenAI → QwenXML → TruncatedXML → Markdown
+  ├── Policy Guard: halluzinierte Tools herausfiltern
+  └── Tool: execute_result(BitwigResult)
+              │
+              ▼
+        bitwig_mcp_server.py
+          Step-Executor (Command Pattern)
+          ├── UUID-Auflösung: Extension-Cache → Neo4j
+          ├── Precondition Auto-Inject (fehlende Tracks)
+          └── OSC → BitwigStepPlugin (Port 8002)
+                        │
+              ┌─────────┴──────────┐
+              ▼                    ▼
+  BitwigAgentBridge.java    BitwigStepPlugin.java
+  Transport, Track, FX      Step-Execution, UUID-Export
+  (Port 8001/9001)          (Port 8002/9002)
+              │
+              ▼
+        Bitwig Studio 6
 ```
 
-The **Master Graph** implements an Observer + State Pattern retry loop: `verify_node` scores output quality (note density, track count, warnings) and routes back to `plan_node` if the score falls below the threshold — up to the configured retry budget.
+**UUID-Sync:** Die Java-Extension ist die einzige Quelle der Gerät-UUIDs. Beim ersten Aufruf holt Python alle UUIDs via `/devices/export` OSC, schreibt sie nach Neo4j und cached sie in-process. Kein doppeltes Pflegen.
 
-Sources chord progressions from the **Chordonomicon knowledge base** (1,800 songs, Neo4j graph + embeddings).
+**Parser-Chain:** Das LLM (Qwen3) liefert gelegentlich XML-Fragmente statt native Tool-Calls. Die `CompositeToolCallParser`-Kette repariert truncated JSON (Stack-basiert für `{}` und `[]`) und extrahiert `<tool_call>`-Tags automatisch.
 
 ## Stack
 
-| Layer | Technology |
-|-------|-----------|
-| LLM | Qwen3-14B-AWQ via vLLM |
-| Agent | LangGraph StateGraph + LangChain tools |
-| MCP | bitwig_mcp_server.py (Claude Code integration) |
-| OSC Bridge | BitwigAgentBridgeExtension.java (UDP 8001/9001) |
-| Knowledge Base | Neo4j + multilingual-e5-base embeddings |
-| UI | Streamlit dashboard / CLAP plugin |
+| Schicht | Technologie |
+|---------|-------------|
+| LLM | Qwen3-14B-AWQ via vLLM (remote) |
+| Agent | LangGraph StateGraph + LangChain Tools |
+| MCP | `bitwig_mcp_server.py` (Claude Code Integration) |
+| OSC Bridge | `BitwigAgentBridgeExtension.java` (UDP 8001/9001) |
+| Step Execution | `BitwigStepPluginExtension.java` (UDP 8002/9002) |
+| Knowledge Base | Neo4j + multilingual-e5-base Embeddings |
+| UI | Streamlit Dashboard |
 
-## Prerequisites
+## Voraussetzungen
 
 - Python 3.11
-- Java 25 (for Bitwig extension build)
+- Java 21+ (für Bitwig-Extension-Build, Maven)
 - Bitwig Studio 6
-- Neo4j Desktop (Windows) or Docker
-- vLLM server with Qwen3-14B (can be remote, configured via `.env`)
+- Neo4j (lokal oder Docker)
+- vLLM-Server mit Qwen3-14B-AWQ (kann remote sein, via `.env` konfigurierbar)
 
 ## Installation
 
 ```bash
-# 1. Clone and install Python dependencies
 git clone https://github.com/DSfromScratch/bitwig-ai-agent.git
 cd bitwig-ai-agent
-make install
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 
-# 2. Copy and fill in environment variables
 cp .env.example .env
-# Edit .env: set VLLM_BASE_URL, NEO4J_URI, BITWIG_HOST, HF_TOKEN
-
-# 3. (Optional) Download Music Flamingo model (~16 GB, one-time)
-make download-mf
+# .env ausfüllen: VLLM_BASE_URL, NEO4J_URI, BITWIG_HOST
 ```
 
-## Configuration
-
-`.env` key settings:
+## Konfiguration
 
 ```env
-VLLM_BASE_URL=http://localhost:8000
+# vLLM (kann remote sein)
+VLLM_BASE_URL=http://192.168.0.3:8100
 VLLM_MODEL=./models/Qwen3-14B-AWQ
 
+# Neo4j
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
+NEO4J_PASSWORD=neo4jllm
 
+# Bitwig OSC Ports
 BITWIG_HOST=127.0.0.1
-BITWIG_OSC_PORT=8000
-BITWIG_DM_PORT=8001
-
-EMBEDDING_BASE_URL=http://127.0.0.1:8080
-KB_EMBED_MODEL=intfloat/multilingual-e5-base
-
-HF_TOKEN=                        # needed for Chordonomicon dataset
+BITWIG_PORT=8001
+BITWIG_REPLY_PORT=9001
+BITWIG_STEP_PORT=8002
+BITWIG_STEP_REPLY_PORT=9002
 ```
 
-## Running
+## Starten
 
 ```bash
-# Full stack (embedding server + MCP + agent)
-make start
+# Agent (interaktiv)
+source .venv/bin/activate
+python src/agent/core.py
 
-# Agent CLI only
-make agent
+# Streamlit Dashboard
+streamlit run dashboard/app.py
 
-# Streamlit dashboard
-make dashboard
-
-# As a systemd service (Linux)
-make agent-service-install
-make agent-service-start
-make agent-service-logs
+# Als MCP-Server für Claude Code (siehe unten)
 ```
 
-## Bitwig Extension
+## Bitwig Extensions
 
-The Java extension runs inside Bitwig Studio as an OSC server. It translates OSC commands to Bitwig API calls.
+Das Projekt verwendet zwei Java-Extensions, die als OSC-Server innerhalb von Bitwig laufen:
+
+### BitwigAgentBridge (Port 8001/9001)
+Transport, Tracks, FX-Parameter, Clip-Operationen.
+
+### BitwigStepPlugin (Port 8002/9002)
+Step-Execution (Command Pattern), UUID-Export, Note-Counter.
 
 ```bash
-# Build (requires JDK 25)
-make build-extension
-
-# Install
-make install-plugin
+# Build (erfordert JDK 21+, Maven)
+cd bitwig-extension
+mvn package -q
+# Ausgabe: target/BitwigStepPlugin-*.bwextension
 ```
 
-Copy the generated `.bwextension` file to your Bitwig extensions folder and enable it in Bitwig → Settings → Extensions. The extension listens on **UDP 8001** and replies on **9001**.
+Die `.bwextension`-Datei in den Bitwig-Extensions-Ordner kopieren und in Bitwig → Einstellungen → Controller aktivieren.
 
-Key OSC commands accepted by the extension:
+### Step-Typen (BitwigStepPlugin)
 
-| Command | Description |
-|---------|-------------|
-| `/track/add/instrument <n>` | Add n instrument tracks |
-| `/browser/device/load <name>` | Load a device by name |
-| `/transport/tempo <bpm>` | Set project tempo |
-| `/clip/notes/add <json>` | Write MIDI notes to clip |
-| `/transport/play` | Start playback |
-| `/key/set <key> <scale>` | Set project key |
+| Step | Beschreibung |
+|------|--------------|
+| `add_track` | Instrument-Track hinzufügen |
+| `select_track` | Track auswählen |
+| `load_instrument` | Gerät laden (UUID-direkt wenn bekannt) |
+| `append_effect` | FX-Device anhängen |
+| `set_param` | Parameter per Index setzen (0.0–1.0) |
+| `set_param_named` | Parameter per Name setzen |
+| `write_notes` | MIDI-Noten in Clip schreiben |
+| `write_drum_pattern` | Drum-Pattern via Neo4j-Lookup |
+| `set_tempo` | BPM setzen |
 
-## MCP Server (Claude Code)
+## MCP-Server (Claude Code)
 
-Exposes Bitwig control as Model Context Protocol tools directly in Claude Code.
+Ermöglicht direktes Bitwig-Controlling aus Claude Code heraus.
 
-Add to `~/.claude/settings.json`:
+`~/.claude/settings.json`:
 
 ```json
 {
   "mcpServers": {
     "bitwig": {
-      "command": "/path/to/bitwig-agent/.venv/bin/python",
-      "args": ["/path/to/bitwig-agent/bitwig_mcp_server.py"]
+      "command": "/pfad/zu/bitwig-agent/.venv/bin/python",
+      "args": ["/pfad/zu/bitwig-agent/bitwig_mcp_server.py"]
     }
   }
 }
 ```
 
-## Testing
+### Verfügbare MCP-Tools
 
-```bash
-make test                # Unit tests (no external deps)
-make test-integration    # Full pipeline, all deps mocked
-make test-neo4j          # Requires Neo4j on bolt://localhost:7687
-make test-all            # Everything
+| Tool | Beschreibung |
+|------|--------------|
+| `execute_result` | Führt einen BitwigResult-Step-Plan aus (Haupttool) |
+| `check_bitwig_connection` | Prüft Verbindung zu beiden Bridges |
+| `get_bitwig_track_state` | Track-Namen + Note-Counts aus Bitwig |
+| `query_bitwig_docs` | Sucht in der Neo4j-Wissensbasis |
+| `bitwig_play` / `bitwig_stop` | Transport starten/stoppen |
+| `bitwig_set_tempo` | BPM setzen |
+| `bitwig_select_track` | Track auswählen |
+| `bitwig_set_track_volume` | Lautstärke (0.0–1.0) |
+| `bitwig_launchpad_map` | Launchpad MK2 Pad-Mapping |
+
+### `execute_result` — BitwigResult-Format
+
+```json
+{
+  "context_type": "song",
+  "target": {"bpm": 120, "genre": "rock"},
+  "summary": "Rock Drums + Bass",
+  "steps": [
+    {"type": "add_track",       "args": {},                                      "status": "pending", "note": ""},
+    {"type": "load_instrument", "args": {"track_index": 1, "name": "v9 Kick"},   "status": "pending", "note": ""},
+    {"type": "write_notes",     "args": {"track_index": 1, "notes": [...]},       "status": "pending", "note": ""}
+  ]
+}
 ```
 
-| Marker | Requirement |
-|--------|------------|
-| `unit` | None |
-| `e2e` | None (LLM + OSC mocked) |
-| `integration` | Bitwig + OSC bridge (port 8001) |
-| `neo4j` | Neo4j running |
+## Tests
 
-589 tests, default run excludes `integration` and `neo4j`.
+```bash
+# Unit-Tests (keine externe Abhängigkeit)
+.venv/bin/pytest tests/ -m unit -v
 
-## Project Structure
+# Integration (erfordert Bitwig + OSC-Bridge aktiv)
+.venv/bin/pytest tests/ -m integration -v -s
+
+# E2E Guitar Score Loop
+.venv/bin/pytest tests/test_e2e_guitar.py -m integration -v -s
+```
+
+| Marker | Anforderung |
+|--------|-------------|
+| `unit` | Keine (alle Deps gemockt) |
+| `integration` | Bitwig läuft + BitwigStepPlugin aktiv |
+| `neo4j` | Neo4j erreichbar auf bolt://localhost:7687 |
+
+113 Unit-Tests in 10 Dateien, alle ohne externe Abhängigkeiten ausführbar.
+
+## Projektstruktur
 
 ```
 bitwig-agent/
 ├── src/agent/
-│   ├── core.py              # Main StateGraph + tool routing
-│   ├── master_graph.py      # Multi-slave orchestration, Observer retry loop
-│   ├── state.py             # AgentState TypedDict, reducers
-│   ├── slaves/              # instrument_slave, harmony_slave, note_slave, assemble
-│   ├── tools/               # build_song, verify_song, OSC tools
-│   ├── policy.py            # Request classification
-│   └── prompts.py           # System prompts
+│   ├── core.py                    # LangGraph Agent: Routing, LLM, Recovery, Policy
+│   ├── events.py                  # EventBus + JSONL-Logging (logs/generation_events.jsonl)
+│   ├── policy.py                  # Halluzinierte Tools erkennen und entfernen
+│   ├── project_state.py           # BitwigProjectState: Track/Note-Snapshot
+│   ├── prompts.py                 # System-Prompts (song / control / launchpad)
+│   ├── state.py                   # AgentState TypedDict
+│   ├── tools/
+│   │   ├── mcp_bridge.py          # MCP Tool-Registrierung + Whitelist
+│   │   ├── song_tools.py          # UUID-Lookup, Device-Sync, OSC-Helpers
+│   │   └── bitwig_tools.py        # Transport-, Track-, Parameter-Tools
+│   └── parsing/
+│       └── tool_call_parsers.py   # CompositeToolCallParser (4 Parser-Strategien)
 ├── src/knowledge/
-│   ├── neo4j_graph.py       # Chordonomicon graph queries
-│   └── embedding_server.py  # Local embedding service
-├── src/audio/               # Audio analysis, style rules, MIDI utilities
-├── bitwig-extension/        # Java OSC bridge (Bitwig Controller API)
-├── agent-plugin/            # CLAP plugin UI
-├── dashboard/               # Streamlit UI
-├── bitwig_mcp_server.py     # MCP server for Claude Code
-├── start_agent.py           # Full-stack launcher
-├── scripts/                 # systemd service, KB build scripts
-└── tests/                   # 589 tests across 12 files
+│   ├── neo4j_graph.py             # Chordonomicon-Graph-Queries
+│   ├── repositories.py            # Device/Pattern-Repositories
+│   └── embedding_server.py        # Lokaler Embedding-Service
+├── src/audio/                     # Chord-Konvertierung, Style-Rules, MIDI-Utils
+├── bitwig-extension/              # Java: BitwigAgentBridge + BitwigStepPlugin (Maven)
+├── dashboard/                     # Streamlit-UI
+├── bitwig_mcp_server.py           # MCP-Server + execute_result-Implementierung
+├── start_agent.py                 # Einstiegspunkt
+├── scripts/                       # KB-Build-Scripts, Neo4j-Ingest
+├── logs/                          # generation_events.jsonl, agent_YYYYMMDD.log
+└── tests/                         # 113 Unit-Tests
 ```
 
-## License
+## Lizenz
 
 MIT

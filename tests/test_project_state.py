@@ -51,7 +51,9 @@ class TestInit:
     @pytest.mark.unit
     def test_from_bitwig_no_osc(self):
         """Wenn OSC nicht erreichbar → leere Track-Liste, kein Crash."""
-        s = BitwigProjectState.from_bitwig()
+        from unittest.mock import patch
+        with patch.object(BitwigProjectState, "_query", return_value=None):
+            s = BitwigProjectState.from_bitwig()
         assert isinstance(s, BitwigProjectState)
         assert s.track_count() == 0
 
