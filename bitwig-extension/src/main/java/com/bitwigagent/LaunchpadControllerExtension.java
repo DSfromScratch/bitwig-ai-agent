@@ -1,5 +1,6 @@
 package com.bitwigagent;
 
+import com.bitwig.extension.api.opensoundcontrol.*;
 import com.bitwig.extension.controller.ControllerExtension;
 import com.bitwig.extension.controller.ControllerExtensionDefinition;
 import com.bitwig.extension.controller.api.*;
@@ -77,18 +78,38 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     };
 
     // ── Launchpad MK2 Layout ──────────────────────────────────────────────────
-    // Grid-Noten: Zeile r (1=unten, 8=oben), Spalte c (1=links, 8=rechts) → Note r*10+c
-    // Seiten-Buttons (rechte Spalte): 19, 29, 39, 49, 59, 69, 79, 89
-    private static final int BTN_MODE_CONTROL    = 89; // Zeile 8, rechts
-    private static final int BTN_MODE_DRUM       = 79; // Zeile 7, rechts
-    private static final int BTN_MODE_INSTRUMENT = 69; // Zeile 6, rechts
+    // Top-Row CC-Buttons (senden CC auf Kanal 1)
+    private static final int CC_BTN_UP      = 104;
+    private static final int CC_BTN_DOWN    = 105;
+    private static final int CC_BTN_LEFT    = 106;
+    private static final int CC_BTN_RIGHT   = 107;
+    private static final int CC_BTN_SESSION = 108; // Modus: Control
+    private static final int CC_BTN_USER1   = 109; // Modus: Drum
+    private static final int CC_BTN_USER2   = 110; // Modus: Instrument
+    private static final int CC_BTN_MIXER   = 111; // Bitwig Mixer-Panel
+
+    // Rechte Spalte (Note-On, von oben nach unten)
+    private static final int BTN_VOLUME     = 89;
+    private static final int BTN_PAN        = 79;
+    private static final int BTN_SEND_A     = 69;
+    private static final int BTN_SEND_B     = 59;
+    private static final int BTN_STOP_CLIP  = 49;
+    private static final int BTN_MUTE       = 39;
+    private static final int BTN_SOLO       = 29;
+    private static final int BTN_RECORD_ARM = 19;
 
     // Velocity für Drum-Noten
     private static final int DRUM_VELOCITY = 100;
 
+    // Port für den eingebauten OSC-Server (LED-Suggestions + Mode-Query vom Agent)
+    private static final int LED_OSC_PORT   = 8003;
+    // Reply-Port: Agent empfängt Mode-Antworten hier
+    private static final int MODE_REPLY_PORT = 9005;
+
     // ── Interne Zustands-Felder ───────────────────────────────────────────────
     private enum Mode { CONTROL, DRUM, INSTRUMENT }
     private Mode currentMode = Mode.CONTROL;
+    private OscConnection modeReplyConn;
 
     private MidiIn    midiIn;
     private MidiOut   midiOut;
@@ -99,6 +120,9 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private Transport      transport;
     private CursorTrack    cursorTrack;
     private Application    application;
+
+    // Pads die zuletzt per suggest_notes beleuchtet wurden (zum Löschen)
+    private final java.util.List<Integer> suggestionPads = new java.util.ArrayList<>();
 
     // ── Konstruktor ───────────────────────────────────────────────────────────
 
@@ -136,6 +160,8 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         midiIn.setMidiCallback(this::onMidi);
 
+        setupLedOsc();
+
         enterMode(Mode.CONTROL);
         host.showPopupNotification("Launchpad Controller — Control Mode");
         host.println("[Launchpad] Controller gestartet");
@@ -153,22 +179,41 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     // ── MIDI Input ────────────────────────────────────────────────────────────
 
     private void onMidi(int status, int data1, int data2) {
-        int type    = status & 0xF0;
-        boolean pressed = (type == 0x90 && data2 > 0);
-        boolean released = (type == 0x80 || (type == 0x90 && data2 == 0));
+        int type      = status & 0xF0;
+        boolean pressed   = (type == 0x90 && data2 > 0);
+        boolean released  = (type == 0x80 || (type == 0x90 && data2 == 0));
+        boolean ccPressed = (type == 0xB0 && data2 > 0);
 
-        if (!pressed && !released) return;
+        if (!pressed && !released && !ccPressed) return;
 
-        // Modus-Buttons (Seiten-Buttons rechte Spalte)
+        // Top-Row CC-Buttons
+        if (ccPressed) {
+            switch (data1) {
+                case CC_BTN_SESSION: enterMode(Mode.CONTROL);                                    break;
+                case CC_BTN_USER1:   enterMode(Mode.DRUM);                                       break;
+                case CC_BTN_USER2:   enterMode(Mode.INSTRUMENT);                                 break;
+                case CC_BTN_MIXER:   application.setPanelLayout(Application.PANEL_LAYOUT_MIX);  break;
+                case CC_BTN_UP:      executeAction("vol_up");                                    break;
+                case CC_BTN_DOWN:    executeAction("vol_down");                                  break;
+                case CC_BTN_LEFT:    executeAction("prev_track");                                break;
+                case CC_BTN_RIGHT:   executeAction("next_track");                                break;
+            }
+            return;
+        }
+
+        // Rechte Spalte — globale Bitwig-Aktionen
         if (pressed) {
-            if (data1 == BTN_MODE_CONTROL)    { enterMode(Mode.CONTROL);    return; }
-            if (data1 == BTN_MODE_DRUM)       { enterMode(Mode.DRUM);       return; }
-            if (data1 == BTN_MODE_INSTRUMENT) { enterMode(Mode.INSTRUMENT); return; }
+            switch (data1) {
+                case BTN_VOLUME:     cursorTrack.mute().set(false);  return; // Unmute
+                case BTN_MUTE:       cursorTrack.mute().set(true);   return; // Mute
+                case BTN_STOP_CLIP:  transport.stop();               return;
+                case BTN_RECORD_ARM: transport.record();             return;
+            }
         }
 
         switch (currentMode) {
-            case CONTROL:    handleControl(data1, pressed);    break;
-            case DRUM:       handleDrum(data1, data2, pressed, released); break;
+            case CONTROL:    handleControl(data1, pressed);                   break;
+            case DRUM:       handleDrum(data1, data2, pressed, released);     break;
             case INSTRUMENT: handleInstrument(data1, data2, pressed, released); break;
         }
     }
@@ -262,9 +307,10 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         if (pressed) {
             int vel = Math.max(1, Math.min(127, velocity));
-            // Note an Bitwig-Track via NoteInput senden (korrekte API, kein Loopback)
             drumNoteInput.sendRawMidiEvent(0x99, drumNote, vel); // Kanal 10 (9)
             setLed(note, DRUM_COLOR_HIT[0], DRUM_COLOR_HIT[1], DRUM_COLOR_HIT[2]);
+            if (modeReplyConn != null)
+                modeReplyConn.sendMessage("/launchpad/note/played", drumNote, vel);
         } else {
             drumNoteInput.sendRawMidiEvent(0x89, drumNote, 0);
             int[] col = drumColor(drumIdx);
@@ -309,9 +355,10 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         if (pressed) {
             int vel = Math.max(1, Math.min(127, velocity));
-            // Note an Bitwig-Track via NoteInput senden (Kanal 1)
             instNoteInput.sendRawMidiEvent(0x90, midiNote, vel);
             setLed(note, INST_COLOR_HIT[0], INST_COLOR_HIT[1], INST_COLOR_HIT[2]);
+            if (modeReplyConn != null)
+                modeReplyConn.sendMessage("/launchpad/note/played", midiNote, vel);
         } else {
             instNoteInput.sendRawMidiEvent(0x80, midiNote, 0);
             int[] col = instPadColor(midiNote);
@@ -394,31 +441,119 @@ public class LaunchpadControllerExtension extends ControllerExtension {
             case DRUM:       paintDrumMode();       break;
             case INSTRUMENT: paintInstrumentMode(); break;
         }
+        if (modeReplyConn != null)
+            modeReplyConn.sendMessage("/launchpad/mode/changed", mode.name());
         host.println("[Launchpad] Modus: " + mode);
     }
 
     private void paintModeButtons() {
-        // Aktiver Modus → hell, andere → dunkel
-        setLed(BTN_MODE_CONTROL,
+        // Session/User1/User2: aktiver Modus hell, andere dunkel
+        setLed(CC_BTN_SESSION,
             currentMode == Mode.CONTROL    ? 63 : 8,
             currentMode == Mode.CONTROL    ? 63 : 8,
             currentMode == Mode.CONTROL    ? 63 : 8);
-        setLed(BTN_MODE_DRUM,
+        setLed(CC_BTN_USER1,
             currentMode == Mode.DRUM       ? 63 : 8, 0, 0);
-        setLed(BTN_MODE_INSTRUMENT,
-            0,
-            currentMode == Mode.INSTRUMENT ? 63 : 8, 0);
+        setLed(CC_BTN_USER2,
+            0, currentMode == Mode.INSTRUMENT ? 63 : 8, 0);
+        // Mixer-Button immer leicht weiß
+        setLed(CC_BTN_MIXER, 20, 20, 20);
+        // Pfeil-Buttons
+        setLed(CC_BTN_UP,    20, 40, 20);
+        setLed(CC_BTN_DOWN,  10, 20, 10);
+        setLed(CC_BTN_LEFT,   0, 20, 40);
+        setLed(CC_BTN_RIGHT,  0, 30, 50);
+        // Rechte Spalte: feste Aktionen
+        setLed(BTN_VOLUME,     0,  50,  0);  // grün = unmute
+        setLed(BTN_MUTE,      50,  15,  0);  // orange = mute
+        setLed(BTN_STOP_CLIP, 50,  20,  0);  // orange-rot = stop
+        setLed(BTN_RECORD_ARM, 63,  0,  0);  // rot = record
     }
 
     // ── LED Hilfsmethoden ─────────────────────────────────────────────────────
+
+    // ── OSC LED-Server (Port 8003) ────────────────────────────────────────────
+
+    private void setupLedOsc() {
+        try {
+            OscModule       osc   = host.getOscModule();
+            OscAddressSpace space = osc.createAddressSpace();
+
+            // Outbound: Reply-Verbindung zu Python (Port 9005)
+            modeReplyConn = osc.connectToUdpServer("127.0.0.1", MODE_REPLY_PORT, space);
+
+            // /launchpad/mode/get  — aktuellen Modus zurückschicken
+            space.registerMethod("/launchpad/mode/get", "*", "Get current mode",
+                (src, msg) -> {
+                    if (modeReplyConn != null)
+                        modeReplyConn.sendMessage("/launchpad/mode/response", currentMode.name());
+                });
+
+            // /launchpad/led <pad> <r> <g> <b>  — einzelne Pad-Farbe setzen
+            space.registerMethod("/launchpad/led", "*", "Set suggestion LED",
+                (src, msg) -> {
+                    int pad = (int) oscFloat(msg, 0, 11f);
+                    int r   = (int) oscFloat(msg, 1, 0f);
+                    int g   = (int) oscFloat(msg, 2, 0f);
+                    int b   = (int) oscFloat(msg, 3, 0f);
+                    setLed(pad, r, g, b);
+                    if (r == 0 && g == 0 && b == 0) {
+                        suggestionPads.remove(Integer.valueOf(pad));
+                    } else if (!suggestionPads.contains(pad)) {
+                        suggestionPads.add(pad);
+                    }
+                });
+
+            // /launchpad/suggest/clear  — alle Suggestion-LEDs löschen
+            space.registerMethod("/launchpad/suggest/clear", "*", "Clear suggestion LEDs",
+                (src, msg) -> {
+                    for (int pad : suggestionPads) setLed(pad, 0, 0, 0);
+                    suggestionPads.clear();
+                    host.println("[Launchpad] Suggestion-LEDs gelöscht");
+                });
+
+            // /launchpad/note/on <note> <vel>  — Note in Bitwig spielen
+            space.registerMethod("/launchpad/note/on", "*", "Play note via NoteInput",
+                (src, msg) -> {
+                    int note = (int) oscFloat(msg, 0, 60f);
+                    int vel  = Math.max(1, Math.min(127, (int) oscFloat(msg, 1, 100f)));
+                    if (currentMode == Mode.DRUM) {
+                        drumNoteInput.sendRawMidiEvent(0x99, note, vel);
+                    } else {
+                        instNoteInput.sendRawMidiEvent(0x90, note, vel);
+                    }
+                });
+
+            // /launchpad/note/off <note>  — Note beenden
+            space.registerMethod("/launchpad/note/off", "*", "Stop note via NoteInput",
+                (src, msg) -> {
+                    int note = (int) oscFloat(msg, 0, 60f);
+                    if (currentMode == Mode.DRUM) {
+                        drumNoteInput.sendRawMidiEvent(0x89, note, 0);
+                    } else {
+                        instNoteInput.sendRawMidiEvent(0x80, note, 0);
+                    }
+                });
+
+            osc.createUdpServer(LED_OSC_PORT, space);
+            host.println("[Launchpad] LED-OSC auf UDP:" + LED_OSC_PORT);
+        } catch (Throwable e) {
+            host.println("[Launchpad] LED-OSC Fehler: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    private float oscFloat(OscMessage msg, int idx, float def) {
+        try { Float v = msg.getFloat(idx); return v != null ? v : def; }
+        catch (Exception e) { return def; }
+    }
 
     private void setLed(int note, int r, int g, int b) {
         if (midiOut == null) return;
         r = Math.max(0, Math.min(63, r));
         g = Math.max(0, Math.min(63, g));
         b = Math.max(0, Math.min(63, b));
-        // SysEx: Manufacturer=00 20 29, Model=02 18, Cmd=0B, note, r, g, b
-        String hex = String.format("00 20 29 02 18 0B %02X %02X %02X %02X", note, r, g, b);
+        // SysEx: F0 00 20 29 02 18 0B note r g b F7
+        String hex = String.format("F0 00 20 29 02 18 0B %02X %02X %02X %02X F7", note, r, g, b);
         midiOut.sendSysex(hex);
     }
 
@@ -429,8 +564,8 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     }
 
     private void clearAllLeds() {
-        // Reset via SysEx (Launchpad MK2 Reset: F0 00 20 29 02 18 0E 00 F7)
         if (midiOut == null) return;
-        midiOut.sendSysex("00 20 29 02 18 0E 00");
+        // Reset SysEx (Launchpad MK2 Reset: F0 00 20 29 02 18 0E 00 F7)
+        midiOut.sendSysex("F0 00 20 29 02 18 0E 00 F7");
     }
 }

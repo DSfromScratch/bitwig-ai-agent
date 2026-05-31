@@ -1169,8 +1169,8 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
 
     private void setLaunchpadLed(int note, int r, int g, int b) {
         if (launchpadOut == null) return;
-        // SysEx ohne F0/F7: Manufacturer=00 20 29, Model=02 18, Cmd=0B, note, r, g, b
-        String hex = String.format("00 20 29 02 18 0B %02X %02X %02X %02X", note, r, g, b);
+        // SysEx: F0 00 20 29 02 18 0B note r g b F7
+        String hex = String.format("F0 00 20 29 02 18 0B %02X %02X %02X %02X F7", note, r, g, b);
         launchpadOut.sendSysex(hex);
     }
 
