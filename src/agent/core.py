@@ -326,7 +326,7 @@ _CONTROL_COMMANDS = frozenset(["/play", "/stop", "/tempo", "/select", "/mute", "
 _SONG_TOOL_NAMES = frozenset([
     "check_bitwig_connection", "execute_setup",
     "get_bitwig_track_state", "query_bitwig_docs",
-    "suggest_notes", "get_launchpad_mode", "listen_played_notes", "play_notes",
+    "suggest_notes", "get_launchpad_mode", "listen_played_notes", "play_notes", "arm_track",
 ])
 _CONTROL_TOOL_NAMES = frozenset([
     "check_bitwig_connection", "control_bitwig",
@@ -409,7 +409,7 @@ def _recover_tool_calls(response: AIMessage, state: AgentState | None = None) ->
 _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
     "query_bitwig_docs", "control_bitwig",
     "check_bitwig_connection", "bitwig_check_connection", "get_bitwig_track_state",
-    "execute_setup", "suggest_notes", "get_launchpad_mode", "listen_played_notes", "play_notes",
+    "execute_setup", "suggest_notes", "get_launchpad_mode", "listen_played_notes", "play_notes", "arm_track",
 ])
 
 # Diagnostic categories for invalid tool outputs

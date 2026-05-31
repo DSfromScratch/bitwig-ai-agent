@@ -51,9 +51,12 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private SettableRangedValue  cfgBpm;
     private BrowserFilterItemBank    categoryBank;     // Kategorie-Spalte (linke Spalte)
     private BrowserFilterItemBank    smartCollBank;    // Smart-Collections
+    private BrowserFilterItemBank    locationBank;     // Locations (Bitwig Studio, Plug-ins, …)
     private static final int         CAT_BANK_SIZE  = 64;
     private static final int         COLL_BANK_SIZE = 32;
-    private volatile String          loadCollection = null;
+    private static final int         LOC_BANK_SIZE  = 16;
+    private volatile String          loadCollection   = null;
+    private volatile boolean         loadPluginsFilter = false; // true nach Plug-ins-Filter
 
     // Device-Browser (zuverlässiger als PopupBrowser für Fallback)
     private Browser                  deviceBrowser;
@@ -225,7 +228,8 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private final Map<String, Integer> paramCatalog  = new HashMap<>();
 
     // Ziel-Gerätename für asynchrones Laden via flush()
-    private volatile String  loadTarget    = null;
+    private volatile String  loadTarget          = null;
+    private volatile boolean loadSearchSent      = false; // Suchfeld bereits gesetzt?
     // Note-Count: pro Track+Slot beim Schreiben mitzählen (zuverlässiger als Observer)
     private final Map<String, Integer> noteCountMap = new HashMap<>(); // "track:slot" → count
     private volatile int     loadWaitLeft  = 0;   // Flush-Zyklen warten bevor navigiert wird
@@ -287,14 +291,18 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
         popupBrowser.exists().addValueObserver(new BooleanValueChangedCallback() {
             @Override
             public void valueChanged(boolean isOpen) {
-                if (!isOpen && pendingLoadName != null) {
-                    String pn = pendingLoadName;
-                    String cn = lastCommittedName;
-                    boolean ok = cn != null && cn.toLowerCase().contains(pn.toLowerCase());
-                    sendReply(null, "/browser/device/loaded", pn, ok ? 1 : 0);
-                    host.println("[BitwigAgent] Browser geschlossen — geladen: " + pn + " ok=" + ok);
-                    pendingLoadName   = null;
-                    lastCommittedName = null;
+                if (!isOpen) {
+                    loadSearchSent    = false;
+                    loadPluginsFilter = false;
+                    if (pendingLoadName != null) {
+                        String pn = pendingLoadName;
+                        String cn = lastCommittedName;
+                        boolean ok = cn != null && cn.toLowerCase().contains(pn.toLowerCase());
+                        sendReply(null, "/browser/device/loaded", pn, ok ? 1 : 0);
+                        host.println("[BitwigAgent] Browser geschlossen — geladen: " + pn + " ok=" + ok);
+                        pendingLoadName   = null;
+                        lastCommittedName = null;
+                    }
                 }
             }
         });
@@ -438,6 +446,14 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
         smartCollBank = popupBrowser.smartCollectionColumn().createItemBank(COLL_BANK_SIZE);
         for (int i = 0; i < COLL_BANK_SIZE; i++) {
             BrowserItem item = smartCollBank.getItem(i);
+            item.name().markInterested();
+            item.exists().markInterested();
+            item.isSelected().markInterested();
+        }
+        // Location-Spalte — für VST-Filter (Plug-ins vs. Bitwig Studio)
+        locationBank = popupBrowser.locationColumn().createItemBank(LOC_BANK_SIZE);
+        for (int i = 0; i < LOC_BANK_SIZE; i++) {
+            BrowserItem item = locationBank.getItem(i);
             item.name().markInterested();
             item.exists().markInterested();
             item.isSelected().markInterested();
@@ -1113,6 +1129,27 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
                     host.println("[Launchpad] Mappings: " + sb);
                 });
 
+        // ── VST/Plugin-Scan ───────────────────────────────────────────────────
+        space.registerMethod("/plugins/scan", "*", "Trigger VST plugin rescan",
+                (src, msg) -> {
+                    try {
+                        application.getAction("rescan_plug_ins").invoke();
+                        host.showPopupNotification("VST-Scan gestartet...");
+                        host.println("[BitwigAgent] VST-Scan gestartet (rescan_plug_ins)");
+                        sendReply(src, "/plugins/scan/response", 1, "scan started");
+                    } catch (Exception e) {
+                        host.println("[BitwigAgent] rescan_plug_ins nicht verfügbar: " + e.getMessage());
+                        try {
+                            application.getAction("scan_plug_ins").invoke();
+                            host.showPopupNotification("VST-Scan (scan_plug_ins)...");
+                            sendReply(src, "/plugins/scan/response", 1, "scan started");
+                        } catch (Exception e2) {
+                            sendReply(src, "/plugins/scan/response", 0, e.getMessage());
+                            host.println("[BitwigAgent] Kein VST-Scan-Action gefunden: " + e2.getMessage());
+                        }
+                    }
+                });
+
         space.registerDefaultMethod((src, msg) ->
             host.println("[BitwigAgent] Unbekannt: " + msg.getAddressPattern()));
 
@@ -1347,6 +1384,9 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             }
         }
 
+        // Tab-Scan fortsetzen falls aktiv
+        if (loadTargetTabScan != null) { continueTabScan(); return; }
+
         // Gerät laden wenn Ziel gesetzt
         if (loadTarget == null && presetTarget == null && fxPresetTarget == null) return;
 
@@ -1420,7 +1460,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             return;
         }
 
-        // Warten bis Browser geöffnet und Kategorie-Bank befüllt ist
+        // Warten bis Browser geöffnet ist
         if (loadWaitLeft > 0) {
             loadWaitLeft--;
             return;
@@ -1445,20 +1485,108 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             loadCollection = null;
         }
 
-        // Navigation + Commit: im Katalog suchen und sofort laden
+        // ── Phase 1: aktuellen Tab ohne Filter scannen ───────────────────────────
         String key = loadTarget;
-        loadTarget = null;
-        Integer idx = deviceCatalog.get(key);
-        if (idx != null) {
-            popupBrowser.selectFirstFile();
-            for (int i = 0; i < idx; i++) popupBrowser.selectNextFile();
-            popupBrowser.commit();
-            host.println("[BitwigAgent] Browser-Fallback geladen: " + key + " (Index " + idx + ")");
-            host.showPopupNotification("Geladen: " + key);
-        } else {
-            host.println("[BitwigAgent] '" + key + "' nicht im Katalog ("
-                + deviceCatalog.size() + " Einträge). Browser bleibt offen.");
+        if (!loadPluginsFilter) {
+            for (int i = 0; i < BROWSER_SCAN; i++) {
+                BrowserItem item = resultBank.getItem(i);
+                if (!item.exists().get()) break;
+                String name = item.name().get();
+                if (name != null && name.toLowerCase().contains(key)) {
+                    loadTarget        = null;
+                    loadPluginsFilter = false;
+                    popupBrowser.selectFirstFile();
+                    for (int j = 0; j < i; j++) popupBrowser.selectNextFile();
+                    popupBrowser.commit();
+                    host.println("[BitwigAgent] Browser geladen (Phase 1): " + name);
+                    host.showPopupNotification("Geladen: " + name);
+                    return;
+                }
+            }
+            // Nicht im aktuellen Tab — Plug-ins-Location-Filter setzen (VST-Fallback)
+            boolean filterApplied = false;
+            for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                BrowserItem item = locationBank.getItem(i);
+                if (!item.exists().get()) break;
+                String n = item.name().get();
+                if (n != null && n.toLowerCase().contains("plug-in")) {
+                    item.isSelected().set(true);
+                    filterApplied = true;
+                    host.println("[BitwigAgent] Location-Filter 'Plug-ins' gesetzt: " + n);
+                    break;
+                }
+            }
+            if (filterApplied) {
+                loadPluginsFilter = true;
+                loadWaitLeft      = 6;   // ~300 ms warten damit Ergebnisse neu laden
+                return;
+            }
+            // Kein Plug-ins-Item gefunden — aufgeben
+            loadTarget        = null;
+            loadPluginsFilter = false;
+            host.println("[BitwigAgent] '" + key + "' nicht gefunden (kein Plug-ins-Filter).");
+            popupBrowser.cancel();
+            return;
         }
+
+        // ── Phase 2: nach Plug-ins-Filter scannen ────────────────────────────────
+        loadTarget        = null;
+        loadPluginsFilter = false;
+        for (int i = 0; i < BROWSER_SCAN; i++) {
+            BrowserItem item = resultBank.getItem(i);
+            if (!item.exists().get()) break;
+            String name = item.name().get();
+            if (name != null && name.toLowerCase().contains(key)) {
+                popupBrowser.selectFirstFile();
+                for (int j = 0; j < i; j++) popupBrowser.selectNextFile();
+                popupBrowser.commit();
+                host.println("[BitwigAgent] Browser geladen (Plug-ins-Filter): " + name);
+                host.showPopupNotification("Geladen: " + name);
+                return;
+            }
+        }
+        host.println("[BitwigAgent] '" + key + "' nicht gefunden — Browser abgebrochen.");
+        popupBrowser.cancel();
+    }
+
+    // Tab-Scan-State für loadTarget
+    private volatile String loadTargetTabScan = null;
+    private volatile int    loadTargetTabIdx  = 0;
+
+    private void continueTabScan() {
+        if (loadTargetTabScan == null) return;
+        if (loadWaitLeft > 0) { loadWaitLeft--; return; }
+
+        String key = loadTargetTabScan;
+        // Aktuellen Tab durchsuchen
+        for (int i = 0; i < BROWSER_SCAN; i++) {
+            BrowserItem item = resultBank.getItem(i);
+            if (!item.exists().get()) break;
+            String name = item.name().get();
+            if (name != null && name.toLowerCase().contains(key)) {
+                loadTargetTabScan = null;
+                popupBrowser.selectFirstFile();
+                for (int j = 0; j < i; j++) popupBrowser.selectNextFile();
+                popupBrowser.commit();
+                host.println("[BitwigAgent] Tab-Scan geladen (Tab " + loadTargetTabIdx + "): " + name);
+                host.showPopupNotification("Geladen: " + name);
+                sendReply(null, "/browser/device/loaded", name, 1);
+                return;
+            }
+        }
+
+        // Nächster Tab
+        loadTargetTabIdx++;
+        if (loadTargetTabIdx > 8) {
+            host.println("[BitwigAgent] Tab-Scan: '" + key + "' in keinem Tab (0-8) gefunden.");
+            sendReply(null, "/browser/device/loaded", key, 0);
+            loadTargetTabScan = null;
+            popupBrowser.cancel();
+            return;
+        }
+        if (popupBrowser != null) popupBrowser.selectedContentTypeIndex().set(loadTargetTabIdx);
+        loadWaitLeft = 2;
+        host.println("[BitwigAgent] Tab-Scan: wechsle zu Tab " + loadTargetTabIdx);
     }
 
     // F11: Batch-Note-Writer ──────────────────────────────────────────────────

@@ -512,27 +512,37 @@ public class LaunchpadControllerExtension extends ControllerExtension {
                     host.println("[Launchpad] Suggestion-LEDs gelöscht");
                 });
 
-            // /launchpad/note/on <note> <vel>  — Note in Bitwig spielen
-            space.registerMethod("/launchpad/note/on", "*", "Play note via NoteInput",
+            // Modus per OSC wechseln — scheduleTask sorgt für Bitwig-Hauptthread
+            space.registerMethod("/launchpad/mode/control",    "*", "Enter CONTROL mode",
+                (src, msg) -> host.scheduleTask(() -> enterMode(Mode.CONTROL), 0));
+            space.registerMethod("/launchpad/mode/drum",       "*", "Enter DRUM mode",
+                (src, msg) -> host.scheduleTask(() -> enterMode(Mode.DRUM), 0));
+            space.registerMethod("/launchpad/mode/instrument", "*", "Enter INSTRUMENT mode",
+                (src, msg) -> host.scheduleTask(() -> enterMode(Mode.INSTRUMENT), 0));
+            // arm/track und note/on ebenfalls auf Hauptthread
+            space.registerMethod("/launchpad/note/on",  "*", "Play note — main thread",
                 (src, msg) -> {
                     int note = (int) oscFloat(msg, 0, 60f);
                     int vel  = Math.max(1, Math.min(127, (int) oscFloat(msg, 1, 100f)));
-                    if (currentMode == Mode.DRUM) {
-                        drumNoteInput.sendRawMidiEvent(0x99, note, vel);
-                    } else {
-                        instNoteInput.sendRawMidiEvent(0x90, note, vel);
-                    }
+                    final Mode m = currentMode;
+                    host.scheduleTask(() -> {
+                        if (m == Mode.DRUM) drumNoteInput.sendRawMidiEvent(0x99, note, vel);
+                        else                instNoteInput.sendRawMidiEvent(0x90, note, vel);
+                    }, 0);
                 });
-
-            // /launchpad/note/off <note>  — Note beenden
-            space.registerMethod("/launchpad/note/off", "*", "Stop note via NoteInput",
+            space.registerMethod("/launchpad/note/off", "*", "Stop note — main thread",
                 (src, msg) -> {
                     int note = (int) oscFloat(msg, 0, 60f);
-                    if (currentMode == Mode.DRUM) {
-                        drumNoteInput.sendRawMidiEvent(0x89, note, 0);
-                    } else {
-                        instNoteInput.sendRawMidiEvent(0x80, note, 0);
-                    }
+                    final Mode m = currentMode;
+                    host.scheduleTask(() -> {
+                        if (m == Mode.DRUM) drumNoteInput.sendRawMidiEvent(0x89, note, 0);
+                        else                instNoteInput.sendRawMidiEvent(0x80, note, 0);
+                    }, 0);
+                });
+            space.registerMethod("/launchpad/track/arm", "*", "Arm/disarm cursor track — main thread",
+                (src, msg) -> {
+                    int v = (int) oscFloat(msg, 0, 1f);
+                    host.scheduleTask(() -> cursorTrack.arm().set(v == 1), 0);
                 });
 
             osc.createUdpServer(LED_OSC_PORT, space);

@@ -56,9 +56,13 @@ public class BitwigStepPluginExtension extends ControllerExtension {
 
     // ── Browser / Catalog ────────────────────────────────────────────────────
 
-    private final Map<String, Integer> deviceCatalog = new HashMap<>();
+    private final Map<String, Integer> deviceCatalog   = new HashMap<>();
+    private BrowserFilterItemBank      locationBank;
+    private static final int           LOC_BANK_SIZE   = 16;
     private volatile String            loadTarget    = null;
     private volatile int               loadWaitLeft  = 0;
+    // 0=kein Filter, 1="Plug-ins" gewählt (warte auf Baum-Expansion), 2=VST-Child gewählt (warte auf Ergebnisse)
+    private volatile int               loadLocPhase  = 0;
 
     // ── Note + Param Catalogs ────────────────────────────────────────────────
 
@@ -270,6 +274,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         cursorClip   = cursorTrack.createLauncherCursorClip(CLIP_STEPS, 128);
         cursorClip.setStepSize(0.25);
         resultBank   = popupBrowser.resultsColumn().createItemBank(BROWSER_SCAN);
+        locationBank = popupBrowser.locationColumn().createItemBank(LOC_BANK_SIZE);
 
         // Mark interested
         for (int i = 0; i < TRACK_BANK_SIZE; i++) {
@@ -279,11 +284,18 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         }
         cursorTrack.name().markInterested();
         cursorDevice.name().markInterested();
+        cursorDevice.isWindowOpen().markInterested();
         popupBrowser.exists().markInterested();
         transport.tempo().markInterested();
         for (int i = 0; i < BROWSER_SCAN; i++) {
             resultBank.getItem(i).name().markInterested();
             resultBank.getItem(i).exists().markInterested();
+            resultBank.getItem(i).isSelected().markInterested();
+        }
+        for (int i = 0; i < LOC_BANK_SIZE; i++) {
+            locationBank.getItem(i).name().markInterested();
+            locationBank.getItem(i).exists().markInterested();
+            locationBank.getItem(i).isSelected().markInterested();
         }
         for (int i = 0; i < REMOTE_PARAMS; i++) {
             remoteControls.getParameter(i).name().markInterested();
@@ -294,12 +306,17 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         popupBrowser.exists().addValueObserver(new BooleanValueChangedCallback() {
             @Override
             public void valueChanged(boolean open) {
-                if (!open && pendingStepSrc != null) {
-                    OscConnection src = pendingStepSrc;
-                    String        typ = pendingStepType != null ? pendingStepType : "load_instrument";
-                    pendingStepSrc  = null;
-                    pendingStepType = null;
-                    stepDone(src, typ);
+                if (!open) {
+                    loadLocPhase = 0;
+                    if (pendingStepSrc != null) {
+                        OscConnection src = pendingStepSrc;
+                        String        typ = pendingStepType != null ? pendingStepType : "load_instrument";
+                        pendingStepSrc  = null;
+                        pendingStepType = null;
+                        // Plugin-Fenster automatisch schließen (öffnet sich ~300ms nach Browser-Close)
+                        host.scheduleTask(() -> cursorDevice.isWindowOpen().set(false), 500);
+                        stepDone(src, typ);
+                    }
                 }
             }
         });
@@ -544,26 +561,102 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             }, 40);
         } else {
             // Browser-Fallback für VST / Presets
+            pendingStepSrc  = src;
+            pendingStepType = "load_instrument";
+            // Normalisierter Key: "MT-PowerDrumKit" → "mtpowerdrumkit"
+            final String normKey = key.replace("-", "").replace(" ", "").replace("_", "");
             host.scheduleTask(() -> {
+                // T+40ms: Browser öffnen
                 popupBrowser.cancel();
                 cursorDevice.browseToInsertBeforeDevice();
-                pendingStepSrc  = src;
-                pendingStepType = "load_instrument";
-                loadTarget      = key;
-                loadWaitLeft    = 6;
-                host.println("[BitwigStep] Browser-Suche: " + name);
-                // Sicherheits-Timeout: falls Browser nicht schließt → nach 10s abbrechen
+                host.println("[BitwigStep] Browser für: " + key + " (norm=" + normKey + ")");
+
+                // T+2040ms: locationBank scannen, "Plug-ins" selektieren (Baum expandieren)
+                host.scheduleTask(() -> {
+                    StringBuilder locLog = new StringBuilder("[BitwigStep] locs@2000: ");
+                    boolean pluginFound = false;
+                    for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                        BrowserItem item = locationBank.getItem(i);
+                        if (!item.exists().get()) { locLog.append("END@").append(i); break; }
+                        String n = item.name().get();
+                        locLog.append(i).append("=").append(n).append("|");
+                        if (!pluginFound && n != null && n.toLowerCase().contains("plug-in")) {
+                            item.isSelected().set(true);
+                            pluginFound = true;
+                        }
+                    }
+                    host.println(locLog.toString());
+                    host.println("[BitwigStep] pluginFound=" + pluginFound + " für " + key);
+
+                    // T+3040ms: VST-Child suchen und selektieren
+                    host.scheduleTask(() -> {
+                        StringBuilder locLog2 = new StringBuilder("[BitwigStep] locs@3000: ");
+                        boolean vstFound = false;
+                        for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                            BrowserItem item = locationBank.getItem(i);
+                            if (!item.exists().get()) { locLog2.append("END@").append(i); break; }
+                            String n = item.name().get();
+                            locLog2.append(i).append("=").append(n).append("|");
+                            if (!vstFound && n != null && n.toLowerCase().contains("vst")) {
+                                item.isSelected().set(true);
+                                vstFound = true;
+                            }
+                        }
+                        host.println(locLog2.toString());
+                        host.println("[BitwigStep] vstFound=" + vstFound + " für " + key);
+
+                        // T+4040ms: Ergebnisse scannen, normalisiert matchen, committen
+                        host.scheduleTask(() -> {
+                            StringBuilder resLog = new StringBuilder("[BitwigStep] results@4000: ");
+                            int foundIdx = -1;
+                            String foundName = null;
+                            for (int i = 0; i < BROWSER_SCAN; i++) {
+                                BrowserItem item = resultBank.getItem(i);
+                                if (!item.exists().get()) { resLog.append("END@").append(i); break; }
+                                String n = item.name().get();
+                                if (i < 20 && n != null) resLog.append(i).append("=").append(n).append("|");
+                                if (n != null) {
+                                    // Normalisierter Vergleich: Bindestriche + Leerzeichen ignorieren
+                                    String normN = n.toLowerCase()
+                                                    .replace("-", "").replace(" ", "").replace("_", "");
+                                    if (normN.contains(normKey)) {
+                                        foundIdx  = i;
+                                        foundName = n;
+                                        break;
+                                    }
+                                }
+                            }
+                            host.println(resLog.toString());
+
+                            if (foundIdx >= 0) {
+                                // Item direkt via isSelected() wählen, dann committen
+                                resultBank.getItem(foundIdx).isSelected().set(true);
+                                final int fi = foundIdx; final String fn = foundName;
+                                host.scheduleTask(() -> {
+                                    popupBrowser.commit();
+                                    host.println("[BitwigStep] commit: '" + fn + "' idx=" + fi);
+                                }, 300);
+                            } else {
+                                OscConnection ts = pendingStepSrc;
+                                pendingStepSrc  = null; pendingStepType = null;
+                                popupBrowser.cancel();
+                                host.println("[BitwigStep] '" + key + "' nicht gefunden in Ergebnissen");
+                                if (ts != null) stepDone(ts, "error:load_instrument:not_found:" + key);
+                            }
+                        }, 1000);
+                    }, 1000);
+                }, 2000);
+
+                // Sicherheits-Timeout 15s
                 host.scheduleTask(() -> {
                     if (pendingStepSrc != null) {
-                        host.println("[BitwigStep] Browser-Timeout: " + name);
                         OscConnection ts = pendingStepSrc;
-                        pendingStepSrc  = null;
-                        pendingStepType = null;
-                        loadTarget      = null;
+                        pendingStepSrc  = null; pendingStepType = null;
                         popupBrowser.cancel();
+                        host.println("[BitwigStep] browser_timeout: " + key);
                         if (ts != null) stepDone(ts, "error:browser_timeout:" + key);
                     }
-                }, 10000);
+                }, 15000);
             }, 40);
         }
     }
@@ -831,25 +924,125 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         if (loadWaitLeft > 0) { loadWaitLeft--; return; }
 
         String key = loadTarget;
-        loadTarget = null;
-        Integer idx = deviceCatalog.get(key);
-        if (idx != null) {
-            popupBrowser.selectFirstFile();
-            for (int i = 0; i < idx; i++) popupBrowser.selectNextFile();
-            popupBrowser.commit();
-            host.println("[BitwigStep] Browser-Fallback: " + key + " (idx=" + idx + ")");
-        } else {
-            host.println("[BitwigStep] '" + key + "' nicht im Katalog (" + deviceCatalog.size() + " Einträge)");
-            // Pending-Src leeren VOR cancel() damit Observer kein false-stepDone auslöst
-            OscConnection savedSrc  = pendingStepSrc;
-            String        savedType = pendingStepType;
-            pendingStepSrc  = null;
-            pendingStepType = null;
+
+        // ── Phase 0: aktuellen Tab ohne Filter scannen ───────────────────────
+        if (loadLocPhase == 0) {
+            // Debug: locationBank-Inhalt beim ersten Scan loggen
+            StringBuilder locLog = new StringBuilder("[BitwigStep] locationBank: ");
+            for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                BrowserItem li = locationBank.getItem(i);
+                if (!li.exists().get()) { locLog.append("[").append(i).append("=END]"); break; }
+                locLog.append("[").append(i).append("=").append(li.name().get()).append("]");
+            }
+            host.println(locLog.toString());
+            for (int i = 0; i < BROWSER_SCAN; i++) {
+                BrowserItem item = resultBank.getItem(i);
+                if (!item.exists().get()) break;
+                String name = item.name().get();
+                if (name != null && name.toLowerCase().contains(key)) {
+                    loadTarget   = null;
+                    loadLocPhase = 0;
+                    popupBrowser.selectFirstFile();
+                    for (int j = 0; j < i; j++) popupBrowser.selectNextFile();
+                    popupBrowser.commit();
+                    host.println("[BitwigStep] Browser geladen (Phase 0): " + name);
+                    return;
+                }
+            }
+            // Nicht gefunden → "Plug-ins" Parent-Location auswählen (expandiert Baum)
+            boolean found = false;
+            for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                BrowserItem item = locationBank.getItem(i);
+                if (!item.exists().get()) break;
+                String n = item.name().get();
+                if (n != null && n.toLowerCase().contains("plug-in")) {
+                    item.isSelected().set(true);
+                    found = true;
+                    host.println("[BitwigStep] Loc Phase 1 (parent): " + n);
+                    break;
+                }
+            }
+            if (found) {
+                loadLocPhase = 1;
+                loadWaitLeft = 5;   // warten bis Baum expandiert
+                return;
+            }
+            // Kein Plug-ins-Item → Diagnostik in Fehlermeldung kodieren
+            StringBuilder locDiag = new StringBuilder();
+            for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                BrowserItem li = locationBank.getItem(i);
+                if (!li.exists().get()) { locDiag.append("END@").append(i); break; }
+                String n = li.name().get();
+                locDiag.append(i).append(":").append(n != null ? n.replace(":", "_") : "null").append("|");
+            }
+            loadTarget   = null;
+            loadLocPhase = 0;
+            OscConnection s1 = pendingStepSrc; String t1 = pendingStepType;
+            pendingStepSrc = null; pendingStepType = null;
             popupBrowser.cancel();
-            // Fehler zurückmelden
-            if (savedSrc != null)
-                stepDone(savedSrc, "error:" + savedType + ":not_found:" + key);
+            if (s1 != null) stepDone(s1, "error:" + t1 + ":loc=[" + locDiag + "]:" + key);
+            return;
         }
+
+        // ── Phase 1: "Plug-ins" gewählt, jetzt VST-Child wählen ─────────────
+        if (loadLocPhase == 1) {
+            // Debug: locationBank nach Baum-Expansion
+            StringBuilder locLog1 = new StringBuilder("[BitwigStep] locationBank Phase1: ");
+            for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                BrowserItem li = locationBank.getItem(i);
+                if (!li.exists().get()) { locLog1.append("[").append(i).append("=END]"); break; }
+                locLog1.append("[").append(i).append("=").append(li.name().get()).append("]");
+            }
+            host.println(locLog1.toString());
+            // Suche "vst" im locationBank (jetzt sollte "My VST 3 Plug-ins" sichtbar sein)
+            boolean found = false;
+            for (int i = 0; i < LOC_BANK_SIZE; i++) {
+                BrowserItem item = locationBank.getItem(i);
+                if (!item.exists().get()) break;
+                String n = item.name().get();
+                if (n != null && n.toLowerCase().contains("vst")) {
+                    item.isSelected().set(true);
+                    found = true;
+                    host.println("[BitwigStep] Loc Phase 2 (vst child): " + n);
+                    break;
+                }
+            }
+            if (found) {
+                loadLocPhase = 2;
+                loadWaitLeft = 5;   // warten bis Ergebnisse geladen
+                return;
+            }
+            // Kein VST-Child gefunden → abbrechen
+            loadTarget   = null;
+            loadLocPhase = 0;
+            OscConnection s2 = pendingStepSrc; String t2 = pendingStepType;
+            pendingStepSrc = null; pendingStepType = null;
+            popupBrowser.cancel();
+            if (s2 != null) stepDone(s2, "error:" + t2 + ":vst_loc_not_found:" + key);
+            return;
+        }
+
+        // ── Phase 2: VST-Child gewählt, Ergebnisse scannen ──────────────────
+        loadTarget   = null;
+        loadLocPhase = 0;
+        for (int i = 0; i < BROWSER_SCAN; i++) {
+            BrowserItem item = resultBank.getItem(i);
+            if (!item.exists().get()) break;
+            String name = item.name().get();
+            if (name != null && name.toLowerCase().contains(key)) {
+                popupBrowser.selectFirstFile();
+                for (int j = 0; j < i; j++) popupBrowser.selectNextFile();
+                popupBrowser.commit();
+                host.println("[BitwigStep] Browser geladen (VST-Filter): " + name);
+                return;
+            }
+        }
+        // Auch mit VST-Filter nicht gefunden
+        OscConnection s3 = pendingStepSrc; String t3 = pendingStepType;
+        pendingStepSrc = null; pendingStepType = null;
+        popupBrowser.cancel();
+        host.println("[BitwigStep] '" + key + "' auch mit VST-Filter nicht gefunden.");
+        if (s3 != null) stepDone(s3, "error:" + t3 + ":not_found:" + key);
     }
 
     @Override

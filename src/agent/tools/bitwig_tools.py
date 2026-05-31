@@ -94,9 +94,9 @@ def control_bitwig(
 
     # ── Transport ──────────────────────────────────────────────────────────
     if action == "play":
-        s("/play", 1)
+        s("/transport/play", 1)
     elif action == "stop":
-        s("/play", 0)
+        s("/transport/stop", 0)
     elif action == "tempo" and bpm > 0:
         s("/tempo/raw", float(bpm))
     elif action == "record":

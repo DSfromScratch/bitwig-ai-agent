@@ -135,6 +135,42 @@ def midi_to_pads(midi_note: int) -> list[int]:
     return pads
 
 
+def set_launchpad_mode(mode: str) -> str:
+    """Wechselt den Launchpad-Modus per OSC: CONTROL, DRUM oder INSTRUMENT.
+
+    Args:
+        mode: "CONTROL", "DRUM" oder "INSTRUMENT"
+    """
+    mode = mode.upper().strip()
+    if mode not in ("CONTROL", "DRUM", "INSTRUMENT"):
+        return f"[set_launchpad_mode] Ungültiger Modus: {mode}"
+    try:
+        from pythonosc import udp_client
+        client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
+        client.send_message(f"/launchpad/mode/{mode.lower()}", 1)
+        time.sleep(0.3)
+        return get_launchpad_mode()
+    except Exception as exc:
+        return f"[set_launchpad_mode] Fehler: {exc}"
+
+
+def arm_track(arm: int = 1) -> str:
+    """Armt (1) oder disarmt (0) den aktuell ausgewählten Bitwig-Track für die Aufnahme.
+
+    Muss vor transport.record() aufgerufen werden damit Noten in den Clip landen.
+
+    Args:
+        arm: 1 = arm (Aufnahme aktivieren), 0 = disarm
+    """
+    try:
+        from pythonosc import udp_client
+        client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
+        client.send_message("/launchpad/track/arm", int(arm))
+        return f"[arm_track] Track {'gearmt' if arm else 'disarmt'}."
+    except Exception as exc:
+        return f"[arm_track] Fehler: {exc}"
+
+
 def play_notes(notes: list[dict], bpm: float = 120.0) -> str:
     """Spielt eine Notensequenz über das Launchpad in Bitwig.
 

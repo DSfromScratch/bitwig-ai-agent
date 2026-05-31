@@ -4,7 +4,7 @@ from src.agent.tools.song_tools import (
     check_bitwig_connection,
     get_bitwig_track_state,
 )
-from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes
+from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
 from src.bitwig_executor import execute_setup
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, model_validator
@@ -42,4 +42,5 @@ ALL_TOOLS = [
     StructuredTool.from_function(get_launchpad_mode),
     StructuredTool.from_function(listen_played_notes),
     StructuredTool.from_function(play_notes),
+    StructuredTool.from_function(arm_track),
 ]

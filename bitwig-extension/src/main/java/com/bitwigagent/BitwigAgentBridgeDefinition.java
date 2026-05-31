@@ -39,7 +39,7 @@ public class BitwigAgentBridgeDefinition extends ControllerExtensionDefinition {
 
     @Override
     public String getHardwareModel() {
-        return "OSC Bridge";
+        return "Agent Bridge";
     }
 
     @Override
@@ -49,21 +49,18 @@ public class BitwigAgentBridgeDefinition extends ControllerExtensionDefinition {
 
     @Override
     public int getNumMidiInPorts() {
-        return 1;
+        return 0;  // kein MIDI — LED-Steuerung läuft über LaunchpadControllerExtension
     }
 
     @Override
     public int getNumMidiOutPorts() {
-        return 1;
+        return 0;
     }
 
     @Override
     public void listAutoDetectionMidiPortNames(
         AutoDetectionMidiPortNamesList list, PlatformType platformType) {
-        list.add(
-            new String[]{"Launchpad MK2 MIDI 1"},
-            new String[]{"Launchpad MK2 MIDI 1"}
-        );
+        // Kein MIDI-Port — Bridge kommuniziert nur via OSC (Port 8001)
     }
 
     @Override
