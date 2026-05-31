@@ -325,7 +325,7 @@ _LAUNCHPAD_KEYWORDS = frozenset(["launchpad", "/map pad", "/clear pads", "pad be
 
 # Tool-Namen pro Modus (aus dem kombinierten MCP+Agent-Pool filtern)
 _SONG_TOOL_NAMES = frozenset([
-    "check_bitwig_connection", "execute_result",
+    "check_bitwig_connection", "execute_setup",
     "get_bitwig_track_state", "query_bitwig_docs",
 ])
 _CONTROL_TOOL_NAMES = frozenset([
@@ -421,10 +421,8 @@ def _recover_tool_calls(response: AIMessage, state: AgentState | None = None) ->
 _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
     "query_bitwig_docs", "control_bitwig",
     "check_bitwig_connection", "bitwig_check_connection", "get_bitwig_track_state",
-    "execute_result",
-    "verify_song", "get_pattern_context", "compose_arrangement",
-    "create_song_structure", "get_song_form",
-    "get_genre_overview", "get_section_proposal",
+    "execute_setup",
+    "bitwig_launchpad_map", "bitwig_launchpad_led", "bitwig_launchpad_clear",
 ])
 
 # Diagnostic categories for invalid tool outputs
@@ -483,7 +481,7 @@ def _recover_xml_fragment_once(
         t for t in _get_tools()
         if getattr(t, "name", "") in {
             "check_bitwig_connection",
-            "execute_result",
+            "execute_setup",
             "query_bitwig_docs",
         }
     ]
@@ -492,7 +490,7 @@ def _recover_xml_fragment_once(
         content=(
             "Deine letzte Antwort war ein XML-Fragment — der Tool-Call wurde abgeschnitten. "
             "Führe die ursprüngliche Aufgabe vollständig aus: "
-            "Generiere denselben execute_result-Call erneut, diesmal komplett und valide. "
+            "Generiere denselben execute_setup-Call erneut, diesmal komplett und valide. "
             "Keine XML-Tags, kein Markdown, kein Freitext — nur ein ausführbarer Tool-Call."
         )
     )
@@ -547,8 +545,7 @@ def call_llm(state: AgentState) -> dict:
                 t for t in _get_tools()
                 if getattr(t, "name", "") in {
                     "check_bitwig_connection",
-                    "execute_result",
-                    "verify_song",
+                    "execute_setup",
                 }
             ]
             fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)
@@ -864,13 +861,10 @@ def chat(message: str, history: list | None = None) -> str:
 def execute_plan(result: "BitwigResult") -> str:  # type: ignore[name-defined]
     """Workflow-Orchestrator: führt ein BitwigResult aus und gibt den Status-String zurück.
 
-    Core.py kennt die Ausführungs-Phasen (plan → execute → score → retry).
-    Die kreative Entscheidung (welche Instrumente, welche Patterns) trifft weiterhin das LLM.
-
     Args:
         result: BitwigResult-Objekt (Pydantic) oder kompatibles dict
     """
-    from bitwig_mcp_server import execute_result
+    from src.bitwig_executor import execute_result
     return execute_result(result)
 
 

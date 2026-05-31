@@ -28,11 +28,6 @@ DRUMS_BASS_PROMPT = (
     "Ablauf: execute_setup (Tracks + Instrumente + Tempo), dann get_bitwig_track_state."
 )
 
-# Kurzer Prompt für Gitarren-Track (wird via BitwigResultBuilder direkt ausgeführt, kein LLM)
-GUITAR_PROMPT = (
-    "Füge Track 5 hinzu: Phase-4, Gitarren-Lead. "
-    "execute_setup: add_track + load_instrument(5,'Phase-4')."
-)
 
 _DRUM_KEYWORDS   = ("v9 kick", "v9 snare", "v9 hat", "drum machine", "e-kick", "e-snare")
 _BASS_KEYWORDS   = ("fm-4", "bass", "fm4")
@@ -231,7 +226,7 @@ class TestBitwigResultModels:
 
         result = BitwigResultBuilder().set_tempo(120).build()
 
-        with patch("bitwig_mcp_server.execute_result", return_value="OK") as mock_er:
+        with patch("src.bitwig_executor.execute_result", return_value="OK") as mock_er:
             output = execute_plan(result)
 
         mock_er.assert_called_once_with(result)

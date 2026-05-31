@@ -165,6 +165,7 @@ execute_setup(result={
 | `build_song` | nicht mehr vorhanden — `execute_setup` |
 | `write_notes_to_clip` | nicht vorhanden — Noten über Launchpad einspielen |
 | `compose_notes` | entfernt — Launchpad übernimmt die Noten-Eingabe |
+| `execute_result` | nur intern (OOP-Pfad) — Agent verwendet `execute_setup` |
 
 ## Nicht unterstützt (ehrlich kommunizieren)
 - Sidechain-Routing (Compressor-Input auf anderen Track)

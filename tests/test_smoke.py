@@ -5,8 +5,8 @@ Prüft:
   1. execute_result hängt nach erfolgreicher Ausführung "Bitwig-Status" an
   2. Prompt enthält Verbotsliste halluzinierter Tools
   3. _KNOWN_TOOL_NAMES deckt alle erwarteten Tools ab
-  4. Tool-Whitelist enthält execute_result und schließt halluzinierte Tools aus
-  5. Alle Kern-Module importierbar
+  4. Tool-Whitelist schließt halluzinierte Tools aus
+  5. Alle Kern-Module importierbar + MCP-Server-Struktur
   6. Tool-Call-Parser (QwenXML, Truncated, Composite)
   7. UUID-Lookup: exakter Match, Aliase, Reverse-Subset, kein Match
   8. Scoring: Drums/Bass/Gitarre werden korrekt bewertet
@@ -118,9 +118,9 @@ class TestProjectSmoke:
     def test_core_modules_importable(self):
         """Alle Kern-Module laden ohne ImportError."""
         import bitwig_mcp_server
-        from src.agent import core, events
+        from src.agent import core, events, prompts
         from src.agent.tools import mcp_bridge
-        from src.agent import prompts
+        from src.bitwig_executor import execute_setup, execute_result
 
     @pytest.mark.unit
     def test_prompt_contains_forbidden_tools_section(self):
@@ -143,18 +143,20 @@ class TestProjectSmoke:
         assert not overlap, f"Halluzinierte Tools in Whitelist: {overlap}"
 
     @pytest.mark.unit
-    def test_whitelist_contains_execute_result(self):
-        """execute_result muss in der Whitelist stehen."""
+    def test_whitelist_contains_execute_setup(self):
+        """execute_setup muss in der Whitelist stehen (Launchpad-Workflow)."""
         from src.agent.tools.mcp_bridge import _SETTINGS_TOOLS_WHITELIST
 
-        assert "execute_result" in _SETTINGS_TOOLS_WHITELIST
+        assert "execute_setup" in _SETTINGS_TOOLS_WHITELIST
+        assert "execute_result" not in _SETTINGS_TOOLS_WHITELIST
+        assert "compose_notes" not in _SETTINGS_TOOLS_WHITELIST
 
     @pytest.mark.unit
     def test_known_tool_names_covers_whitelist_essentials(self):
-        """_KNOWN_TOOL_NAMES enthält alle kritischen Tools aus der Whitelist."""
+        """_KNOWN_TOOL_NAMES enthält alle kritischen Tools (Launchpad-Workflow)."""
         from src.agent.core import _KNOWN_TOOL_NAMES
 
-        required = {"execute_result", "bitwig_check_connection", "get_bitwig_track_state"}
+        required = {"execute_setup", "check_bitwig_connection", "get_bitwig_track_state"}
         missing = required - _KNOWN_TOOL_NAMES
         assert not missing, f"Fehlende Tools in _KNOWN_TOOL_NAMES: {missing}"
 
@@ -183,6 +185,26 @@ class TestProjectSmoke:
         bus.emit("test_event", {"x": 1})
         assert len(fired) == 1
         assert fired[0]["payload"] == {"x": 1}
+
+    @pytest.mark.unit
+    def test_mcp_server_importable(self):
+        """bitwig_mcp_server importierbar und FastMCP-Instanz vorhanden."""
+        import bitwig_mcp_server as srv
+        assert hasattr(srv, "mcp")
+
+    @pytest.mark.unit
+    def test_mcp_server_osc_constants(self):
+        """OSC-Konstanten im MCP-Server korrekt gesetzt."""
+        import bitwig_mcp_server as srv
+        assert srv.OSC_HOST == "127.0.0.1"
+        assert srv.OSC_PORT == 8001
+
+    @pytest.mark.unit
+    def test_mcp_server_note_counts_dict(self):
+        """_note_counts Dict im MCP-Server vorhanden."""
+        import bitwig_mcp_server as srv
+        assert hasattr(srv, "_note_counts")
+        assert isinstance(srv._note_counts, dict)
 
 
 # ── Tool-Call-Parser Tests ────────────────────────────────────────────────────
