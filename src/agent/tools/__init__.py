@@ -4,11 +4,6 @@ from src.agent.tools.song_tools import (
     check_bitwig_connection,
     get_bitwig_track_state,
 )
-from src.agent.tools.launchpad_tools import (
-    bitwig_launchpad_map,
-    bitwig_launchpad_led,
-    bitwig_launchpad_clear,
-)
 from src.bitwig_executor import execute_setup
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, model_validator
@@ -42,7 +37,4 @@ ALL_TOOLS = [
     check_bitwig_connection,
     get_bitwig_track_state,
     _make_tool(execute_setup),
-    StructuredTool.from_function(bitwig_launchpad_map),
-    StructuredTool.from_function(bitwig_launchpad_led),
-    StructuredTool.from_function(bitwig_launchpad_clear),
 ]

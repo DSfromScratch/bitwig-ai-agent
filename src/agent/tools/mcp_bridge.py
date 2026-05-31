@@ -26,10 +26,6 @@ _SETTINGS_TOOLS_WHITELIST = {
     "execute_setup",
     # Allgemeine Bitwig-Kontrolle
     "control_bitwig",
-    # Launchpad MK2
-    "bitwig_launchpad_map",
-    "bitwig_launchpad_led",
-    "bitwig_launchpad_clear",
     # Wissensdatenbank
     "query_bitwig_docs",
 }

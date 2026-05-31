@@ -1092,63 +1092,6 @@ if __name__ == "__main__":
     print(f"OSC → {OSC_HOST}:{OSC_PORT} (BitwigAgentBridge)")
     mcp.run(transport="stdio")
 
-# ── Launchpad MK2 ─────────────────────────────────────────────────────────────
-
-@mcp.tool()
-def bitwig_launchpad_map(pad_note: int, action: str) -> str:
-    """Weist einem Launchpad-Pad eine Bitwig-Aktion zu und setzt die LED-Farbe.
-
-    Pad-Noten (Launchpad MK2 Session-Modus):
-      Untere Reihe: 11–18  |  Zweite Reihe: 21–28  |  Dritte Reihe: 31–38
-      Vierte Reihe: 41–48  |  Fünfte Reihe: 51–58  |  Sechste Reihe: 61–68
-      Siebte Reihe: 71–78  |  Oberste Reihe: 81–88
-      Rechte Buttons: 19, 29, 39, 49, 59, 69, 79, 89
-
-    Verfügbare Aktionen:
-      play_stop   — Transport Play/Stop umschalten (grüne LED)
-      stop        — Transport Stop (orange)
-      record      — Aufnahme starten (rote LED)
-      undo        — Letzten Schritt rückgängig (gelbe LED)
-      loop_toggle — Loop an/aus (lila LED)
-      mute_toggle — Aktuellen Track muten (bernstein LED)
-      next_track  — Nächsten Track auswählen (cyan LED)
-      prev_track  — Vorherigen Track auswählen (blaue LED)
-
-    Args:
-        pad_note: MIDI-Note des Pads (z.B. 11 = unten links)
-        action:   Aktion aus der Liste oben
-    """
-    if err := _require_bridge(): return err
-    _osc("/launchpad/map", [int(pad_note), str(action)])
-    return f"Pad {pad_note} → {action} (LED aktiv)"
-
-
-@mcp.tool()
-def bitwig_launchpad_led(pad_note: int, r: int, g: int, b: int) -> str:
-    """Setzt die LED-Farbe eines Launchpad-Pads direkt (ohne Aktion zuzuweisen).
-
-    Args:
-        pad_note: MIDI-Note des Pads
-        r:        Rot-Wert 0–63
-        g:        Grün-Wert 0–63
-        b:        Blau-Wert 0–63
-    """
-    if err := _require_bridge(): return err
-    r = max(0, min(63, int(r)))
-    g = max(0, min(63, int(g)))
-    b = max(0, min(63, int(b)))
-    _osc("/launchpad/led", [int(pad_note), r, g, b])
-    return f"Pad {pad_note} LED = ({r},{g},{b})"
-
-
-@mcp.tool()
-def bitwig_launchpad_clear() -> str:
-    """Löscht alle Launchpad-Pad-Mappings und schaltet alle LEDs aus."""
-    if err := _require_bridge(): return err
-    _osc("/launchpad/clear", 1)
-    return "Alle Launchpad-Mappings gelöscht, LEDs aus"
-
-
 # ── Note-Counter ──────────────────────────────────────────────────────────────
 
 @mcp.tool()

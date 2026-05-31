@@ -38,7 +38,7 @@ from langgraph.prebuilt import ToolNode
 from openai import BadRequestError
 
 from src.agent.state import AgentState, GenerationPhase
-from src.agent.prompts import SYSTEM_PROMPT, PROMPT_SONG, PROMPT_CONTROL, PROMPT_LAUNCHPAD
+from src.agent.prompts import SYSTEM_PROMPT, PROMPT_SONG, PROMPT_CONTROL
 from src.agent.tools import ALL_TOOLS
 from src.agent.events import get_event_bus
 from src.agent.policy import enforce_policy_on_response
@@ -321,9 +321,8 @@ def _is_knowledge_question(text: str) -> bool:
 # benötigt werden. Kein LLM-Call — reines Keyword-Routing.
 
 _CONTROL_COMMANDS = frozenset(["/play", "/stop", "/tempo", "/select", "/mute", "/solo", "/volume", "/status", "/record", "/loop", "/undo"])
-_LAUNCHPAD_KEYWORDS = frozenset(["launchpad", "/map pad", "/clear pads", "pad belegen", "pad zuweisen"])
 
-# Tool-Namen pro Modus (aus dem kombinierten MCP+Agent-Pool filtern)
+# Tool-Namen pro Modus
 _SONG_TOOL_NAMES = frozenset([
     "check_bitwig_connection", "execute_setup",
     "get_bitwig_track_state", "query_bitwig_docs",
@@ -335,17 +334,11 @@ _CONTROL_TOOL_NAMES = frozenset([
     "bitwig_pan_track", "bitwig_solo_track", "bitwig_mute_track",
     "bitwig_eq_band",
 ])
-_LAUNCHPAD_TOOL_NAMES = frozenset([
-    "check_bitwig_connection",
-    "bitwig_launchpad_map", "bitwig_launchpad_led", "bitwig_launchpad_clear",
-])
 
 
 def _route_request(text: str) -> str:
-    """Gibt 'song' | 'control' | 'launchpad' zurück."""
+    """Gibt 'song' | 'control' zurück."""
     lower = text.lower().strip()
-    if any(kw in lower for kw in _LAUNCHPAD_KEYWORDS):
-        return "launchpad"
     if lower.startswith("/"):
         cmd = lower.split()[0]
         if cmd in _CONTROL_COMMANDS:
@@ -354,19 +347,13 @@ def _route_request(text: str) -> str:
 
 
 def _get_prompt_for_mode(mode: str) -> str:
-    if mode == "control":
-        return PROMPT_CONTROL
-    if mode == "launchpad":
-        return PROMPT_LAUNCHPAD
-    return PROMPT_SONG
+    return PROMPT_CONTROL if mode == "control" else PROMPT_SONG
 
 
 def _filter_tools_for_mode(mode: str, all_tools: list) -> list:
     """Gibt nur die für den Modus relevanten Tools zurück."""
-    allowed = {"song": _SONG_TOOL_NAMES, "control": _CONTROL_TOOL_NAMES,
-               "launchpad": _LAUNCHPAD_TOOL_NAMES}.get(mode, _SONG_TOOL_NAMES)
+    allowed = _CONTROL_TOOL_NAMES if mode == "control" else _SONG_TOOL_NAMES
     filtered = [t for t in all_tools if getattr(t, "name", "") in allowed]
-    # Fallback: mind. check_bitwig_connection immer dabei
     if not filtered:
         return [t for t in all_tools if getattr(t, "name", "") == "check_bitwig_connection"] or all_tools
     return filtered
@@ -422,7 +409,6 @@ _KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
     "query_bitwig_docs", "control_bitwig",
     "check_bitwig_connection", "bitwig_check_connection", "get_bitwig_track_state",
     "execute_setup",
-    "bitwig_launchpad_map", "bitwig_launchpad_led", "bitwig_launchpad_clear",
 ])
 
 # Diagnostic categories for invalid tool outputs
