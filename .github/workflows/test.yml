@@ -39,6 +39,7 @@ jobs:
     name: Integration Tests (Mock-OSC)
     runs-on: ubuntu-latest
     needs: unit-tests
+    if: false  # Integration-Tests benötigen laufendes Bitwig — lokal ausführen
 
     steps:
       - uses: actions/checkout@v5
