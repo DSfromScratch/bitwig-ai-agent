@@ -44,8 +44,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
 
     // ── OSC Reply ─────────────────────────────────────────────────────────────
 
-    private OscConnection replyV4;
-    private OscConnection replyLocalhost;
+    private OscConnection        replyV4;
+    private OscConnection        replyLocalhost;
+    private SettableStringValue  agentHost;
 
     // ── State Machine ─────────────────────────────────────────────────────────
 
@@ -58,6 +59,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
 
     private final Map<String, Integer> deviceCatalog   = new HashMap<>();
     private BrowserFilterItemBank      locationBank;
+    private BrowserFilterItemBank      deviceTypeBank;   // "Art"-Filter (Devices / Plug-ins)
     private static final int           LOC_BANK_SIZE   = 16;
     private volatile String            loadTarget    = null;
     private volatile int               loadWaitLeft  = 0;
@@ -273,8 +275,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         clipSlotBank = cursorTrack.clipLauncherSlotBank();
         cursorClip   = cursorTrack.createLauncherCursorClip(CLIP_STEPS, 128);
         cursorClip.setStepSize(0.25);
-        resultBank   = popupBrowser.resultsColumn().createItemBank(BROWSER_SCAN);
-        locationBank = popupBrowser.locationColumn().createItemBank(LOC_BANK_SIZE);
+        resultBank     = popupBrowser.resultsColumn().createItemBank(BROWSER_SCAN);
+        locationBank   = popupBrowser.locationColumn().createItemBank(LOC_BANK_SIZE);
+        deviceTypeBank = popupBrowser.deviceTypeColumn().createItemBank(LOC_BANK_SIZE);
 
         // Mark interested
         for (int i = 0; i < TRACK_BANK_SIZE; i++) {
@@ -284,8 +287,16 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         }
         cursorTrack.name().markInterested();
         cursorDevice.name().markInterested();
+        cursorDevice.exists().markInterested();
         cursorDevice.isWindowOpen().markInterested();
         popupBrowser.exists().markInterested();
+        popupBrowser.selectedContentTypeIndex().markInterested();
+        popupBrowser.contentTypeNames().markInterested();
+
+        // Konfigurierbarer Reply-Host (Bitwig → Settings → BitwigStepPlugin)
+        agentHost = host.getPreferences()
+                        .getStringSetting("Agent Host (IP)", "Network", 64, "127.0.0.1");
+        agentHost.markInterested();
         transport.tempo().markInterested();
         for (int i = 0; i < BROWSER_SCAN; i++) {
             resultBank.getItem(i).name().markInterested();
@@ -296,6 +307,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             locationBank.getItem(i).name().markInterested();
             locationBank.getItem(i).exists().markInterested();
             locationBank.getItem(i).isSelected().markInterested();
+            deviceTypeBank.getItem(i).name().markInterested();
+            deviceTypeBank.getItem(i).exists().markInterested();
+            deviceTypeBank.getItem(i).isSelected().markInterested();
         }
         for (int i = 0; i < REMOTE_PARAMS; i++) {
             remoteControls.getParameter(i).name().markInterested();
@@ -334,8 +348,10 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         OscAddressSpace space = osc.createAddressSpace();
 
         // Reply-Verbindungen zu Python (Port 9002)
-        replyV4        = osc.connectToUdpServer("127.0.0.1", OSC_REPLY, space);
-        replyLocalhost = osc.connectToUdpServer("localhost",  OSC_REPLY, space);
+        String ah = (agentHost != null && !agentHost.get().isBlank()) ? agentHost.get() : "127.0.0.1";
+        replyV4        = osc.connectToUdpServer(ah,          OSC_REPLY, space);
+        replyLocalhost = osc.connectToUdpServer("localhost", OSC_REPLY, space);
+        host.println("[BitwigStep] Reply → " + ah + ":" + OSC_REPLY);
 
         // ── Ping/Pong ──────────────────────────────────────────────────────
         space.registerMethod("/ping", "*", "Ping",
@@ -484,6 +500,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             case "set_param"       -> execSetParam(src, args);
             case "set_param_named" -> execSetParamNamed(src, args);
             case "write_notes"     -> execWriteNotes(src, args);
+            case "clear_tracks"    -> execClearTracks(src);
             case "play"            -> { transport.play();  stepDone(src, "play"); }
             case "stop"            -> { transport.stop();  stepDone(src, "stop"); }
             default                -> stepDone(src, "error:unknown:" + type);
@@ -520,6 +537,32 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         else
             application.createInstrumentTrack(-1);
         host.scheduleTask(() -> stepDone(src, "add_track"), 80);
+    }
+
+    private void execClearTracks(OscConnection src) {
+        int n = 0;
+        for (int i = 0; i < TRACK_BANK_SIZE; i++)
+            if (trackBank.getItemAt(i).exists().get()) n++;
+        final int total = n;
+        noteCountMap.clear();
+        if (total == 0) {
+            stepDone(src, "clear_tracks");
+            return;
+        }
+        for (int i = 0; i < total; i++) {
+            final long d = i * 100L;
+            host.scheduleTask(() -> {
+                Channel first = (Channel) trackBank.getItemAt(0);
+                if (first.exists().get()) {
+                    first.selectInMixer();
+                    cursorTrack.deleteObject();
+                }
+            }, d);
+        }
+        host.scheduleTask(() -> {
+            host.println("[BitwigStep] " + total + " Tracks gelöscht");
+            stepDone(src, "clear_tracks");
+        }, total * 100L + 300L);
     }
 
     private void execSelectTrack(OscConnection src, String args) {
@@ -567,46 +610,46 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             final String normKey = key.replace("-", "").replace(" ", "").replace("_", "");
             host.scheduleTask(() -> {
                 // T+40ms: Browser öffnen
+                // Wenn Track schon ein Device hat → ersetzen (browseToReplace), sonst einfügen
                 popupBrowser.cancel();
-                cursorDevice.browseToInsertBeforeDevice();
-                host.println("[BitwigStep] Browser für: " + key + " (norm=" + normKey + ")");
+                boolean hasDevice = cursorDevice.exists().get();
+                if (hasDevice) {
+                    cursorDevice.browseToReplaceDevice();
+                    host.println("[BitwigStep] browseToReplace (Track hat Device): " + key);
+                } else {
+                    cursorDevice.browseToInsertBeforeDevice();
+                    host.println("[BitwigStep] browseToInsert (leerer Track): " + key);
+                }
 
-                // T+2040ms: locationBank scannen, "Plug-ins" selektieren (Baum expandieren)
+                // T+540ms: Content-Type auf "Plug-ins" umschalten via selectedContentTypeIndex
                 host.scheduleTask(() -> {
-                    StringBuilder locLog = new StringBuilder("[BitwigStep] locs@2000: ");
-                    boolean pluginFound = false;
-                    for (int i = 0; i < LOC_BANK_SIZE; i++) {
-                        BrowserItem item = locationBank.getItem(i);
-                        if (!item.exists().get()) { locLog.append("END@").append(i); break; }
-                        String n = item.name().get();
-                        locLog.append(i).append("=").append(n).append("|");
-                        if (!pluginFound && n != null && n.toLowerCase().contains("plug-in")) {
-                            item.isSelected().set(true);
-                            pluginFound = true;
-                        }
-                    }
-                    host.println(locLog.toString());
-                    host.println("[BitwigStep] pluginFound=" + pluginFound + " für " + key);
-
-                    // T+3040ms: VST-Child suchen und selektieren
-                    host.scheduleTask(() -> {
-                        StringBuilder locLog2 = new StringBuilder("[BitwigStep] locs@3000: ");
-                        boolean vstFound = false;
-                        for (int i = 0; i < LOC_BANK_SIZE; i++) {
-                            BrowserItem item = locationBank.getItem(i);
-                            if (!item.exists().get()) { locLog2.append("END@").append(i); break; }
-                            String n = item.name().get();
-                            locLog2.append(i).append("=").append(n).append("|");
-                            if (!vstFound && n != null && n.toLowerCase().contains("vst")) {
-                                item.isSelected().set(true);
-                                vstFound = true;
+                    // Content-Type-Namen scannen und "Plug-ins" Index finden
+                    String[] typeNames = popupBrowser.contentTypeNames().get();
+                    int pluginsIdx = -1;
+                    int currentIdx = popupBrowser.selectedContentTypeIndex().get();
+                    StringBuilder tLog = new StringBuilder("[BitwigStep] contentTypes(cur=" + currentIdx + "): ");
+                    if (typeNames != null) {
+                        for (int i = 0; i < typeNames.length; i++) {
+                            String tn = typeNames[i];
+                            tLog.append(i).append("=").append(tn != null ? tn : "null").append("|");
+                            if (pluginsIdx < 0 && tn != null
+                                    && tn.toLowerCase().contains("plug-in")
+                                    && !tn.toLowerCase().contains("preset")) {
+                                pluginsIdx = i;
                             }
                         }
-                        host.println(locLog2.toString());
-                        host.println("[BitwigStep] vstFound=" + vstFound + " für " + key);
+                    }
+                    host.println(tLog.toString());
+                    if (pluginsIdx >= 0 && pluginsIdx != currentIdx) {
+                        popupBrowser.selectedContentTypeIndex().set(pluginsIdx);
+                        host.println("[BitwigStep] ContentType → Plug-ins idx=" + pluginsIdx);
+                    } else if (pluginsIdx < 0) {
+                        host.println("[BitwigStep] WARN: Plug-ins ContentType nicht gefunden, versuche idx=2");
+                        popupBrowser.selectedContentTypeIndex().set(2);
+                    }
 
-                        // T+4040ms: Ergebnisse scannen, normalisiert matchen, committen
-                        host.scheduleTask(() -> {
+                    // T+2040ms: Ergebnisse nach ContentType-Wechsel scannen
+                    host.scheduleTask(() -> {
                             StringBuilder resLog = new StringBuilder("[BitwigStep] results@4000: ");
                             int foundIdx = -1;
                             String foundName = null;
@@ -629,8 +672,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                             host.println(resLog.toString());
 
                             if (foundIdx >= 0) {
-                                // Item direkt via isSelected() wählen, dann committen
-                                resultBank.getItem(foundIdx).isSelected().set(true);
+                                // Cursor per selectFirstFile + selectNextFile navigieren, dann committen
+                                popupBrowser.selectFirstFile();
+                                for (int j = 0; j < foundIdx; j++) popupBrowser.selectNextFile();
                                 final int fi = foundIdx; final String fn = foundName;
                                 host.scheduleTask(() -> {
                                     popupBrowser.commit();
@@ -644,17 +688,16 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                                 if (ts != null) stepDone(ts, "error:load_instrument:not_found:" + key);
                             }
                         }, 1000);
-                    }, 1000);
-                }, 2000);
+                }, 1000);
 
-                // Sicherheits-Timeout 15s
+                // Sicherheits-Timeout 15s — nur für DIESEN Step, nicht für spätere
+                final OscConnection timeoutSrc = src;
                 host.scheduleTask(() -> {
-                    if (pendingStepSrc != null) {
-                        OscConnection ts = pendingStepSrc;
+                    if (pendingStepSrc == timeoutSrc) {  // noch unser Step?
                         pendingStepSrc  = null; pendingStepType = null;
                         popupBrowser.cancel();
                         host.println("[BitwigStep] browser_timeout: " + key);
-                        if (ts != null) stepDone(ts, "error:browser_timeout:" + key);
+                        stepDone(timeoutSrc, "error:browser_timeout:" + key);
                     }
                 }, 15000);
             }, 40);

@@ -38,9 +38,6 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private static final int[] DRUM_COLOR_CYMBAL  = {40,  0, 63};  // lila
     private static final int[] DRUM_COLOR_HIT     = {63, 63, 63};  // weiß (bei Treffer)
 
-    // MIDI-Kanal für Drum-Noten (0 = Kanal 1)
-    private static final int DRUM_MIDI_CHANNEL = 9; // Kanal 10 (GM Drum)
-
     // ── Instrument Konfiguration ──────────────────────────────────────────────
     // Root-Note (MIDI): 60 = C4, 48 = C3, 36 = C2
     private static final int INST_ROOT_NOTE = 48; // C3
@@ -55,9 +52,6 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
     // Intervall zwischen Zeilen (Halbtonschritte): 5 = Quarte, 7 = Quinte
     private static final int INST_ROW_INTERVAL = 5; // Quarte (Ableton-Push-Layout)
-
-    // MIDI-Kanal für Instrument-Noten (0 = Kanal 1)
-    private static final int INST_MIDI_CHANNEL = 0;
 
     // Instrument Farben
     private static final int[] INST_COLOR_ROOT    = {0,  63,  0};  // grün (Root-Note)
@@ -90,16 +84,9 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
     // Rechte Spalte (Note-On, von oben nach unten)
     private static final int BTN_VOLUME     = 89;
-    private static final int BTN_PAN        = 79;
-    private static final int BTN_SEND_A     = 69;
-    private static final int BTN_SEND_B     = 59;
     private static final int BTN_STOP_CLIP  = 49;
     private static final int BTN_MUTE       = 39;
-    private static final int BTN_SOLO       = 29;
     private static final int BTN_RECORD_ARM = 19;
-
-    // Velocity für Drum-Noten
-    private static final int DRUM_VELOCITY = 100;
 
     // Port für den eingebauten OSC-Server (LED-Suggestions + Mode-Query vom Agent)
     private static final int LED_OSC_PORT   = 8003;

@@ -133,6 +133,9 @@ class BitwigAgentBridgeExtensionTest {
         setField("resultBank",    resultBank);
         setField("remoteControls", controls);
         setField("host",           mockHost);
+        setField("locationBank",   mockFilterBank(Map.of()));
+        PopupBrowser mockBrowser = mock(PopupBrowser.class);
+        setField("popupBrowser",   mockBrowser);
     }
 
     // ── argFloat ─────────────────────────────────────────────────────────────

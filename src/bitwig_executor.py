@@ -19,14 +19,37 @@ OSC_STEP_PORT       = int(os.getenv("BITWIG_STEP_PORT",       "8002"))
 OSC_STEP_REPLY_PORT = int(os.getenv("BITWIG_STEP_REPLY_PORT", "9002"))
 
 _SETUP_TYPES = {"set_tempo", "add_track", "load_instrument", "append_effect",
-                "set_param", "set_param_named", "set_send", "select_track"}
+                "set_param", "set_param_named", "set_send", "select_track", "clear_tracks"}
 _NOTE_TYPES  = {"write_notes", "write_drum_pattern"}
 
 
 def _check_connection(timeout: float = 1.5) -> bool:
+    """Prüft BitwigAgentBridge (8001) oder BitwigStepPlugin (8002) — reicht einer."""
     try:
         from src.agent.tools.song_tools import _check_bridge
-        return _check_bridge(timeout=timeout)
+        if _check_bridge(timeout=timeout):
+            return True
+    except Exception:
+        pass
+    # Fallback: direkt BitwigStepPlugin auf Port 8002 anpingen
+    try:
+        import socket as _socket
+        from pythonosc import udp_client as _udp
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        sock.settimeout(timeout)
+        try:
+            sock.bind(("", OSC_STEP_REPLY_PORT))
+        except OSError:
+            pass
+        _udp.SimpleUDPClient(OSC_HOST, OSC_STEP_PORT).send_message("/ping", 1)
+        try:
+            sock.recvfrom(128)
+            return True
+        except _socket.timeout:
+            return False
+        finally:
+            sock.close()
     except Exception:
         return False
 

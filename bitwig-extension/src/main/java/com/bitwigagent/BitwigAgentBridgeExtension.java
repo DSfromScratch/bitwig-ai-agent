@@ -48,6 +48,7 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private OscConnection        replyLoopbackLocalhost;
     private OscConnection        agentUiLoopback;
     private SettableStringValue  cfgPrompt;
+    private SettableStringValue  agentHost;
     private SettableRangedValue  cfgBpm;
     private BrowserFilterItemBank    categoryBank;     // Kategorie-Spalte (linke Spalte)
     private BrowserFilterItemBank    smartCollBank;    // Smart-Collections
@@ -229,7 +230,6 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
 
     // Ziel-Gerätename für asynchrones Laden via flush()
     private volatile String  loadTarget          = null;
-    private volatile boolean loadSearchSent      = false; // Suchfeld bereits gesetzt?
     // Note-Count: pro Track+Slot beim Schreiben mitzählen (zuverlässiger als Observer)
     private final Map<String, Integer> noteCountMap = new HashMap<>(); // "track:slot" → count
     private volatile int     loadWaitLeft  = 0;   // Flush-Zyklen warten bevor navigiert wird
@@ -292,7 +292,6 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
             @Override
             public void valueChanged(boolean isOpen) {
                 if (!isOpen) {
-                    loadSearchSent    = false;
                     loadPluginsFilter = false;
                     if (pendingLoadName != null) {
                         String pn = pendingLoadName;
@@ -332,6 +331,8 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
 
         cfgPrompt = prefs.getStringSetting("Prompt", "Agent", 400, "");
         cfgBpm = prefs.getNumberSetting("BPM (optional)", "Agent", 60.0, 200.0, 1.0, " bpm", 0.0);
+        agentHost = prefs.getStringSetting("Agent Host (IP)", "Network", 64, "127.0.0.1");
+        agentHost.markInterested();
 
         Signal sendPrompt = prefs.getSignalSetting(
             "Send",
@@ -512,9 +513,11 @@ public class BitwigAgentBridgeExtension extends ControllerExtension {
     private void setupOsc(ControllerHost host) {
         OscModule       osc   = host.getOscModule();
         OscAddressSpace space = osc.createAddressSpace();
-        replyLoopbackV4 = osc.connectToUdpServer("127.0.0.1", OSC_REPLY_PORT, space);
-        replyLoopbackLocalhost = osc.connectToUdpServer("localhost", OSC_REPLY_PORT, space);
-        agentUiLoopback = osc.connectToUdpServer("127.0.0.1", OSC_AGENT_UI_PORT, space);
+        String ah = (agentHost != null && !agentHost.get().isBlank()) ? agentHost.get() : "127.0.0.1";
+        replyLoopbackV4        = osc.connectToUdpServer(ah,          OSC_REPLY_PORT,   space);
+        replyLoopbackLocalhost = osc.connectToUdpServer("localhost",  OSC_REPLY_PORT,   space);
+        agentUiLoopback        = osc.connectToUdpServer(ah,           OSC_AGENT_UI_PORT, space);
+        host.println("[BitwigBridge] Reply → " + ah + ":" + OSC_REPLY_PORT);
 
         // ── Arranger — Scene in Timeline aufnehmen ────────────────────────
         // /arrange/record/start  — Arrangement-Recording + Arranger-View + Play

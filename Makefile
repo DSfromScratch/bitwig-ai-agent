@@ -8,7 +8,15 @@ PYTEST   := $(PYTHON) -m pytest
 
 FILE ?= song.mp3
 
-.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status
+# ── Mac Deploy Konfiguration ─────────────────────────────────────────────────
+MAC_HOST     ?= 192.168.0.4
+MAC_USER     ?= sija
+MAC_EXT_DIR  := /Users/$(MAC_USER)/Documents/Bitwig Studio/Extensions
+LOCAL_EXT_DIR := $(HOME)/Bitwig\ Studio/Extensions
+LINUX_IP     := $(shell ip route get 1 2>/dev/null | awk '{print $$7; exit}')
+EXT_DIST     := bitwig-extension/dist
+
+.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status
 
 help: ## Verfügbare Befehle anzeigen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -85,10 +93,49 @@ clean: ## Cache löschen
 	find . -type f -name "*.pyc" -delete 2>/dev/null; true
 	@echo "✓ Cache bereinigt"
 
-build-extension: ## Bitwig Extension JAR bauen (benötigt JDK 25; Maven wird automatisch heruntergeladen)
+build-extension: ## Bitwig Extensions bauen (benötigt JDK 25)
 	cd bitwig-extension && JAVA_HOME=$(JAVA_HOME) ./mvnw package -DskipTests -q
-	@echo "✓ Extension gebaut → bitwig-extension/dist/BitwigAgentBridge.bwextension"
-	@echo "  Manuell nach Windows kopieren: cp bitwig-extension/dist/*.bwextension /mnt/c/Users/<User>/Documents/Bitwig\\ Studio/Extensions/"
+	@mkdir -p $(EXT_DIST)
+	@cp bitwig-extension/target/BitwigAgentBridge-fix.jar    $(EXT_DIST)/BitwigAgentBridge.bwextension    2>/dev/null || true
+	@cp bitwig-extension/target/BitwigStepPlugin-fix.jar     $(EXT_DIST)/BitwigStepPlugin.bwextension     2>/dev/null || true
+	@cp bitwig-extension/target/LaunchpadController-fix.jar  $(EXT_DIST)/LaunchpadController.bwextension  2>/dev/null || true
+	@cp bitwig-extension/target/BitwigOscBridge-fix.jar      $(EXT_DIST)/BitwigOscBridge.bwextension      2>/dev/null || true
+	@echo "✓ Extensions gebaut → $(EXT_DIST)/"
+
+deploy-local: build-extension ## Extensions lokal auf Linux installieren
+	cp $(EXT_DIST)/*.bwextension "$(LOCAL_EXT_DIR)/"
+	@echo "✓ Extensions → $(LOCAL_EXT_DIR)/"
+
+deploy-mac: build-extension ## Extensions auf Mac übertragen via SCP (nur StepPlugin + OscBridge)
+	scp -o StrictHostKeyChecking=no \
+	    -o IdentitiesOnly=yes \
+	    -o PreferredAuthentications=publickey,keyboard-interactive,password \
+	    $(EXT_DIST)/BitwigStepPlugin.bwextension \
+	    $(EXT_DIST)/BitwigOscBridge.bwextension \
+	    "$(MAC_USER)@$(MAC_HOST):$(MAC_EXT_DIR)/"
+	@# Nicht benötigte Extensions auf Mac entfernen
+	@ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+	    $(MAC_USER)@$(MAC_HOST) \
+	    "rm -f '$(MAC_EXT_DIR)/BitwigAgentBridge.bwextension' '$(MAC_EXT_DIR)/LaunchpadController.bwextension'" 2>/dev/null || true
+	@echo "✓ StepPlugin + OscBridge → Mac $(MAC_HOST)"
+
+deploy-mac-http: build-extension ## Extensions per HTTP bereitstellen (Mac Browser-Download)
+	@fuser -k 8080/tcp 2>/dev/null; sleep 1; true
+	@echo ">>> Öffne auf Mac: http://$(LINUX_IP):8080"
+	@echo "    Dateien herunterladen → nach $(MAC_EXT_DIR)/ kopieren → Bitwig Extension neu laden"
+	$(PYTHON) -m http.server 8080 --directory $(EXT_DIST)
+
+ssh-setup-mac: ## SSH-Key für Mac einrichten (einmalig, dann deploy-mac ohne Passwort)
+	@[ -f ~/.ssh/id_rsa.pub ] || ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa -q
+	@echo ">>> Führe auf dem Mac im Terminal aus:"
+	@echo ""
+	@echo "    mkdir -p ~/.ssh"
+	@echo "    echo \"$$(cat ~/.ssh/id_rsa.pub)\" >> ~/.ssh/authorized_keys"
+	@echo "    chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+	@echo ""
+	@echo "Danach: make deploy-mac"
+
+deploy: deploy-local deploy-mac ## Extensions lokal + Mac installieren
 
 
 agent-service-install: ## Bitwig Agent als systemd User-Service installieren (autostart)
