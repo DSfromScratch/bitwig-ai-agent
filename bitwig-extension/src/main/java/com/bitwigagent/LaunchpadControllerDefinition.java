@@ -11,11 +11,11 @@ public class LaunchpadControllerDefinition extends ControllerExtensionDefinition
     private static final UUID EXTENSION_UUID =
         UUID.fromString("b2c3d4e5-f6a7-8901-bcde-f12345678901");
 
-    @Override public String getName()            { return "Launchpad Controller"; }
+    @Override public String getName()            { return "Launchpad Agent"; }
     @Override public String getAuthor()          { return "Bitwig Agent"; }
     @Override public String getVersion()         { return "1.0.0"; }
     @Override public UUID   getId()              { return EXTENSION_UUID; }
-    @Override public String getHardwareVendor()  { return "Novation"; }
+    @Override public String getHardwareVendor()  { return "Bitwig Agent"; }
     @Override public String getHardwareModel()   { return "Launchpad MK2"; }
     @Override public int    getRequiredAPIVersion() { return 18; }
     @Override public int    getNumMidiInPorts()  { return 1; }
@@ -27,6 +27,14 @@ public class LaunchpadControllerDefinition extends ControllerExtensionDefinition
         list.add(
             new String[]{"Launchpad MK2 MIDI 1"},
             new String[]{"Launchpad MK2 MIDI 1"}
+        );
+        list.add(
+            new String[]{"Launchpad MK2"},
+            new String[]{"Launchpad MK2"}
+        );
+        list.add(
+            new String[]{"Launchpad MK2 1"},
+            new String[]{"Launchpad MK2 1"}
         );
     }
 

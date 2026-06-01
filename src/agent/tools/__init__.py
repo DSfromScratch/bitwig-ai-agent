@@ -5,9 +5,11 @@ from src.agent.tools.song_tools import (
     get_bitwig_track_state,
 )
 from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
-from src.bitwig_executor import execute_setup
-from langchain_core.tools import StructuredTool
+from src.agent.tools.pattern_tools import write_pattern
+from src.bitwig_executor import execute_setup, compose_notes
+from langchain_core.tools import StructuredTool, tool as _tool
 from pydantic import BaseModel, model_validator
+from src.knowledge.vst_scanner import scan_and_store as _scan_fn
 
 
 class _BitwigResultInput(BaseModel):
@@ -32,12 +34,24 @@ def _make_tool(fn, name: str | None = None) -> StructuredTool:
     )
 
 
+@_tool
+def scan_vst_plugins() -> str:
+    """Scannt alle installierten VST3-Plugins in Bitwig und speichert sie in Neo4j.
+    Danach gibt query_bitwig_docs die aktuell installierten Plugins zurück.
+    Aufrufen wenn neue VSTs installiert wurden oder der Agent die Plugin-Liste nicht kennt.
+    """
+    return _scan_fn()
+
+
 ALL_TOOLS = [
     query_bitwig_docs,
     control_bitwig,
     check_bitwig_connection,
     get_bitwig_track_state,
     _make_tool(execute_setup),
+    _make_tool(compose_notes),
+    write_pattern,
+    scan_vst_plugins,
     StructuredTool.from_function(suggest_notes),
     StructuredTool.from_function(get_launchpad_mode),
     StructuredTool.from_function(listen_played_notes),

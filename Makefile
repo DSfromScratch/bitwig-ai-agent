@@ -33,6 +33,9 @@ print('Lade Music Flamingo FP8...'); \
 snapshot_download('henry1477/music-flamingo-2601-hf-fp8'); \
 print('Download abgeschlossen.')"
 
+scan-vsts: ## Installierte VST-Plugins aus Bitwig scannen und in Neo4j speichern
+	$(PYTHON) -c "from src.knowledge.vst_scanner import scan_and_store; print(scan_and_store())"
+
 neo4j-import: ## Neo4j Graph aus Bitwig-Installation neu aufbauen
 	$(PYTHON) -c "\
 from src.knowledge.neo4j_graph import create_schema, build_graph; \
@@ -112,12 +115,13 @@ deploy-mac: build-extension ## Extensions auf Mac übertragen via SCP (nur StepP
 	    -o PreferredAuthentications=publickey,keyboard-interactive,password \
 	    $(EXT_DIST)/BitwigStepPlugin.bwextension \
 	    $(EXT_DIST)/BitwigOscBridge.bwextension \
+	    $(EXT_DIST)/LaunchpadController.bwextension \
 	    "$(MAC_USER)@$(MAC_HOST):$(MAC_EXT_DIR)/"
-	@# Nicht benötigte Extensions auf Mac entfernen
+	@# BitwigAgentBridge entfernen (nicht benötigt auf Mac)
 	@ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
 	    $(MAC_USER)@$(MAC_HOST) \
-	    "rm -f '$(MAC_EXT_DIR)/BitwigAgentBridge.bwextension' '$(MAC_EXT_DIR)/LaunchpadController.bwextension'" 2>/dev/null || true
-	@echo "✓ StepPlugin + OscBridge → Mac $(MAC_HOST)"
+	    "rm -f '$(MAC_EXT_DIR)/BitwigAgentBridge.bwextension'" 2>/dev/null || true
+	@echo "✓ StepPlugin + OscBridge + LaunchpadAgent → Mac $(MAC_HOST)"
 
 deploy-mac-http: build-extension ## Extensions per HTTP bereitstellen (Mac Browser-Download)
 	@fuser -k 8080/tcp 2>/dev/null; sleep 1; true

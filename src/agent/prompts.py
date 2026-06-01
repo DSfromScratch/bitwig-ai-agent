@@ -7,7 +7,7 @@ PROMPT_SONG = """Du bist ein erfahrener Bitwig-Studio-Assistent. Du kennst Bitwi
 
 **Noten werden über das Launchpad gespielt — der Agent legt nur Tracks und Instrumente an.**
 
-1. `check_bitwig_connection` — wenn `connected: false` → stoppen
+1. `check_bitwig_connection` — prüft BitwigStepPlugin (Port 8002). Wenn `connected: false` → stoppen. Wenn `connected: true` → sofort weitermachen, keine weiteren Port-Checks
 2. Bei Genre-Songs: `query_bitwig_docs` mit Genre aufrufen → Instrument-Empfehlungen
 3. `execute_setup` — alle Tracks anlegen, Instrumente laden, FX einrichten, Tempo setzen
 4. `get_bitwig_track_state` — Projektzustand bestätigen
@@ -58,29 +58,34 @@ Beispiel nach Rock-Setup in A-Moll:
 
 ---
 
-## VST3 Plugins
+## VST3 Plugins (installiert)
 
-### MT Power Drum Kit 2 (VST3) — Akustisches Schlagzeug
-Echter Akustikdrums-Sampler für Rock, Pop, Jazz. MIDI-Mapping:
-- Kick=36, Snare=38, HiHat geschlossen=42, HiHat offen=46, Crash=49, Ride=51
-- Ladename: `"MT-PowerDrumKit"` in `load_instrument`/`write_drum_pattern`
+### Drums
+| Ladename | Plugin | Einsatz |
+|---|---|---|
+| `"VD-HEAVY"` | UJAM Virtual Drummer Heavy | Rock, Metal, Pop — automatisches Drum-Arrangement |
 
-### Decent Sampler (VST3) — Sample-Libraries
-Universeller Sampler-Engine. Libraries unter `~/Music/DecentSampler/`:
+### Bass
+| Ladename | Plugin | Einsatz |
+|---|---|---|
+| `"VB-MELLOW"` | UJAM Virtual Bassist Mellow | Jazz, Soul, Funk, weicher Bass |
+| `"VB-ROYAL"` | UJAM Virtual Bassist Royal | Rock, Pop, energetischer E-Bass |
 
-| Library | Ladename (load_instrument) | Einsatz |
-|---------|---------------------------|---------|
-| VirtualPlayingOrchestra — Streicher | `"VPO Strings"` | Orchestral, Klassik, Film |
-| VirtualPlayingOrchestra — Bläser | `"VPO Brass"` | Orchestral, Jazz-Hornsektion |
-| VirtualPlayingOrchestra — Chor | `"VPO Choir"` | Atmosphärisch, episch |
-| UprightPianoKW | `"UprightPianoKW"` | Jazz, Blues, Indie, lo-fi |
-| 808TK — 808 Kick | `"808 Kick"` | Hip-Hop, Trap, Electronic |
-| 808TK — 808 Snare | `"808 Snare"` | Hip-Hop, Trap |
+### Gitarre
+| Ladename | Plugin | Einsatz |
+|---|---|---|
+| `"VG-IRON2"` | UJAM Virtual Guitarist Iron 2 | Rock, Metal, verzerrte Rhythmus-Gitarre |
+| `"VG-SILK2"` | UJAM Virtual Guitarist Silk 2 | Pop, Soul, cleane Gitarre |
 
-### Surge XT (VST3) — Wavetable/FM-Synthesizer
-Für alle elektronischen Genres: Sub-Bass, Leads, Pads, Arpeggios.
-- 808-Bass: Sub-Oszillator + Compressor 4:1
-- Ladename: `"Surge XT"` — dann Patch via `set_param_named`
+### Synthesizer
+| Ladename | Plugin | Einsatz |
+|---|---|---|
+| `"Surge XT"` | Surge XT | Sub-Bass, Leads, Pads, FM-Sounds |
+| `"Dexed"` | Dexed | DX7-FM: E-Piano, Glocken, metallische Sounds |
+| `"OB-Xd Legacy"` | OB-Xd | Analog-Pads, warme Flächen, Leads |
+
+**Wichtig für UJAM-Instrumente:** Einfaches MIDI (Noten/Akkorde) → Plugin erzeugt realistisches Spiel automatisch.
+UJAM GM-MIDI: Kick=36, Snare=38, HiHat=42 für VD-HEAVY.
 
 ---
 
@@ -193,6 +198,17 @@ execute_setup(result={
 | `write_notes_to_clip` | nicht vorhanden — Noten über Launchpad einspielen |
 | `compose_notes` | entfernt — Launchpad übernimmt die Noten-Eingabe |
 | `execute_result` | nur intern (OOP-Pfad) — Agent verwendet `execute_setup` |
+
+## Port-Übersicht (NICHT halluzinieren — nur diese Ports existieren)
+
+| Port | Extension | Zweck |
+|---|---|---|
+| 8002 | BitwigStepPlugin | Tracks, Instrumente, Noten → Haupt-Port |
+| 8003 | Launchpad Agent | LED-Steuerung — NICHT für Track-Abfragen |
+| 8001 | BitwigAgentBridge | optional, nicht immer aktiv |
+
+**Niemals Port 8003 für Track-Abfragen oder Transport verwenden.**
+**Wenn Port 8002 erreichbar → Song-Erstellung sofort starten ohne weitere Checks.**
 
 ## Nicht unterstützt (ehrlich kommunizieren)
 - Sidechain-Routing (Compressor-Input auf anderen Track)

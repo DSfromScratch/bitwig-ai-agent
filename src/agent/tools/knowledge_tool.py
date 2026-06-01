@@ -196,12 +196,32 @@ def _query_neo4j(query: str) -> str:
                     genre_text += "\n  Relevante Workflows: " + ", ".join(r['n'] for r in genre_wfs)
                 parts.append(genre_text)
 
+            # ── 4a. Recording-Workflows priorisiert ──────────────────────
+            recording_kw = {"aufnehm", "recording", "record", "arm", "clip aufnahm"}
+            if any(kw in q_lower for kw in recording_kw):
+                rec_wfs = s.run("""
+                    MATCH (w:Workflow)
+                    WHERE w.category = 'recording'
+                       OR any(kw IN coalesce(w.keywords,[]) WHERE kw CONTAINS 'aufnahm' OR kw CONTAINS 'record')
+                    RETURN w.name AS name, w.description AS desc, w.steps AS steps
+                    LIMIT 3
+                """).data()
+                for wf in rec_wfs:
+                    wf_text = f"**Workflow: {wf['name']}**\n  {wf.get('desc','')}"
+                    steps_raw = wf.get("steps") or ""
+                    if steps_raw:
+                        step_lines = "\n".join(f"  {i+1}. {st}" for i, st in enumerate(steps_raw.split("\n")[:6]) if st)
+                        if step_lines:
+                            wf_text += "\n" + step_lines
+                    parts.append(wf_text)
+
             # ── 4. Workflows + benötigte Devices ─────────────────────────
             workflows = s.run("""
                 MATCH (w:Workflow)
                 WHERE any(w2 IN $words WHERE toLower(w.name) CONTAINS w2
                          OR toLower(coalesce(w.description,'')) CONTAINS w2
-                         OR toLower(coalesce(w.use_case,'')) CONTAINS w2)
+                         OR toLower(coalesce(w.use_case,'')) CONTAINS w2
+                         OR any(kw IN coalesce(w.keywords,[]) WHERE toLower(kw) CONTAINS w2))
                 RETURN w.name AS name, w.description AS desc,
                        w.steps AS steps, w.use_case AS use_case
                 LIMIT 3
@@ -337,6 +357,26 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
         n_results: Anzahl ChromaDB-Ergebnisse (Standard: 6)
     """
     results = []
+
+    # ── Installierte VST-Plugins (InstalledPlugin Knoten) ─────────────────
+    q_lower = query.lower()
+    vst_keywords = {"vst", "plugin", "plug-in", "installiert", "installed",
+                    "bass", "drum", "gitarre", "guitar", "synth", "surge", "dexed",
+                    "ujam", "vb-", "vg-", "vd-", "welche", "which", "available"}
+    if any(k in q_lower for k in vst_keywords):
+        try:
+            from src.knowledge.vst_scanner import query_installed_plugins
+            plugins = query_installed_plugins()
+            if plugins:
+                by_type: dict[str, list[str]] = {}
+                for p in plugins:
+                    by_type.setdefault(p["type"], []).append(p["name"])
+                lines = ["## Installierte VST3-Plugins\n"]
+                for t, names in sorted(by_type.items()):
+                    lines.append(f"**{t.capitalize()}**: {', '.join(f'`{n}`' for n in names)}")
+                results.append("\n".join(lines))
+        except Exception:
+            pass
 
     # ── Neo4j Graph-Suche ──────────────────────────────────────────────────
     neo4j_result = _query_neo4j(query)

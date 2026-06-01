@@ -11,6 +11,9 @@ import time
 from langchain_core.tools import tool
 
 
+from dotenv import load_dotenv
+load_dotenv()
+
 OSC_HOST = os.getenv("BITWIG_HOST", "127.0.0.1")
 OSC_PORT = int(os.getenv("BITWIG_PORT", "8001"))
 OSC_REPLY_PORT = int(os.getenv("BITWIG_REPLY_PORT", "9001"))
@@ -445,17 +448,41 @@ def _check_bridge(timeout: float = 1.5) -> bool:
 
 @tool
 def check_bitwig_connection() -> dict:
-    """Prüft ob die BitwigAgentBridge erreichbar ist.
+    """Prüft ob Bitwig Studio erreichbar ist (BitwigStepPlugin Port 8002).
 
     Muss vor allen Song-Operationen aufgerufen werden.
     Returns: {"connected": bool, "message": str}
     """
+    # Primär: BitwigStepPlugin Port 8002 (läuft auf Mac + Linux)
+    import socket
+    from pythonosc import udp_client as _udp
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, "SO_REUSEPORT"):
+        try: sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except OSError: pass
+    sock.settimeout(2.0)
+    try:
+        sock.bind(("", OSC_STEP_REPLY_PORT))
+    except OSError:
+        pass
+    try:
+        _udp.SimpleUDPClient(OSC_HOST, OSC_STEP_PORT).send_message("/ping", 1)
+        sock.recvfrom(64)
+        return {"connected": True, "message": "Bitwig erreichbar ✓ (BitwigStepPlugin)"}
+    except (socket.timeout, OSError):
+        pass
+    finally:
+        try: sock.close()
+        except Exception: pass
+
+    # Fallback: BitwigAgentBridge Port 8001
     ok = _check_bridge()
     return {
         "connected": ok,
         "message": (
-            "BitwigAgentBridge erreichbar ✓" if ok else
-            "Bridge nicht erreichbar — Bitwig starten + Extension aktivieren"
+            "Bitwig erreichbar ✓ (BitwigAgentBridge)" if ok else
+            "Bitwig nicht erreichbar — Bitwig starten + BitwigStepPlugin aktivieren (Port 8002)"
         ),
     }
 
@@ -470,12 +497,25 @@ def get_bitwig_track_state() -> str:
     """
     import struct
 
-    ok = _check_bridge(timeout=1.0)
-    if not ok:
-        return "Bridge nicht erreichbar. Bitwig starten und Extension aktivieren."
-
     result_holder = {}
-    client = _bound_osc_client(timeout=2.0)
+    # Direkt BitwigStepPlugin Port 8002 verwenden (funktioniert auf Mac + Linux)
+    import socket as _socket
+    from pythonosc import udp_client as _udp2
+    step_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    step_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    if hasattr(_socket, "SO_REUSEPORT"):
+        try: step_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
+        except OSError: pass
+    step_sock.settimeout(2.0)
+    try: step_sock.bind(("", OSC_STEP_REPLY_PORT))
+    except OSError: pass
+
+    class _StepClient:
+        def __init__(self): self._sock = step_sock
+        def send_message(self, addr, val):
+            _udp2.SimpleUDPClient(OSC_HOST, OSC_STEP_PORT).send_message(addr, val)
+
+    client = _StepClient()
     try:
         client.send_message("/agent/track/count", 1)
         data, _ = client._sock.recvfrom(4096)
@@ -497,10 +537,8 @@ def get_bitwig_track_state() -> str:
     except OSError:
         pass
     finally:
-        try:
-            client._sock.close()
-        except Exception:
-            pass
+        try: step_sock.close()
+        except Exception: pass
 
     if "count" in result_holder:
         count      = result_holder["count"]

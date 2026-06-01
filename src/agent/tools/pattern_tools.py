@@ -282,10 +282,11 @@ def write_pattern(
     inst_lower = instrument.lower().replace("-", "").replace(" ", "")
     chords = chord_progression or []
 
-    drum_keywords  = ["drum", "percussion", "mtpowerdrumkit"]
-    bass_keywords  = ["fm4", "surgext", "surge", "bass"]
+    drum_keywords  = ["drum", "percussion", "mtpowerdrumkit", "vd-", "vdheavy"]
+    bass_keywords  = ["fm4", "surgext", "surge", "bass", "vb-", "vbroyal", "vbmellow"]
     chord_keywords = ["phase4", "polysynth", "poly", "strings", "choir",
-                      "brass", "piano", "uprightpiano", "pad", "chord"]
+                      "brass", "piano", "uprightpiano", "pad", "chord",
+                      "vg-", "vgironk2", "vgsilk2", "vgiron", "vgsilk"]
 
     if "808kick" in inst_lower:
         notes = _808_kick(genre, bars); ptype = "808-kick"

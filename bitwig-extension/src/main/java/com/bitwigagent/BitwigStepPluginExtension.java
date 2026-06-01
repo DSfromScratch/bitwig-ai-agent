@@ -404,6 +404,66 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 }, total * 80L + 200L);
             });
 
+        // ── VST Plugin Scanner ────────────────────────────────────────────
+        space.registerMethod("/plugins/scan", "*", "Scan installed VST plugins",
+            (src, msg) -> {
+                // Temp-Track anlegen → leerer Instrument-Track → Instrument-Browser-Kontext garantiert
+                application.createInstrumentTrack(-1);
+                host.scheduleTask(() -> {
+                    // Browser auf leerem Track öffnen (browseToInsertBeforeDevice = Instrument-Kontext)
+                    popupBrowser.cancel();
+                    boolean hasDevice = cursorDevice.exists().get();
+                    if (hasDevice) cursorDevice.browseToReplaceDevice();
+                    else           cursorDevice.browseToInsertBeforeDevice();
+
+                    host.scheduleTask(() -> {
+                        // Content-Type auf Plug-ins setzen
+                        String[] typeNames = popupBrowser.contentTypeNames().get();
+                        int pluginsIdx = 2;
+                        StringBuilder tLog = new StringBuilder("[BitwigStep] scan contentTypes: ");
+                        if (typeNames != null) {
+                            for (int i = 0; i < typeNames.length; i++) {
+                                String tn = typeNames[i];
+                                tLog.append(i).append("=").append(tn).append("|");
+                                if (tn != null && tn.toLowerCase().contains("plug-in")
+                                        && !tn.toLowerCase().contains("preset")) {
+                                    pluginsIdx = i;
+                                }
+                            }
+                        }
+                        host.println(tLog.toString());
+                        popupBrowser.selectedContentTypeIndex().set(pluginsIdx);
+                        host.println("[BitwigStep] scan ContentType Plug-ins=" + pluginsIdx);
+
+                        host.scheduleTask(() -> {
+                            StringBuilder names = new StringBuilder();
+                            int count = 0;
+                            for (int i = 0; i < BROWSER_SCAN; i++) {
+                                BrowserItem item = resultBank.getItem(i);
+                                if (!item.exists().get()) break;
+                                String n = item.name().get();
+                                if (n == null || n.isBlank()) continue;
+                                count++;
+                                if (names.length() > 0) names.append(",");
+                                names.append(n.trim());
+                            }
+                            popupBrowser.cancel();
+                            // Temp-Track löschen
+                            host.scheduleTask(() -> {
+                                Channel first = (Channel) trackBank.getItemAt(0);
+                                if (first.exists().get()) {
+                                    first.selectInMixer();
+                                    cursorTrack.deleteObject();
+                                }
+                            }, 200);
+                            String result = names.toString();
+                            host.println("[BitwigStep] /plugins/scan → " + count + " Items");
+                            sendReply("/plugins/scan/response", result);
+                        }, 2000);
+                    }, 800);
+                }, 300);
+            });
+
         // ── Note-Counter ───────────────────────────────────────────────────
         space.registerMethod("/clip/note/count/all", "*", "All note counts",
             (src, msg) -> {
@@ -672,14 +732,17 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                             host.println(resLog.toString());
 
                             if (foundIdx >= 0) {
-                                // Cursor per selectFirstFile + selectNextFile navigieren, dann committen
-                                popupBrowser.selectFirstFile();
-                                for (int j = 0; j < foundIdx; j++) popupBrowser.selectNextFile();
+                                // Direktauswahl via isSelected() — kein Cursor-Offset-Problem
+                                resultBank.getItem(foundIdx).isSelected().set(true);
                                 final int fi = foundIdx; final String fn = foundName;
+                                // 600ms warten damit Bitwig die Selektion verarbeitet, dann committen
                                 host.scheduleTask(() -> {
+                                    // Sicherstellen dass das richtige Item selektiert ist
+                                    String selectedName = resultBank.getItem(fi).name().get();
+                                    host.println("[BitwigStep] commit: '" + fn + "' idx=" + fi
+                                                 + " (selected='" + selectedName + "')");
                                     popupBrowser.commit();
-                                    host.println("[BitwigStep] commit: '" + fn + "' idx=" + fi);
-                                }, 300);
+                                }, 600);
                             } else {
                                 OscConnection ts = pendingStepSrc;
                                 pendingStepSrc  = null; pendingStepType = null;

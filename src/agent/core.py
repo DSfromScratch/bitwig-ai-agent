@@ -985,25 +985,9 @@ if __name__ == "__main__":
 
     import sys, signal as _signal, time as _time
 
-    IDLE_TIMEOUT = int(os.getenv("AGENT_IDLE_TIMEOUT", "600"))  # Sekunden, 0 = kein Timeout
-    _last_request = [_time.monotonic()]
-
     def _run_request_threadsafe(user: str) -> str:
-        _last_request[0] = _time.monotonic()
         with history_lock:
             return _run_request(user)
-
-    def _idle_watchdog():
-        while True:
-            _time.sleep(30)
-            if IDLE_TIMEOUT > 0 and (_time.monotonic() - _last_request[0]) > IDLE_TIMEOUT:
-                log.info("Idle-Timeout (%ds) erreicht — Agent beendet sich.", IDLE_TIMEOUT)
-                os.kill(os.getpid(), _signal.SIGTERM)
-                break
-
-    if IDLE_TIMEOUT > 0:
-        threading.Thread(target=_idle_watchdog, daemon=True).start()
-        log.info("Idle-Timeout aktiv: %ds (AGENT_IDLE_TIMEOUT)", IDLE_TIMEOUT)
 
     _start_agent_ui_osc_listener(_run_request_threadsafe)
 

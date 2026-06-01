@@ -18,17 +18,31 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
     // ── Drum Pad Konfiguration ────────────────────────────────────────────────
     // 4×4 Grid (16 Pads), Zeile 1 unten → Zeile 4 oben
-    // Standard: Bitwig Drum Machine Layout (GM-kompatibel, ab C1=36)
-    private static final int[] DRUM_NOTES = {
-        // Zeile 1 (unterste Pads, Launchpad-Row 1)
+    // ── Drum-Profile ─────────────────────────────────────────────────────────
+    // GM / UJAM (VD-HEAVY, MT-PowerDrumKit): Standard General MIDI ab C1=36
+    private static final int[] PROFILE_GM = {
         36, 37, 38, 39,   // Kick, Rimshot, Snare, Clap
-        // Zeile 2
         40, 41, 42, 43,   // E-Snare, Low Floor Tom, Closed HH, High Floor Tom
-        // Zeile 3
         44, 45, 46, 47,   // Pedal HH, Low Tom, Open HH, Low-Mid Tom
-        // Zeile 4 (oberste Pads)
         48, 49, 50, 51    // Hi-Mid Tom, Crash 1, High Tom, Ride
     };
+    // Bitwig Drum Machine: gleiche Noten wie GM (Standard-Belegung)
+    private static final int[] PROFILE_DRUM_MACHINE = {
+        36, 37, 38, 39,
+        40, 41, 42, 43,
+        44, 45, 46, 47,
+        48, 49, 50, 51
+    };
+    // v9-Serie / Einzel-Instrumente: chromatisch ab C3=48
+    private static final int[] PROFILE_V9 = {
+        48, 49, 50, 51,   // C3, C#3, D3, D#3
+        52, 53, 54, 55,   // E3, F3, F#3, G3
+        56, 57, 58, 59,   // Ab3, A3, Bb3, B3
+        60, 61, 62, 63    // C4, C#4, D4, D#4
+    };
+
+    // Aktives Profil (default: GM)
+    private int[] DRUM_NOTES = PROFILE_GM;
 
     // Drum-Pad Farben (r, g, b je 0–63) — pro Drum-Kategorie
     private static final int[] DRUM_COLOR_KICK    = {63, 10,  0};  // rot-orange
@@ -96,7 +110,8 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     // ── Interne Zustands-Felder ───────────────────────────────────────────────
     private enum Mode { CONTROL, DRUM, INSTRUMENT }
     private Mode currentMode = Mode.CONTROL;
-    private OscConnection modeReplyConn;
+    private OscConnection      modeReplyConn;
+    private SettableStringValue agentHost;
 
     private MidiIn    midiIn;
     private MidiOut   midiOut;
@@ -131,6 +146,10 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         midiIn  = host.getMidiInPort(0);
         midiOut = host.getMidiOutPort(0);
 
+        agentHost = host.getPreferences()
+                        .getStringSetting("Agent Host (IP)", "Network", 64, "127.0.0.1");
+        agentHost.markInterested();
+
         // NoteInput für Drum-Modus: alle MIDI-Noten auf Kanal 1 (Launchpad-Standard)
         drumNoteInput = midiIn.createNoteInput("LP Drums", "9?????", "8?????");
         drumNoteInput.setShouldConsumeEvents(true);
@@ -149,8 +168,11 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         setupLedOsc();
 
-        enterMode(Mode.CONTROL);
-        host.showPopupNotification("Launchpad Controller — Control Mode");
+        // 300ms warten bis Launchpad MIDI-Verbindung bereit ist, dann LEDs setzen
+        host.scheduleTask(() -> {
+            enterMode(Mode.CONTROL);
+            host.showPopupNotification("Launchpad Agent — Control Mode");
+        }, 300);
         host.println("[Launchpad] Controller gestartet");
     }
 
@@ -292,14 +314,12 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         if (drumIdx < 0 || drumIdx >= DRUM_NOTES.length) return;
         int drumNote = DRUM_NOTES[drumIdx];
 
+        // LED-Feedback — MIDI-Routing übernimmt drumNoteInput (setShouldConsumeEvents=true in DRUM-Modus)
         if (pressed) {
-            int vel = Math.max(1, Math.min(127, velocity));
-            drumNoteInput.sendRawMidiEvent(0x99, drumNote, vel); // Kanal 10 (9)
             setLed(note, DRUM_COLOR_HIT[0], DRUM_COLOR_HIT[1], DRUM_COLOR_HIT[2]);
             if (modeReplyConn != null)
-                modeReplyConn.sendMessage("/launchpad/note/played", drumNote, vel);
+                modeReplyConn.sendMessage("/launchpad/note/played", drumNote, velocity);
         } else {
-            drumNoteInput.sendRawMidiEvent(0x89, drumNote, 0);
             int[] col = drumColor(drumIdx);
             setLed(note, col[0], col[1], col[2]);
         }
@@ -314,12 +334,35 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         return -1;
     }
 
+    // Chromatische Farben: 12 Tonklassen (C=grün, D=türkis, E=blau, F=lila,
+    //                      G=magenta, A=orange, B=gelb; Halbtonschritte dunkler)
+    private static final int[][] CHROMATIC_COLORS = {
+        {0,  50,  0},  // C   — grün
+        {0,  30,  5},  // C#  — dunkelgrün
+        {0,  40, 30},  // D   — türkis
+        {0,  20, 20},  // D#  — dunkeltürkis
+        {0,  20, 50},  // E   — blau
+        {20,  0, 50},  // F   — blau-lila
+        {10,  0, 30},  // F#  — dunkellila
+        {35,  0, 50},  // G   — lila
+        {50,  0, 35},  // G#  — magenta
+        {50, 20,  0},  // A   — orange
+        {35, 15,  0},  // A#  — dunkelorange
+        {50, 50,  0},  // B   — gelb
+    };
+
     private int[] drumColor(int idx) {
         int note = DRUM_NOTES[idx];
-        if (note == 36 || note == 40)             return DRUM_COLOR_KICK;
-        if (note == 37 || note == 38 || note == 39) return DRUM_COLOR_SNARE;
-        if (note == 42 || note == 44 || note == 46) return DRUM_COLOR_HH;
-        if (note == 49 || note == 51 || note == 57) return DRUM_COLOR_CYMBAL;
+        // Profil-abhängige Farben
+        if (DRUM_NOTES == PROFILE_V9) {
+            // Chromatisch: Farbe nach Tonklasse
+            return CHROMATIC_COLORS[note % 12];
+        }
+        // GM / Drum Machine: funktionale Farben
+        if (note == 36 || note == 40)               return DRUM_COLOR_KICK;
+        if (note == 37 || note == 38 || note == 39)  return DRUM_COLOR_SNARE;
+        if (note == 42 || note == 44 || note == 46)  return DRUM_COLOR_HH;
+        if (note == 49 || note == 51 || note == 57)  return DRUM_COLOR_CYMBAL;
         return DRUM_COLOR_TOM;
     }
 
@@ -389,6 +432,28 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
     // ── Translation Tables für NoteInput ─────────────────────────────────────
 
+    private void setDrumProfile(String pluginName) {
+        String key = pluginName.toLowerCase().replace("-", "").replace(" ", "").replace("_", "");
+        int[] profile;
+        String profileName;
+        if (key.startsWith("v0") || key.startsWith("v1") || key.startsWith("v8") || key.startsWith("v9")
+                || key.contains("e-kick") || key.contains("e-snare") || key.contains("e-hat")) {
+            profile = PROFILE_V9;
+            profileName = "v9 (chromatisch C3)";
+        } else if (key.contains("drummachine") || key.contains("drum machine")) {
+            profile = PROFILE_DRUM_MACHINE;
+            profileName = "drum-machine (GM)";
+        } else {
+            // Default: GM für VD-HEAVY, MT-PowerDrumKit und alle anderen Drum-VSTs
+            profile = PROFILE_GM;
+            profileName = "gm";
+        }
+        DRUM_NOTES = profile;
+        drumNoteInput.setKeyTranslationTable(buildDrumTranslationTable());
+        if (currentMode == Mode.DRUM) paintDrumMode(); // LEDs aktualisieren
+        host.println("[Launchpad] Drum-Profil: " + profileName + " für '" + pluginName + "'");
+    }
+
     private Integer[] buildDrumTranslationTable() {
         Integer[] table = new Integer[128];
         java.util.Arrays.fill(table, -1); // alle blockieren
@@ -420,6 +485,9 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
     private void enterMode(Mode mode) {
         currentMode = mode;
+        // NoteInput-Routing: nur aktiver Modus konsumiert MIDI vom Launchpad
+        drumNoteInput.setShouldConsumeEvents(mode == Mode.DRUM);
+        instNoteInput.setShouldConsumeEvents(mode == Mode.INSTRUMENT);
         clearAllLeds();
         paintModeButtons();
 
@@ -466,14 +534,23 @@ public class LaunchpadControllerExtension extends ControllerExtension {
             OscModule       osc   = host.getOscModule();
             OscAddressSpace space = osc.createAddressSpace();
 
-            // Outbound: Reply-Verbindung zu Python (Port 9005)
-            modeReplyConn = osc.connectToUdpServer("127.0.0.1", MODE_REPLY_PORT, space);
+            // Outbound: Reply-Verbindung zu Agent (Port 9005)
+            String ah = (agentHost != null && !agentHost.get().isBlank()) ? agentHost.get() : "127.0.0.1";
+            modeReplyConn = osc.connectToUdpServer(ah, MODE_REPLY_PORT, space);
+            host.println("[Launchpad] Reply → " + ah + ":" + MODE_REPLY_PORT);
 
             // /launchpad/mode/get  — aktuellen Modus zurückschicken
             space.registerMethod("/launchpad/mode/get", "*", "Get current mode",
                 (src, msg) -> {
                     if (modeReplyConn != null)
                         modeReplyConn.sendMessage("/launchpad/mode/response", currentMode.name());
+                });
+
+            // /launchpad/drum/profile <plugin_name>  — Drum-Note-Mapping wechseln
+            space.registerMethod("/launchpad/drum/profile", "*", "Set drum note profile",
+                (src, msg) -> {
+                    String name = msg.getString(0);
+                    if (name != null && !name.isBlank()) setDrumProfile(name);
                 });
 
             // /launchpad/led <pad> <r> <g> <b>  — einzelne Pad-Farbe setzen

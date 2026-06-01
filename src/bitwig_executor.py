@@ -236,6 +236,12 @@ def _execute_steps(result: dict, label: str = "execute_result") -> str:
                 except Exception:
                     pass
 
+        # Nach erfolgreichem load_instrument für Drum-Instrumente: Launchpad-Profil setzen
+        _drum_keywords = {"drum", "vd-", "vd_", "mt-power", "v0 ", "v1 ", "v8 ", "v9 "}
+        _is_drum = stype == "load_instrument" and any(
+            kw in args.get("name", "").lower() for kw in _drum_keywords
+        )
+
         step_json = _json.dumps({"type": stype, "args": args})
         # VST-Laden braucht längere Browser-Navigation (bis zu 15s in Java)
         step_timeout = 20.0 if stype in ("load_instrument", "append_effect") and not args.get("uuid") else 12.0
@@ -257,6 +263,14 @@ def _execute_steps(result: dict, label: str = "execute_result") -> str:
             except Exception as e:
                 errors.append(f"{stype}✗(auto-inject failed:{e})")
                 continue
+
+        # Drum-Profil auf Launchpad setzen nach erfolgreichem Load
+        if _is_drum and not reply.startswith("error:"):
+            try:
+                from src.agent.tools.suggest_tools import set_drum_profile
+                set_drum_profile(args.get("name", ""))
+            except Exception:
+                pass
 
         ok  = not reply.startswith("error:")
         tag = f"{stype}✓" if ok else f"{stype}✗({reply})"

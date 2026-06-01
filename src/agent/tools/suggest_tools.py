@@ -154,6 +154,23 @@ def set_launchpad_mode(mode: str) -> str:
         return f"[set_launchpad_mode] Fehler: {exc}"
 
 
+def set_drum_profile(plugin_name: str) -> str:
+    """Setzt das Drum-Note-Mapping auf dem Launchpad passend zum geladenen Instrument.
+
+    Profile:
+      gm           — GM Standard (36-51): VD-HEAVY, MT-PowerDrumKit, Drum Machine
+      v9           — Chromatisch C3 (48-63): v9/v8/v1/v0 Einzel-Synthesizer
+    Wird automatisch nach load_instrument für Drum-Instrumente aufgerufen.
+    """
+    try:
+        from pythonosc import udp_client
+        client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
+        client.send_message("/launchpad/drum/profile", plugin_name)
+        return f"[set_drum_profile] Profil für '{plugin_name}' gesetzt."
+    except Exception as exc:
+        return f"[set_drum_profile] Fehler: {exc}"
+
+
 def arm_track(arm: int = 1) -> str:
     """Armt (1) oder disarmt (0) den aktuell ausgewählten Bitwig-Track für die Aufnahme.
 
