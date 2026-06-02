@@ -15,6 +15,7 @@ _CONTROL_COMMANDS = frozenset([
 _SONG_TOOL_NAMES = frozenset([
     "check_bitwig_connection", "execute_setup",
     "get_bitwig_track_state", "query_bitwig_docs",
+    "write_pattern", "compose_notes", "scan_vst_plugins",
     "suggest_notes", "get_launchpad_mode", "listen_played_notes",
     "play_notes", "arm_track",
 ])

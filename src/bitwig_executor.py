@@ -245,7 +245,11 @@ def _execute_steps(result: dict, label: str = "execute_result") -> str:
         step_json = _json.dumps({"type": stype, "args": args})
         # VST-Laden braucht längere Browser-Navigation (bis zu 15s in Java)
         step_timeout = 20.0 if stype in ("load_instrument", "append_effect") and not args.get("uuid") else 12.0
-        reply     = _exec_step_and_wait(client, step_json, timeout=step_timeout)
+        reply = _exec_step_and_wait(client, step_json, timeout=step_timeout)
+
+        # Einmaliger Retry bei browser_timeout (Race-Condition möglich)
+        if reply.startswith("error:browser_timeout:") and stype == "load_instrument":
+            reply = _exec_step_and_wait(client, step_json, timeout=step_timeout)
 
         if reply.startswith("error:precondition:track_not_found:"):
             try:

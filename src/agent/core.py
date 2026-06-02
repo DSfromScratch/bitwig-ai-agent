@@ -62,11 +62,89 @@ from src.agent.recovery import (  # noqa: F401
     _recover_tool_calls, _classify_invalid_output,
     _has_invalid_tool_output,
 )
+from src.agent.llm_client import _THINK_RE as _THINK_RE_  # to avoid duplicate import
+
+
+def _extract_think(text: str) -> tuple[str, str]:
+    from src.agent.llm_client import _THINK_RE, _THINK_OPEN
+    match = _THINK_RE.search(text)
+    reasoning = match.group(1).strip() if match else ""
+    cleaned   = _THINK_RE.sub("", text)
+    cleaned   = _THINK_OPEN.sub("", cleaned)
+    return reasoning, cleaned.strip()
+
+
+def _phase_from_reasoning(reasoning: str, current) -> str | None:
+    if not reasoning:
+        return None
+    if current in ("error", "done"):
+        return None
+    lower = reasoning.lower()
+    for keywords, phase in _PHASE_SIGNALS:
+        if any(kw in lower for kw in keywords):
+            return phase if phase != current else None
+    return None
 
 
 
 
 _patch_langchain_tool_call_parser()
+
+# ── Konstanten ────────────────────────────────────────────────────────────────
+from src.agent.llm_client import _THINK_RE, _THINK_OPEN  # noqa: F401
+
+MAX_MESSAGES = 30
+
+_TOOL_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+
+_NUDGE_PREFIXES = (
+    "Deine Antwort war leer.",
+    "Dein Tool-Call war ungültig",
+)
+
+_HELP_TEXT = """\
+Verfügbare Befehle (mit / einleiten):
+
+Transport
+  /play              — Play/Stop umschalten
+  /stop              — Transport stoppen
+  /record            — Aufnahme starten
+  /tempo <bpm>       — Tempo setzen  (z.B. /tempo 128)
+  /loop              — Loop an/aus
+
+Tracks
+  /select <n>        — Track n auswählen
+  /mute <n>          — Track n muten
+  /solo <n>          — Track n solo
+  /volume <n> <wert> — Lautstärke setzen  (z.B. /volume 1 0.8)
+
+Info
+  /status            — Aktuellen Bitwig-Status abfragen
+  /hilfe             — Diese Übersicht
+
+Für Erklärungen einfach normal fragen — kein /  nötig.
+"""
+
+_PHASE_SIGNALS: list[tuple[list[str], str]] = [
+    (["fehler", "error", "nicht erreichbar", "verbindung", "failed"],  "error"),
+    (["fertig", "abgeschlossen", "song ist bereit", "done", "riff wurde"],  "done"),
+    (["verif", "überprüf", "prüf", "playback", "abspielen"],              "verifying"),
+    (["noten schreib", "write_notes", "clip", "midi schreib", "riff schreib"],  "generating"),
+    (["instrument", "track anlegen", "setup_instrument", "fm-4", "polysynth"],  "setup"),
+    (["plan", "struktur", "bluep", "section", "akkord"],                   "planning"),
+]
+
+POLICY_LOG_DIR  = os.path.join(LOG_DIR, "policy_feedback")
+POLICY_LOG_FILE = os.path.join(POLICY_LOG_DIR, "policy_feedback.jsonl")
+
+
+def _append_policy_feedback(entry: dict) -> None:
+    try:
+        os.makedirs(POLICY_LOG_DIR, exist_ok=True)
+        with open(POLICY_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        log.debug("Policy-Feedback konnte nicht geschrieben werden: %s", exc)
 
 
 def _get_tools() -> list:

@@ -89,7 +89,7 @@ def _query_neo4j(query: str) -> str:
                 for d in devices:
                     params_result = s.run("""
                         MATCH (dev:Device {name: $name})-[:HAS_PARAMETER]->(p:Parameter)
-                        RETURN p.name AS name, coalesce(p.description, p.key, '') AS desc,
+                        RETURN p.name AS name, coalesce(p.description, '') AS desc,
                                p.tip AS tip, p.low_means AS low, p.high_means AS high
                         LIMIT 8
                     """, name=d["name"]).data()
@@ -251,21 +251,7 @@ def _query_neo4j(query: str) -> str:
                     wf_text += "\n  Benötigte Devices: " + ", ".join(r['n'] for r in req_devs)
                 parts.append(wf_text)
 
-            # ── 5. Presets ────────────────────────────────────────────────
-            presets = s.run("""
-                MATCH (p:Preset)-[:BELONGS_TO]->(d:Device)
-                WHERE any(w IN $words WHERE toLower(p.name) CONTAINS w)
-                RETURN p.name AS preset, d.name AS device,
-                       p.category AS category, p.package AS package
-                LIMIT 8
-            """, words=words).data()
-
-            if presets:
-                preset_lines = [
-                    f"  • {p['preset']} → {p['device']} [{p.get('package','?')}]"
-                    for p in presets
-                ]
-                parts.append("**Presets:**\n" + "\n".join(preset_lines))
+            # ── 5. Presets (Preset-Label existiert nicht im Schema — übersprungen) ──
 
             # ── 6. "Ähnlich wie X" — SIMILAR_TO Traversal ────────────────
             similar_query = s.run("""
