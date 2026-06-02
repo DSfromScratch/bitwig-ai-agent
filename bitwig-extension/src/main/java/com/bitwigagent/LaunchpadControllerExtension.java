@@ -267,50 +267,23 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         // Zeile 1
         for (int c = 0; c < CONTROL_ROW1.length; c++) {
             int note = 11 + c;
-            int[] col = actionColor(CONTROL_ROW1[c]);
+            int[] col = LaunchpadPadLayout.actionColor(CONTROL_ROW1[c]);
             setLed(note, col[0], col[1], col[2]);
         }
         // Zeile 2
         for (int c = 0; c < CONTROL_ROW2.length; c++) {
             int note = 21 + c;
             if (CONTROL_ROW2[c].isEmpty()) { setLed(note, 0, 0, 0); continue; }
-            int[] col = actionColor(CONTROL_ROW2[c]);
+            int[] col = LaunchpadPadLayout.actionColor(CONTROL_ROW2[c]);
             setLed(note, col[0], col[1], col[2]);
         }
     }
 
-    private int[] actionColor(String action) {
-        switch (action) {
-            case "play_stop":   return new int[]{0,  63,  0};
-            case "stop":        return new int[]{63, 20,  0};
-            case "record":      return new int[]{63,  0,  0};
-            case "undo":        return new int[]{63, 63,  0};
-            case "loop_toggle": return new int[]{63,  0, 63};
-            case "mute_toggle": return new int[]{63, 30,  0};
-            case "solo_toggle": return new int[]{40, 63,  0};
-            case "next_track":  return new int[]{0,  63, 63};
-            case "prev_track":  return new int[]{0,  30, 63};
-            case "vol_up":      return new int[]{30, 63, 30};
-            case "vol_down":    return new int[]{20, 40, 20};
-            case "tempo_up":    return new int[]{63, 63, 30};
-            case "tempo_down":  return new int[]{40, 40, 20};
-            default:            return new int[]{15, 15, 15};
-        }
-    }
 
     // ── Drum Mode ────────────────────────────────────────────────────────────
 
-    // Launchpad-Noten für das 4×4 Drum-Grid (unten-links)
-    // Zeile 1 = Notes 11–14, Zeile 2 = 21–24, Zeile 3 = 31–34, Zeile 4 = 41–44
-    private static final int[][] DRUM_GRID_NOTES = {
-        {11, 12, 13, 14},
-        {21, 22, 23, 24},
-        {31, 32, 33, 34},
-        {41, 42, 43, 44}
-    };
-
     private void handleDrum(int note, int velocity, boolean pressed, boolean released) {
-        int drumIdx = drumGridIndex(note);
+        int drumIdx = LaunchpadPadLayout.drumGridIndex(note);
         if (drumIdx < 0 || drumIdx >= DRUM_NOTES.length) return;
         int drumNote = DRUM_NOTES[drumIdx];
 
@@ -325,38 +298,14 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         }
     }
 
-    private int drumGridIndex(int note) {
-        for (int row = 0; row < 4; row++) {
-            for (int col = 0; col < 4; col++) {
-                if (DRUM_GRID_NOTES[row][col] == note) return row * 4 + col;
-            }
-        }
-        return -1;
-    }
 
-    // Chromatische Farben: 12 Tonklassen (C=grün, D=türkis, E=blau, F=lila,
-    //                      G=magenta, A=orange, B=gelb; Halbtonschritte dunkler)
-    private static final int[][] CHROMATIC_COLORS = {
-        {0,  50,  0},  // C   — grün
-        {0,  30,  5},  // C#  — dunkelgrün
-        {0,  40, 30},  // D   — türkis
-        {0,  20, 20},  // D#  — dunkeltürkis
-        {0,  20, 50},  // E   — blau
-        {20,  0, 50},  // F   — blau-lila
-        {10,  0, 30},  // F#  — dunkellila
-        {35,  0, 50},  // G   — lila
-        {50,  0, 35},  // G#  — magenta
-        {50, 20,  0},  // A   — orange
-        {35, 15,  0},  // A#  — dunkelorange
-        {50, 50,  0},  // B   — gelb
-    };
 
     private int[] drumColor(int idx) {
         int note = DRUM_NOTES[idx];
         // Profil-abhängige Farben
         if (DRUM_NOTES == PROFILE_V9) {
             // Chromatisch: Farbe nach Tonklasse
-            return CHROMATIC_COLORS[note % 12];
+            return LaunchpadPadLayout.CHROMATIC_COLORS[note % 12];
         }
         // GM / Drum Machine: funktionale Farben
         if (note == 36 || note == 40)               return DRUM_COLOR_KICK;
@@ -372,7 +321,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
             for (int col = 0; col < 4; col++) {
                 int idx = row * 4 + col;
                 int[] color = drumColor(idx);
-                setLed(DRUM_GRID_NOTES[row][col], color[0], color[1], color[2]);
+                setLed(LaunchpadPadLayout.DRUM_GRID_NOTES[row][col], color[0], color[1], color[2]);
             }
         }
     }
@@ -380,7 +329,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     // ── Instrument Mode ───────────────────────────────────────────────────────
 
     private void handleInstrument(int note, int velocity, boolean pressed, boolean released) {
-        int midiNote = instNoteForPad(note);
+        int midiNote = LaunchpadPadLayout.instNoteForPad(note, INST_ROOT_NOTE, INST_ROW_INTERVAL, INST_SCALE);
         if (midiNote < 0 || midiNote > 127) return;
 
         if (pressed) {
@@ -396,19 +345,6 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         }
     }
 
-    // Berechnet die MIDI-Note für einen Launchpad-Pad im Instrument-Modus
-    private int instNoteForPad(int padNote) {
-        int row = padNote / 10;   // 1–8
-        int col = padNote % 10;   // 1–8
-        if (row < 1 || row > 8 || col < 1 || col > 8) return -1;
-        // Zeile 1 = unterste Reihe, fängt bei INST_ROOT_NOTE an
-        // Jede Zeile höher → INST_ROW_INTERVAL Halbtonschritte höher
-        int base = INST_ROOT_NOTE + (row - 1) * INST_ROW_INTERVAL;
-        // Jede Spalte → nächste Skala-Note
-        int scaleStep = (col - 1) % INST_SCALE.length;
-        int octaveStep = (col - 1) / INST_SCALE.length;
-        return base + INST_SCALE[scaleStep] + octaveStep * 12;
-    }
 
     private int[] instPadColor(int midiNote) {
         int interval = ((midiNote - INST_ROOT_NOTE) % 12 + 12) % 12;
@@ -422,7 +358,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         for (int row = 1; row <= 8; row++) {
             for (int col = 1; col <= 8; col++) {
                 int padNote  = row * 10 + col;
-                int midiNote = instNoteForPad(padNote);
+                int midiNote = LaunchpadPadLayout.instNoteForPad(padNote, INST_ROOT_NOTE, INST_ROW_INTERVAL, INST_SCALE);
                 if (midiNote < 0 || midiNote > 127) continue;
                 int[] color = instPadColor(midiNote);
                 setLed(padNote, color[0], color[1], color[2]);
@@ -459,7 +395,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         java.util.Arrays.fill(table, -1); // alle blockieren
         for (int row = 0; row < 4; row++) {
             for (int col = 0; col < 4; col++) {
-                int padNote  = DRUM_GRID_NOTES[row][col];
+                int padNote  = LaunchpadPadLayout.DRUM_GRID_NOTES[row][col];
                 int drumNote = DRUM_NOTES[row * 4 + col];
                 if (padNote < 128) table[padNote] = drumNote;
             }
@@ -473,7 +409,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         for (int row = 1; row <= 8; row++) {
             for (int col = 1; col <= 8; col++) {
                 int padNote  = row * 10 + col;
-                int midiNote = instNoteForPad(padNote);
+                int midiNote = LaunchpadPadLayout.instNoteForPad(padNote, INST_ROOT_NOTE, INST_ROW_INTERVAL, INST_SCALE);
                 if (padNote < 128 && midiNote >= 0 && midiNote <= 127)
                     table[padNote] = midiNote;
             }

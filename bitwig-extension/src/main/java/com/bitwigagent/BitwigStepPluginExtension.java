@@ -324,7 +324,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         // ── HAUPTENDPUNKT: /step/exec ─────────────────────────────────────
         space.registerMethod("/step/exec", "*", "Execute single step",
             (src, msg) -> {
-                String json = argStr(msg, 0);
+                String json = JsonStepParser.argStr(msg, 0);
                 if (json == null || json.isBlank()) {
                     sendReply("/step/done", "error:empty");
                     return;
@@ -350,8 +350,8 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     // ── Step Dispatcher ───────────────────────────────────────────────────────
 
     private void executeStep(OscConnection src, String json) {
-        String type = extractStringField(json, "type");
-        String args = extractNestedObject(json, "args");
+        String type = JsonStepParser.extractStringField(json, "type");
+        String args = JsonStepParser.extractNestedObject(json, "args");
         if (args == null) args = "{}";
         host.println("[BitwigStep] exec: " + type);
 
@@ -362,7 +362,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             case "write_notes":
             case "set_param":
             case "set_param_named": {
-                int track = (int) extractNumField(args, "track_index", 0);
+                int track = (int) JsonStepParser.extractNumField(args, "track_index", 0);
                 if (track > 0 && !trackBank.getItemAt(
                         Math.max(0, Math.min(TRACK_BANK_SIZE - 1, track - 1))).exists().get()) {
                     host.println("[BitwigStep] Precondition: track " + track + " existiert nicht");
@@ -405,13 +405,13 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     // ── Step Handler ──────────────────────────────────────────────────────────
 
     private void execSetTempo(OscConnection src, String args) {
-        double bpm = extractNumField(args, "bpm", 120.0);
+        double bpm = JsonStepParser.extractNumField(args, "bpm", 120.0);
         transport.tempo().setRaw(bpm);
         stepDone(src, "set_tempo");
     }
 
     private void execAddTrack(OscConnection src, String args) {
-        String t = extractStringField(args, "track_type");
+        String t = JsonStepParser.extractStringField(args, "track_type");
         if ("audio".equals(t))
             application.createAudioTrack(-1);
         else if ("return".equals(t) || "effect".equals(t))
@@ -450,7 +450,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     private void execSelectTrack(OscConnection src, String args) {
-        int idx = Math.max(1, (int) extractNumField(args, "track_index", 1));
+        int idx = Math.max(1, (int) JsonStepParser.extractNumField(args, "track_index", 1));
         if (idx <= TRACK_BANK_SIZE) {
             Channel ch = (Channel) trackBank.getItemAt(idx - 1);
             if (ch.exists().get()) ch.selectInMixer();
@@ -459,14 +459,14 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     private void execLoadInstrument(OscConnection src, String args) {
-        int    track = Math.max(1, (int) extractNumField(args, "track_index", 1));
-        String name  = extractStringField(args, "name");
+        int    track = Math.max(1, (int) JsonStepParser.extractNumField(args, "track_index", 1));
+        String name  = JsonStepParser.extractStringField(args, "name");
         if (name == null || name.isBlank()) {
             stepDone(src, "error:load_instrument:no_name");
             return;
         }
         String key          = name.toLowerCase().trim();
-        String uuidFromArgs = extractStringField(args, "uuid");
+        String uuidFromArgs = JsonStepParser.extractStringField(args, "uuid");
         String uuid         = (uuidFromArgs != null && !uuidFromArgs.isBlank())
                               ? uuidFromArgs : BUILTIN_UUIDS.get(key);
 
@@ -592,14 +592,14 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     private void execAppendEffect(OscConnection src, String args) {
-        int    track = Math.max(1, (int) extractNumField(args, "track_index", 1));
-        String name  = extractStringField(args, "name");
+        int    track = Math.max(1, (int) JsonStepParser.extractNumField(args, "track_index", 1));
+        String name  = JsonStepParser.extractStringField(args, "name");
         if (name == null || name.isBlank()) {
             stepDone(src, "error:append_effect:no_name");
             return;
         }
         String key          = name.toLowerCase().trim();
-        String uuidFromArgs = extractStringField(args, "uuid");
+        String uuidFromArgs = JsonStepParser.extractStringField(args, "uuid");
         String uuid         = (uuidFromArgs != null && !uuidFromArgs.isBlank())
                               ? uuidFromArgs : BUILTIN_UUIDS.get(key);
 
@@ -641,9 +641,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     private void execSetParam(OscConnection src, String args) {
-        int    track = (int) extractNumField(args, "track_index", 0);
-        int    idx   = Math.max(0, Math.min(7, (int) extractNumField(args, "index", 1) - 1));
-        double val   = extractNumField(args, "value", 0.0);
+        int    track = (int) JsonStepParser.extractNumField(args, "track_index", 0);
+        int    idx   = Math.max(0, Math.min(7, (int) JsonStepParser.extractNumField(args, "index", 1) - 1));
+        double val   = JsonStepParser.extractNumField(args, "value", 0.0);
 
         if (track > 0) channel(track).selectInMixer();
         long delay = track > 0 ? 40L : 0L;
@@ -655,9 +655,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     private void execSetParamNamed(OscConnection src, String args) {
-        int    track = (int) extractNumField(args, "track_index", 0);
-        String pname = extractStringField(args, "param_name");
-        double val   = extractNumField(args, "value", 0.0);
+        int    track = (int) JsonStepParser.extractNumField(args, "track_index", 0);
+        String pname = JsonStepParser.extractStringField(args, "param_name");
+        double val   = JsonStepParser.extractNumField(args, "value", 0.0);
 
         if (track > 0) channel(track).selectInMixer();
         long delay = track > 0 ? 40L : 0L;
@@ -673,10 +673,10 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     private void execWriteNotes(OscConnection src, String args) {
-        int    track  = Math.max(1, (int) extractNumField(args, "track_index", 1));
-        int    slot   = Math.max(0, (int) extractNumField(args, "slot",         0));
-        int    length = Math.max(1, (int) extractNumField(args, "length_beats",  8));
-        String notes  = extractArray(args, "notes");
+        int    track  = Math.max(1, (int) JsonStepParser.extractNumField(args, "track_index", 1));
+        int    slot   = Math.max(0, (int) JsonStepParser.extractNumField(args, "slot",         0));
+        int    length = Math.max(1, (int) JsonStepParser.extractNumField(args, "length_beats",  8));
+        String notes  = JsonStepParser.extractArray(args, "notes");
 
         channel(track).selectInMixer();
         final int fslot = slot; final int flen = length; final String fn = notes;
@@ -717,89 +717,13 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         }
     }
 
-    private String argStr(OscMessage msg, int idx) {
-        try { return msg.getString(idx); }
-        catch (Exception e) {
-            try { return String.valueOf(msg.getFloat(idx)); }
-            catch (Exception ex) { return null; }
-        }
-    }
-
-    // ── JSON-Hilfsmethoden ────────────────────────────────────────────────────
-
-    private String extractStringField(String json, String key) {
-        if (json == null) return null;
-        int ki = json.indexOf("\"" + key + "\"");
-        if (ki < 0) return null;
-        int colon = json.indexOf(':', ki);
-        if (colon < 0) return null;
-        int s = colon + 1;
-        while (s < json.length() && Character.isWhitespace(json.charAt(s))) s++;
-        if (s >= json.length() || json.charAt(s) != '"') return null;
-        int end = json.indexOf('"', s + 1);
-        return end > s ? json.substring(s + 1, end) : null;
-    }
-
-    private double extractNumField(String json, String key, double def) {
-        if (json == null) return def;
-        int ki = json.indexOf("\"" + key + "\"");
-        if (ki < 0) return def;
-        int colon = json.indexOf(':', ki);
-        if (colon < 0) return def;
-        int s = colon + 1;
-        while (s < json.length() && Character.isWhitespace(json.charAt(s))) s++;
-        int e = s;
-        while (e < json.length()) {
-            char c = json.charAt(e);
-            if (Character.isDigit(c) || c == '-' || c == '.') e++;
-            else break;
-        }
-        if (e <= s) return def;
-        try { return Double.parseDouble(json.substring(s, e)); }
-        catch (NumberFormatException ex) { return def; }
-    }
-
-    private String extractNestedObject(String json, String key) {
-        if (json == null) return null;
-        int ki = json.indexOf("\"" + key + "\"");
-        if (ki < 0) return null;
-        int colon = json.indexOf(':', ki);
-        if (colon < 0) return null;
-        int start = json.indexOf('{', colon);
-        if (start < 0) return null;
-        int depth = 0;
-        for (int i = start; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (c == '{') depth++;
-            else if (c == '}' && --depth == 0) return json.substring(start, i + 1);
-        }
-        return null;
-    }
-
-    private String extractArray(String json, String key) {
-        if (json == null) return null;
-        int ki = json.indexOf("\"" + key + "\"");
-        if (ki < 0) return null;
-        int colon = json.indexOf(':', ki);
-        if (colon < 0) return null;
-        int start = json.indexOf('[', colon);
-        if (start < 0) return null;
-        int depth = 0;
-        for (int i = start; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (c == '[') depth++;
-            else if (c == ']' && --depth == 0) return json.substring(start, i + 1);
-        }
-        return null;
-    }
-
     private int parseAndWriteNoteBatch(String json) {
         int count = 0;
         String stripped = json.replace("[", "").replace("]", "");
         for (String entry : stripped.split("\\},\\s*\\{")) {
             entry = entry.replace("{", "").replace("}", "").trim();
             if (entry.isBlank()) continue;
-            Map<String, Double> f = parseSimpleJsonObject(entry);
+            Map<String, Double> f = JsonStepParser.parseSimpleJsonObject(entry);
             double stepBeat = f.getOrDefault("step",  0.0);
             int    step     = (int) Math.round(stepBeat / 0.25);
             int    pitch    = f.getOrDefault("pitch", 60.0).intValue();
@@ -811,20 +735,6 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             count++;
         }
         return count;
-    }
-
-    private Map<String, Double> parseSimpleJsonObject(String kvPairs) {
-        Map<String, Double> result = new HashMap<>();
-        for (String pair : kvPairs.split(",")) {
-            pair = pair.trim();
-            int colon = pair.indexOf(':');
-            if (colon < 0) continue;
-            String k = pair.substring(0, colon).trim().replace("\"", "");
-            String v = pair.substring(colon + 1).trim().replace("\"", "");
-            try { result.put(k, Double.parseDouble(v)); }
-            catch (NumberFormatException ignored) {}
-        }
-        return result;
     }
 
     // ── flush — Browser-Katalog + Device-Navigation ───────────────────────────
