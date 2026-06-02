@@ -327,8 +327,8 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                         String        typ = pendingStepType != null ? pendingStepType : "load_instrument";
                         pendingStepSrc  = null;
                         pendingStepType = null;
-                        // Plugin-Fenster automatisch schließen (öffnet sich ~300ms nach Browser-Close)
-                        host.scheduleTask(() -> cursorDevice.isWindowOpen().set(false), 500);
+                        // Plugin-Fenster automatisch schließen
+                        host.scheduleTask(() -> cursorDevice.isWindowOpen().set(false), 200);
                         stepDone(src, typ);
                     }
                 }
@@ -600,6 +600,8 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     private void execClearTracks(OscConnection src) {
+        // Zuerst alle offenen Plugin-Fenster schließen
+        cursorDevice.isWindowOpen().set(false);
         int n = 0;
         for (int i = 0; i < TRACK_BANK_SIZE; i++)
             if (trackBank.getItemAt(i).exists().get()) n++;

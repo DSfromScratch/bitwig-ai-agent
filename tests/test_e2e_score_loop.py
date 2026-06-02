@@ -203,7 +203,12 @@ class TestE2EScoreLoop:
     def test_rock_intro_score_loop(self, osc_available):
         """Rock Intro: iteriere bis Score >= SCORE_THRESHOLD."""
         if not osc_available:
-            pytest.fail("Vorbedingung nicht erfüllt: Bitwig / OSC Bridge nicht erreichbar (Port 8001)")
+            pytest.skip("Bitwig nicht erreichbar (Port 8002/8001) — Integration-Test übersprungen")
+        import urllib.request
+        try:
+            urllib.request.urlopen("http://localhost:8100/health", timeout=2)
+        except Exception:
+            pytest.skip("vLLM nicht erreichbar (Port 8100) — LLM-Test übersprungen")
 
         prompt = INITIAL_PROMPT
         scores: list[float] = []

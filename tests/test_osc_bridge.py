@@ -16,9 +16,11 @@ class TestOscConnection:
     @pytest.mark.integration
     def test_track_count_readable(self, osc_available):
         if not osc_available:
-            pytest.skip("BitwigAgentBridge nicht erreichbar")
+            pytest.skip("Bitwig nicht erreichbar")
+        import os; from dotenv import load_dotenv; load_dotenv()
+        host = os.getenv("BITWIG_HOST", "127.0.0.1")
         from pythonosc import udp_client
-        client = udp_client.SimpleUDPClient("127.0.0.1", 8001)
+        client = udp_client.SimpleUDPClient(host, 8002)  # BitwigStepPlugin
         received = threading.Event()
         result = {}
 
@@ -27,7 +29,7 @@ class TestOscConnection:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.settimeout(2.0)
             try:
-                sock.bind(("0.0.0.0", 9001))
+                sock.bind(("0.0.0.0", 9002))
                 data, _ = sock.recvfrom(512)
                 raw = data.decode("latin-1")
                 tag_idx = raw.find(",i")
@@ -112,15 +114,9 @@ class TestSongTools:
     @pytest.mark.slow
     def test_verify_song_structure(self, osc_available):
         if not osc_available:
-            pytest.skip("BitwigAgentBridge nicht erreichbar")
-        from src.agent.tools.song_tools import verify_song
-        result = verify_song.invoke({"play_seconds": 2.0})
-        if isinstance(result, str):
-            import json
-            result = json.loads(result)
-        assert "ok" in result
-        assert "track_count" in result
-        assert "warnings" in result
-        assert "report_text" in result
-        assert "VERIFIKATION" in result["report_text"]
-        assert "Wiedergabe" in result["report_text"]
+            pytest.skip("Bitwig nicht erreichbar")
+        # verify_song wurde entfernt — Track-State via get_bitwig_track_state prüfen
+        from src.agent.tools.song_tools import get_bitwig_track_state
+        result = get_bitwig_track_state.func()
+        assert isinstance(result, str)
+        assert len(result) > 0
