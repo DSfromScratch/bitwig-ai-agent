@@ -1,0 +1,200 @@
+package com.bitwigagent;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Shared registry of Bitwig built-in device UUIDs.
+ * Single source of truth used by BitwigStepPluginExtension and BitwigAgentBridgeExtension.
+ */
+public final class BuiltinDeviceUuids {
+
+    public static final Map<String, String> MAP;
+
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("amp",                "41be8f3a-6d24-4442-9508-8548dbe62d47");
+        m.put("arpeggiator",        "4d407a2b-c91b-4e4c-9a89-c53c19fe6251");
+        m.put("audio mod",          "01c7c48f-40cd-40cd-8a9a-1f258f1cc7d5");
+        m.put("audio receiver",     "46b3e40a-629c-42c2-9e14-a1ccbcaa903b");
+        m.put("bend",               "6aec6e78-9c1e-4c0b-8a88-0c2c37890a1d");
+        m.put("bit-8",              "43875255-6f1f-4d54-a5ad-c45bff793477");
+        m.put("blur",               "72a3018d-788b-472c-b1d7-16419d00f4c6");
+        m.put("chain",              "03ec3a24-b3c9-4ba4-b6dc-855178d60de7");
+        m.put("channel filter",     "c5a1bb2d-a589-4fda-b3cf-911cfd6297be");
+        m.put("channel map",        "0f003fa3-adcc-4684-81f7-f0e11c09c5b4");
+        m.put("chorus",             "d275f9a6-0e4a-409c-9dc4-d74af90bc7ae");
+        m.put("chorus+",            "1b8f2226-c432-4a0a-9830-69bc76d1a276");
+        m.put("comb",               "20e18780-8438-48d3-b234-40dcbaa947b8");
+        m.put("compressor",         "2b1b4787-8d74-4138-877b-9197209eef0f");
+        m.put("compressor+",        "42b32cd2-6275-4ff1-970f-4fac71d15ad9");
+        m.put("convolution",        "528f7939-87c0-4997-8e71-6331d2eee388");
+        m.put("dc offset",          "ee445061-a0ee-4322-991a-b60212db04ed");
+        m.put("de-esser",           "8750db61-e9d3-4d0e-a610-e734006a64dc");
+        m.put("delay",              "2a7a7328-3f7a-4afb-95eb-5230c298bb90");
+        m.put("delay+",             "f2baa2a8-36c5-4a79-b1d9-a4e461c45ee9");
+        m.put("delay-1",            "2a7a7328-3f7a-4afb-95eb-5230c298bb90");
+        m.put("delay-2",            "71539d5d-1c7a-4dac-8f74-29e23b89b599");
+        m.put("delay-4",            "f95a0e18-5a8b-4f53-93ad-8be73fd668bd");
+        m.put("distortion",         "41b34699-8e5d-4534-a429-a67d488ba6ac");
+        m.put("dribble",            "d98f7ce5-564e-4b95-926a-4e7b50a251c6");
+        m.put("drum machine",       "8ea97e45-0255-40fd-bc7e-94419741e9d1");
+        m.put("dual pan",           "c94820f8-3779-438b-a85b-868e57b746cc");
+        m.put("dynamics",           "22e785a2-a187-41e9-a0f2-66343694014c");
+        m.put("echo",               "43c102c9-ce32-4dd8-b207-f0831733b17b");
+        m.put("eq+",                "e4815188-ba6f-4d14-bcfc-2dcb8f778ccb");
+        m.put("eq-2",               "01af068e-1e49-4777-a6e6-7f1dc679227a");
+        m.put("eq-5",               "227e2e3c-75d5-46f3-960d-8fb5529fe29f");
+        m.put("eq-dj",              "3cc1b71a-e22a-42cf-89f0-316475368fb3");
+        m.put("filter",             "4ccfc70e-59bd-4e97-a8a7-d8cdce88bf42");
+        m.put("filter+",            "6d621c1c-ab64-43b4-aea3-dad37e6f649c");
+        m.put("flanger",            "8393c436-b11b-4fee-85dd-b2ef0a2ed380");
+        m.put("flanger+",           "a99f8c3c-7813-4e6b-a18a-302c74286efc");
+        m.put("fm-4",               "7a0a94df-3aa4-4bb5-8e24-2511999871ad");
+        m.put("focus",              "42208fc5-02fd-42b4-9681-a8fadb46575f");
+        m.put("freq shifter",       "7ec87fdf-0bf8-42e7-b54b-5d8b68e330b1");
+        m.put("freq shifter+",      "eb28831d-2478-4918-bd51-bcc1ff4c7eed");
+        m.put("freq split",         "3f3c3200-e6aa-4578-8e06-f573ed65206e");
+        m.put("fx grid",            "a0cb2ec0-2464-461c-8165-296f98905539");
+        m.put("fx layer",           "96456481-4c52-423a-8485-4604b15d0183");
+        m.put("fx selector",        "8fd471db-15df-44c6-b497-4bb851d4fd46");
+        m.put("gate",               "556300ac-3a6e-4423-966a-5d5dde459a1b");
+        m.put("harmonic split",     "c90b6d52-898b-4dad-aa58-2c58add7c94f");
+        m.put("harmonize",          "ff299d28-d822-4686-ac0a-03c0ae69b32d");
+        m.put("humanize",           "f7b6f2a6-bfca-41ec-8646-b68e0f4cf12b");
+        m.put("hw cv instrument",   "c511bc17-9ebf-43de-a20c-4a9e40028fdf");
+        m.put("hw cv out",          "d0e71e2d-d491-4cce-a227-fbe118cc4e52");
+        m.put("hw clock out",       "a2b59797-2b25-4860-862d-6ab72393b4ca");
+        m.put("hw fx",              "29b93a99-eb3a-4b19-8c12-8b4391f5a1ea");
+        m.put("hw instrument",      "6a27aef7-bba5-4b0d-af98-7c192f84fbc2");
+        m.put("instrument layer",   "5024be2e-65d6-4d40-bbfe-8b2ea993c445");
+        m.put("instrument selector","9588fbcf-721a-438b-8555-97e4231f7d2c");
+        m.put("key filter",         "f14bacde-084c-4f14-8bdf-d8c4fda8b368");
+        m.put("key filter+",        "ad13588c-fe39-4bd0-8615-d56e495eb05d");
+        m.put("ladder",             "abfbbd63-8801-4bdb-a1ad-4b197f4d41e0");
+        m.put("latch",              "93c9d566-4cc9-4895-bf5b-475cab44eba9");
+        m.put("lfo mod",            "613dd120-9f55-4d24-97ac-f7902ffa7ce7");
+        m.put("limiter",            "8da7251e-2578-4bcc-b3c4-8f4ec2e115d0");
+        m.put("loud split",         "6e75a854-ceab-475b-94c5-75188ee998b8");
+        m.put("micro-pitch",        "4ac40334-99cc-43a3-b693-f3dc63211f0c");
+        m.put("mid-side split",     "a6c9b12f-45a5-43e3-b100-b74ecf77367b");
+        m.put("midi cc",            "a0b8f27a-128e-4f72-b9fc-a277060b87ee");
+        m.put("midi program change","429c7dcb-6863-48bc-becc-508463841e3b");
+        m.put("midi song select",   "754fdba1-2c16-494c-a47c-16f7a7ad9363");
+        m.put("multi-note",         "0a015261-7546-4f6d-9197-098a26ff2c20");
+        m.put("multiband fx-2",     "214857d6-b468-4257-9bc9-92f017af1782");
+        m.put("multiband fx-3",     "f97699d1-3b8e-4363-8ede-4994e276cc97");
+        m.put("note delay",         "9f3cc825-3284-4c5a-b51f-01219de13b7c");
+        m.put("note filter",        "ef7559c8-49ae-4657-95be-11abb896c969");
+        m.put("note grid",          "264d6f4e-5067-46c9-a4fa-a75a295d9e01");
+        m.put("note length",        "4c396eb6-953d-4de0-afaa-63276fc1150b");
+        m.put("note mod",           "1179be46-4d43-4a26-bb5f-430bc3fef9ba");
+        m.put("note receiver",      "c6153773-ed96-4cca-a767-5cf3d5dceacb");
+        m.put("note repeats",       "a68e0f1b-bcc6-45c2-b09e-8c8771f83e50");
+        m.put("note transpose",     "0815cd9e-3a31-4429-a268-dabd952a3b68");
+        m.put("organ",              "f2dcfe9a-7b66-4c84-984a-b25685a1c21a");
+        m.put("oscilloscope",       "ffe670a2-09aa-4c9b-8822-5161a9cca686");
+        m.put("peak limiter",       "8da7251e-2578-4bcc-b3c4-8f4ec2e115d0");
+        m.put("phase-4",            "252723bf-68a6-4ee6-81f8-95ba4d0fb467");
+        m.put("phaser",             "fc87ae07-1624-449f-8dae-2db5d93e1aa9");
+        m.put("phaser+",            "fd7a9e6c-6992-40c2-be3b-ac8ed48553e9");
+        m.put("pitch shifter",      "384fe469-6023-4f69-9560-e0c2eec2da49");
+        m.put("poly grid",          "a33bba66-8cd4-4f89-aee5-68bf67f70a54");
+        m.put("polymer",            "8f58138b-03aa-4e9d-83bd-a038c99a4ed5");
+        m.put("polysynth",          "a9ffacb5-33e9-4fc7-8621-b1af31e410ef");
+        m.put("quantize",           "1c116b76-2b07-4b16-bf2a-ed5f0bdcc661");
+        m.put("randomize",          "dc06a9a5-b0b7-41f1-af45-a3a1d2173fb8");
+        m.put("replacer",           "c8ed6372-d24f-47e0-9e9b-5b2a37949c45");
+        m.put("resonator bank",     "b64070ae-5a59-4640-bb6a-194619bc12d8");
+        m.put("reverb",             "5a1cb339-1c4a-4cc7-9cae-bd7a2058153d");
+        m.put("ricochet",           "0645879b-efea-4bbe-8e41-9a176247b808");
+        m.put("ring-mod",           "374feaeb-c785-4243-9d08-3f9099b4c0cb");
+        m.put("rotary",             "8fc25e70-b92b-4096-8270-42e492df501a");
+        m.put("sampler",            "468bc14b-b2e7-45a1-9666-e83117fe404e");
+        m.put("saturator",          "93d11348-86ae-4ead-9fe7-84ac03b9369c");
+        m.put("sculpt",             "8d9d63db-9991-4e46-8b4c-77755d1fcaab");
+        m.put("spectrum",           "fcd9aa65-ebbb-4337-a97e-69929322ef47");
+        m.put("step mod",           "18a37a4d-8613-442d-a6eb-931002ba9a36");
+        m.put("stepwise",           "c278d0d9-3e48-432a-a3b8-b33eff9533d2");
+        m.put("stereo split",       "96196ffe-658f-46c4-84ba-153799be3657");
+        m.put("strum",              "109d747c-ec75-4255-b495-7adba6ea66b6");
+        m.put("sweep",              "ab52804f-1169-4657-b8c8-8db5532cf717");
+        m.put("test tone",          "20b72dbc-0fe1-47c5-867c-f0ab1510f723");
+        m.put("tilt",               "061dcec6-543f-46f6-b679-f092eeefdbe4");
+        m.put("time shift",         "861bb5b0-5cd6-4066-9681-1cc561cb898f");
+        m.put("tool",               "e67b9c56-838d-4fba-8e3e-ae4e02cccbcb");
+        m.put("transient control",  "71e6dbd8-a117-4ff0-85e8-5650f5a76d98");
+        m.put("transient split",    "7c3c7bb2-625d-4915-ae95-943ee9aa807d");
+        m.put("transpose map",      "284a1949-29d5-4dd4-8315-86cef92fd2cd");
+        m.put("treemonster",        "e45e00d2-85a0-4c05-8321-819694befa09");
+        m.put("tremolo",            "f3b90fff-402b-4187-9aab-620f441577b9");
+        m.put("velocity curve",     "066d0065-99a4-47da-b0f7-9468ef69c1cf");
+        m.put("xy fx",              "51169152-c144-4a38-95ba-1390fb579a1f");
+        m.put("xy instrument",      "bab3f04d-d3b6-4dfa-86f9-506e0b091ca8");
+        // Drum-Synthesizer v0
+        m.put("v0 cymbal",          "7b21c41e-67c3-4dd0-aa64-4fbb03d95cdb");
+        m.put("v0 hat",             "212c6aa0-04b6-49b7-a77f-c1fcee5d33a1");
+        m.put("v0 kick",            "8415c7af-1379-4730-97bf-16380f96d0fe");
+        m.put("v0 snare",           "446c58e3-ee39-4a22-b1e1-a62c614f98d4");
+        m.put("v0 tom",             "3c6105ad-176e-4403-993b-3eedefdf6dda");
+        m.put("v0 zap kick",        "eef2e851-925b-4e86-81c6-67463e17c5f7");
+        // v1
+        m.put("v1 clap",            "89eba41d-46d3-4506-8ce6-ba9fe3e3bee4");
+        m.put("v1 cowbell",         "dd594db1-a908-453f-a1b9-0a1b6c4c3b32");
+        m.put("v1 hat",             "742e4a89-df78-4ca5-b6b0-ca78889d5953");
+        m.put("v1 kick",            "c6d5de18-a6f1-4daa-90a9-d9254527601a");
+        m.put("v1 snare",           "db22eb41-c8a0-4055-b617-637614dfa185");
+        m.put("v1 tom",             "b5c7c298-e6af-42b3-8f14-26e25bb72d48");
+        // v8
+        m.put("v8 clap",            "b13d3937-6002-4e88-8e50-e99119708072");
+        m.put("v8 claves",          "1b709991-7d7d-45d1-aec8-847c01611bfb");
+        m.put("v8 cowbell",         "f3e8fa57-dd7a-4d94-91dd-1376c1c8304a");
+        m.put("v8 cymbal",          "0af9f363-ff81-4e72-b2b2-31c8c9682e28");
+        m.put("v8 hat",             "85d9c654-088f-4a8a-bbfc-e98af9eafb7b");
+        m.put("v8 kick",            "10fba33b-8e65-4eea-a5cf-312986178240");
+        m.put("v8 rimshot",         "9412c72e-acec-4345-acd1-ff5dc20bc2a4");
+        m.put("v8 snare",           "97938f59-c3d2-4b2c-8640-21c2fd2cc516");
+        m.put("v8 tom",             "e1be73d9-ba43-4011-91b7-2178bc4af5ea");
+        // v9
+        m.put("v9 clap",            "3df67ed2-4d70-4a86-a966-14762e2aeea4");
+        m.put("v9 crash",           "84bd7819-2007-46e0-b930-b4dacff1974a");
+        m.put("v9 hat closed",      "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 closed hat",      "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 closed hi-hat",   "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 closed hihat",    "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 hi-hat closed",   "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 hihat closed",    "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 hi-hat",          "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 hihat",           "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 hat",             "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("v9 hat open",        "94fc934e-a4ba-44f1-aaaa-ae30920fab17");
+        m.put("v9 open hat",        "94fc934e-a4ba-44f1-aaaa-ae30920fab17");
+        m.put("v9 open hi-hat",     "94fc934e-a4ba-44f1-aaaa-ae30920fab17");
+        m.put("v9 open hihat",      "94fc934e-a4ba-44f1-aaaa-ae30920fab17");
+        m.put("v9 kick",            "32a4c607-039a-4998-be9c-578468f25454");
+        m.put("v9 ride",            "38f52e07-2339-491e-9dd4-8bf6a95c2dae");
+        m.put("v9 rimshot",         "f88c7dda-c8cd-456f-8bdf-ac25fa5bfea1");
+        m.put("v9 snare",           "90600c24-04c5-412e-b978-6d3cef1522da");
+        m.put("v9 tom",             "60f69854-fda1-4538-9ff1-c1553ea25224");
+        // Kurz-Aliase für LLM-generierte Namen
+        m.put("kick",               "32a4c607-039a-4998-be9c-578468f25454");
+        m.put("snare",              "90600c24-04c5-412e-b978-6d3cef1522da");
+        m.put("hi-hat",             "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("hihat",              "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("hat",                "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("closed hat",         "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("closed hi-hat",      "5c147bc8-7b62-408b-b057-c4023c4e1adb");
+        m.put("open hat",           "94fc934e-a4ba-44f1-aaaa-ae30920fab17");
+        m.put("open hi-hat",        "94fc934e-a4ba-44f1-aaaa-ae30920fab17");
+        m.put("clap",               "3df67ed2-4d70-4a86-a966-14762e2aeea4");
+        m.put("tom",                "60f69854-fda1-4538-9ff1-c1553ea25224");
+        m.put("cymbal",             "84bd7819-2007-46e0-b930-b4dacff1974a");
+        m.put("crash",              "84bd7819-2007-46e0-b930-b4dacff1974a");
+        m.put("ride",               "38f52e07-2339-491e-9dd4-8bf6a95c2dae");
+        m.put("rimshot",            "f88c7dda-c8cd-456f-8bdf-ac25fa5bfea1");
+        MAP = Collections.unmodifiableMap(m);
+    }
+
+    private BuiltinDeviceUuids() {}
+}

@@ -289,7 +289,7 @@ class TestUUIDLookup:
     """_lookup_device_uuid: exakter Match, Aliase, Reverse-Subset, kein Treffer."""
 
     def _lookup(self, name: str) -> str | None:
-        with patch("src.agent.tools.song_tools._DEVICE_UUID_CACHE", _TEST_UUID_MAP):
+        with patch("src.agent.osc.device_uuid._DEVICE_UUID_CACHE", _TEST_UUID_MAP):
             from src.agent.tools.song_tools import _lookup_device_uuid
             return _lookup_device_uuid(name)
 
