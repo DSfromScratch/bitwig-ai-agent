@@ -10,7 +10,7 @@ def _merge_dicts(a: dict, b: dict) -> dict:
     return {**a, **b}
 
 
-def _slave_results_reducer(existing: list, new: list) -> list:
+def _aggregate_results_reducer(existing: list, new: list) -> list:
     """Reducer für slave_results: unterstützt Reset via __reset__-Sentinel.
 
     verify_node setzt [{"__reset__": True}] wenn ein Retry-Loop startet —
@@ -123,7 +123,7 @@ class AgentState(TypedDict):
     ui_song_config:     Optional[dict]         # Strukturierte Song-Config aus Bitwig UI (OSC)
     # ── Multi-Agent Slave-State ───────────────────────────────────────────────
     slave_plan:          Optional[dict]                              # plan-Node Output: {instrument_hint, fx_hint, bpm, beat_count, scale}
-    slave_results:       Annotated[list[dict], _slave_results_reducer]  # Fan-in Reducer: sammelt Outputs aller Slaves (reset-fähig)
+    slave_results:       Annotated[list[dict], _aggregate_results_reducer]  # Fan-in Reducer: sammelt Outputs aller Slaves (reset-fähig)
     assembled_json:      Optional[str]                              # assemble-Node: fertiges build_song JSON
     build_result:        Optional[str]                              # execute_build-Node: Tool-Rückgabe
     slave_retry_counts:  Annotated[dict, _merge_dicts]              # {"instrument": 0, "notes": 0}
