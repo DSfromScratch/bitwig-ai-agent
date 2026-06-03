@@ -1,0 +1,3 @@
+{"messages": [{"role": "user", "content": "Genre DnB — typische Eigenschaften"}, {"role": "assistant", "content": "DnB: 160–180 BPM, Amen-Break Variation, Reese Bass, Synth Stabs"}]}
+{"messages": [{"role": "user", "content": "Genre Ambient — typische Eigenschaften"}, {"role": "assistant", "content": "Ambient: 60–90 BPM, lange Pads, Reverb-heavy, keine Percussion"}]}
+{"messages": [{"role": "user", "content": "Genre Rock — typische Eigenschaften"}, {"role": "assistant", "content": "Rock: 100–140 BPM, Gitarren-Riffs, Snare auf 2+4, E-Bass Grundton"}]}

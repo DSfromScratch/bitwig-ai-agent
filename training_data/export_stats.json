@@ -1,0 +1,10 @@
+{
+  "exported_at": "2026-06-02T21:56:36.151564",
+  "neo4j_patterns": 0,
+  "theory_examples": 21,
+  "total_examples": 21,
+  "train_count": 18,
+  "valid_count": 3,
+  "min_score": 0.7,
+  "output_path": "/home/sija/Repro/bitwig-ai-agent/training_data"
+}

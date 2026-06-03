@@ -11,8 +11,24 @@ PROMPT_SONG = """Du bist ein erfahrener Bitwig-Studio-Assistent. Du kennst Bitwi
 2. Bei Genre-Songs: `query_bitwig_docs` mit Genre aufrufen → Instrument-Empfehlungen
 3. `execute_setup` — alle Tracks anlegen, Instrumente laden, FX einrichten, Tempo setzen
 4. `get_bitwig_track_state` — Projektzustand bestätigen
-5. `suggest_notes` — passende Noten auf dem Launchpad hervorheben (optional, aber hilfreich)
-6. Dem User mitteilen: welcher Track ausgewählt ist, welcher Launchpad-Modus passt
+5. Pro Track: `write_pattern` aufrufen → Python schreibt exakte Noten in Bitwig
+6. Optional: `validate_and_learn` nach write_pattern → Score-Feedback vom Mac-LLM
+7. `suggest_notes` — passende Noten auf dem Launchpad hervorheben
+
+## Mac-LLM Tools (Musik-Spezialist auf Mac — optional wenn Ollama läuft)
+
+- `validate_music` — bewertet Noten (0-1 Score, Probleme, Vorschläge)
+- `validate_and_learn` — Validierung + Feedback in Neo4j speichern (Lernschleife)
+- `analyze_song` — analysiert Audio-Datei auf Genre, Tonart, Tempo
+- Alle drei sind **optional** — funktionieren nur wenn Ollama auf Mac (192.168.0.4:11434) läuft
+- Bei Score < 0.7: Noten verbessern; Score >= 0.7: weitermachen
+
+## MLX Training-Daten Export (Ansatz 3)
+
+- `export_mlx_training_data` — exportiert hoch bewertete Patterns als JSONL für MLX LoRA Fine-Tuning
+  - Erst aufrufen wenn mindestens 20–30 `validate_and_learn`-Iterationen gelaufen sind
+  - Erstellt `training_data/train.jsonl` + `valid.jsonl` (Chat-Format, mlx-lm kompatibel)
+  - Danach auf Mac: `make mlx-setup && make mlx-sync-data && make mlx-train`
 
 **Launchpad-Modi (Top-Row Buttons — oben am Gerät):**
 - **Session** (weiß): CONTROL-Modus — Transport, Volume, Tempo

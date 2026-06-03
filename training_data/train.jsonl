@@ -1,0 +1,18 @@
+{"messages": [{"role": "user", "content": "C-Dur Skala — MIDI-Noten"}, {"role": "assistant", "content": "C-Dur: [48, 50, 52, 53, 55, 57, 59, 60]\nNoten: C3, D3, E3, F3, G3, A3, B3, C4"}]}
+{"messages": [{"role": "user", "content": "A-Moll Skala — MIDI-Noten"}, {"role": "assistant", "content": "A-Moll: [57, 59, 60, 62, 64, 65, 67, 69]\nNoten: A3, B3, C4, D4, E4, F4, G4, A4"}]}
+{"messages": [{"role": "user", "content": "G-Dur Skala — MIDI-Noten"}, {"role": "assistant", "content": "G-Dur: [43, 45, 47, 48, 50, 52, 54, 55]\nNoten: G2, A2, B2, C3, D3, E3, F#3, G3"}]}
+{"messages": [{"role": "user", "content": "D-Moll Skala — MIDI-Noten"}, {"role": "assistant", "content": "D-Moll: [50, 52, 53, 55, 57, 58, 60, 62]\nNoten: D3, E3, F3, G3, A3, A#3, C4, D4"}]}
+{"messages": [{"role": "user", "content": "E-Moll Skala — MIDI-Noten"}, {"role": "assistant", "content": "E-Moll: [52, 54, 55, 57, 59, 60, 62, 64]\nNoten: E3, F#3, G3, A3, B3, C4, D4, E4"}]}
+{"messages": [{"role": "user", "content": "F-Dur Skala — MIDI-Noten"}, {"role": "assistant", "content": "F-Dur: [41, 43, 45, 46, 48, 50, 52, 53]\nNoten: F2, G2, A2, A#2, C3, D3, E3, F3"}]}
+{"messages": [{"role": "user", "content": "B-Moll Skala — MIDI-Noten"}, {"role": "assistant", "content": "B-Moll: [47, 49, 50, 52, 54, 55, 57, 59]\nNoten: B2, C#3, D3, E3, F#3, G3, A3, B3"}]}
+{"messages": [{"role": "user", "content": "Akkord Am — MIDI-Noten"}, {"role": "assistant", "content": "Am: [57, 60, 64] (A3, C4, E4)"}]}
+{"messages": [{"role": "user", "content": "Akkord C — MIDI-Noten"}, {"role": "assistant", "content": "C: [60, 64, 67] (C4, E4, G4)"}]}
+{"messages": [{"role": "user", "content": "Akkord F — MIDI-Noten"}, {"role": "assistant", "content": "F: [53, 57, 60] (F3, A3, C4)"}]}
+{"messages": [{"role": "user", "content": "Akkord G — MIDI-Noten"}, {"role": "assistant", "content": "G: [55, 59, 62] (G3, B3, D4)"}]}
+{"messages": [{"role": "user", "content": "Akkord Dm — MIDI-Noten"}, {"role": "assistant", "content": "Dm: [50, 53, 57] (D3, F3, A3)"}]}
+{"messages": [{"role": "user", "content": "Akkord Em — MIDI-Noten"}, {"role": "assistant", "content": "Em: [52, 55, 59] (E3, G3, B3)"}]}
+{"messages": [{"role": "user", "content": "Akkord E — MIDI-Noten"}, {"role": "assistant", "content": "E: [52, 56, 59] (E3, G#3, B3)"}]}
+{"messages": [{"role": "user", "content": "Akkord Am7 — MIDI-Noten"}, {"role": "assistant", "content": "Am7: [57, 60, 64, 67] (A3, C4, E4, G4)"}]}
+{"messages": [{"role": "user", "content": "Akkord Cmaj7 — MIDI-Noten"}, {"role": "assistant", "content": "Cmaj7: [60, 64, 67, 71] (C4, E4, G4, B4)"}]}
+{"messages": [{"role": "user", "content": "Genre Techno — typische Eigenschaften"}, {"role": "assistant", "content": "Techno: 130–145 BPM, 4-on-the-floor Kick, minimale Melodien, kurze repetitive Patterns"}]}
+{"messages": [{"role": "user", "content": "Genre House — typische Eigenschaften"}, {"role": "assistant", "content": "House: 120–128 BPM, Off-Beat HiHats, Chord-Stabs auf 2+4, Bass-Groove"}]}

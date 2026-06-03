@@ -6,6 +6,10 @@ from src.agent.tools.song_tools import (
 )
 from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
 from src.agent.tools.pattern_tools import write_pattern
+from src.agent.tools.music_validator import validate_music
+from src.agent.tools.audio_llm_tool import analyze_song
+from src.agent.tools.music_learning import validate_and_learn
+from src.agent.tools.mlx_export import export_mlx_training_data
 from src.bitwig_executor import execute_setup, compose_notes
 from langchain_core.tools import StructuredTool, tool as _tool
 from pydantic import BaseModel, model_validator
@@ -51,6 +55,10 @@ ALL_TOOLS = [
     _make_tool(execute_setup),
     _make_tool(compose_notes),
     write_pattern,
+    validate_music,
+    validate_and_learn,
+    analyze_song,
+    export_mlx_training_data,
     scan_vst_plugins,
     StructuredTool.from_function(suggest_notes),
     StructuredTool.from_function(get_launchpad_mode),

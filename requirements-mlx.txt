@@ -1,0 +1,11 @@
+# MLX Fine-Tuning Requirements — nur Mac (Apple Silicon, M1/M2/M3/M4)
+# Installieren: pip install -r requirements-mlx.txt
+#
+# Voraussetzungen:
+#   - macOS 14+ (Sonoma), Apple Silicon
+#   - Python 3.11+ via: python3 -m venv ~/.venv-mlx && source ~/.venv-mlx/bin/activate
+#   - Empfohlen: 16 GB RAM (Modell ~2 GB + Training Overhead)
+
+mlx>=0.18.0
+mlx-lm>=0.16.0
+huggingface-hub>=0.24.0

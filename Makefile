@@ -16,7 +16,7 @@ LOCAL_EXT_DIR := $(HOME)/Bitwig\ Studio/Extensions
 LINUX_IP     := $(shell ip route get 1 2>/dev/null | awk '{print $$7; exit}')
 EXT_DIST     := bitwig-extension/dist
 
-.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status
+.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status mlx-export mlx-setup mlx-sync-data mlx-train mlx-test
 
 help: ## Verfügbare Befehle anzeigen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -192,3 +192,104 @@ container-vllm-logs: ## vLLM Logs live anzeigen
 
 container-status: ## Status aller Container-Services anzeigen
 	@systemctl --user status neo4j.service vllm@agent.service --no-pager 2>/dev/null | grep -E '(●|○|Active|Main PID)'
+
+ollama-setup-mac: ## Ollama auf Mac installieren (manuell auf Mac Terminal ausführen)
+	@echo ">>> Führe auf dem Mac Terminal aus:"
+	@echo ""
+	@echo "  curl -fsSL https://ollama.com/install.sh | sh"
+	@echo "  ollama pull qwen3:4b"
+	@echo "  launchctl setenv OLLAMA_HOST 0.0.0.0"
+	@echo "  # Firewall: TCP 11434 freigeben"
+	@echo ""
+	@echo "Danach von Linux testen:"
+	@echo "  curl http://192.168.0.4:11434/api/tags"
+
+ollama-test: ## Mac LLM-Verbindung testen
+	@resp=$$(curl -s --max-time 5 http://$(MAC_HOST):11434/api/tags 2>&1); \
+	if [ -z "$$resp" ]; then \
+	  echo "✗ Ollama nicht erreichbar (http://$(MAC_HOST):11434)"; \
+	  echo "  → Auf Mac: OLLAMA_HOST=0.0.0.0 ollama serve &"; \
+	else \
+	  echo "$$resp" | python3 -c "import json,sys; m=json.load(sys.stdin); models=m.get('models',[]); [print('  ✓',x['name']) for x in models] if models else print('  Ollama läuft aber keine Modelle — ollama pull qwen3:8b')"; \
+	fi
+
+# ── MLX Fine-Tuning (Ansatz 3) ──────────────────────────────────────────────
+
+MLX_MODEL ?= mlx-community/Qwen2.5-3B-Instruct-4bit
+MLX_DATA  ?= ./training_data
+MLX_OUT   ?= ~/mlx-models
+
+mlx-export: ## MLX Training-Daten aus Neo4j exportieren (→ training_data/)
+	$(PYTHON) -c "\
+from src.agent.tools.mlx_export import export_training_data; \
+import json; \
+r = export_training_data('./training_data', min_score=0.70); \
+print(json.dumps({k: v for k, v in r.items() if k != 'output_path'}, indent=2, ensure_ascii=False)); \
+print('→', r.get('output_path', 'training_data/'))"
+
+mlx-setup: ## MLX + mlx-lm auf Mac installieren (Anleitung)
+	@echo ">>> Führe auf dem Mac Terminal aus:"
+	@echo ""
+	@echo "  # Python-Venv erstellen (Apple Silicon, macOS 14+)"
+	@echo "  python3 -m venv ~/.venv-mlx"
+	@echo "  source ~/.venv-mlx/bin/activate"
+	@echo ""
+	@echo "  # MLX-Abhängigkeiten installieren"
+	@echo "  pip install mlx mlx-lm huggingface-hub"
+	@echo ""
+	@echo "  # Basis-Modell herunterladen (4-bit quantized, ~2 GB)"
+	@echo "  mkdir -p $(MLX_OUT)"
+	@echo "  huggingface-cli download $(MLX_MODEL) --local-dir $(MLX_OUT)/base"
+	@echo ""
+	@echo "Danach Trainingsdaten übertragen:"
+	@echo "  make mlx-sync-data"
+
+mlx-sync-data: ## Trainingsdaten auf Mac übertragen (SCP)
+	@[ -f "$(MLX_DATA)/train.jsonl" ] || { echo "✗ Keine Daten — make mlx-export zuerst ausführen"; exit 1; }
+	ssh -o StrictHostKeyChecking=no $(MAC_USER)@$(MAC_HOST) "mkdir -p ~/mlx-training"
+	scp -o StrictHostKeyChecking=no \
+	    $(MLX_DATA)/train.jsonl \
+	    $(MLX_DATA)/valid.jsonl \
+	    $(MLX_DATA)/export_stats.json \
+	    $(MAC_USER)@$(MAC_HOST):~/mlx-training/
+	@echo "✓ $(MLX_DATA)/ → Mac:~/mlx-training/ ($(MAC_HOST))"
+
+mlx-train: ## MLX LoRA Fine-Tuning Anleitung anzeigen (auf Mac Terminal ausführen)
+	@echo ">>> Führe auf dem Mac Terminal aus:"
+	@echo ""
+	@echo "  source ~/.venv-mlx/bin/activate"
+	@echo ""
+	@echo "  # LoRA Fine-Tuning (~30–60 min auf M1/M2, ~15 min auf M3/M4)"
+	@echo "  python -m mlx_lm.lora \\"
+	@echo "    --model $(MLX_OUT)/base \\"
+	@echo "    --train \\"
+	@echo "    --data ~/mlx-training \\"
+	@echo "    --iters 1000 \\"
+	@echo "    --batch-size 4 \\"
+	@echo "    --lora-layers 16 \\"
+	@echo "    --learning-rate 1e-5 \\"
+	@echo "    --save-every 200 \\"
+	@echo "    --adapter-path $(MLX_OUT)/bitwig-adapter"
+	@echo ""
+	@echo "  # Adapter in fertiges Modell einbauen"
+	@echo "  python -m mlx_lm.fuse \\"
+	@echo "    --model $(MLX_OUT)/base \\"
+	@echo "    --adapter-path $(MLX_OUT)/bitwig-adapter \\"
+	@echo "    --save-path $(MLX_OUT)/bitwig-finetuned"
+	@echo ""
+	@echo "Danach als Ollama-Modell bereitstellen:"
+	@echo "  make mlx-test"
+
+mlx-test: ## Fine-tuned Modell auf Mac testen (Anleitung)
+	@echo ">>> Führe auf dem Mac Terminal aus:"
+	@echo ""
+	@echo "  source ~/.venv-mlx/bin/activate"
+	@echo ""
+	@echo "  # Direkter Test mit mlx-lm"
+	@echo "  python -m mlx_lm.generate \\"
+	@echo "    --model $(MLX_OUT)/bitwig-finetuned \\"
+	@echo "    --max-tokens 300 \\"
+	@echo "    --prompt 'Erstelle ein 4-taktiges Pattern für Synth Lead in C-Dur, Techno, 128 BPM'"
+	@echo ""
+	@echo "  # Als Ollama-Modell bereitstellen (optional)"
+	@echo "  # → Modelfile erstellen und 'ollama create bitwig-music' ausführen"

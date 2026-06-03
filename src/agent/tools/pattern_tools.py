@@ -12,6 +12,27 @@ from src.agent.tools.pattern_generators import (  # noqa: F401
     _drums, _bass, _chords, _melody, _808_kick, _808_snare,
 )
 
+def _get_feedback_style(instrument: str, genre: str, default_style: str) -> str:
+    """Liest vergangene Scores aus Neo4j und wählt besseren Style wenn Score < 0.7."""
+    try:
+        from src.agent.tools.music_learning import get_pattern_history
+        history = get_pattern_history(instrument, genre)
+        avg_score = history.get("avg_score", 1.0)
+        iterations = history.get("iterations", 0)
+        if iterations < 2 or avg_score is None:
+            return default_style
+        # Unter 0.7: Style eskalieren (basic→full, basic→arpeggio)
+        if avg_score < 0.6:
+            escalation = {"basic": "full", "full": "full", "arpeggio": "arpeggio",
+                          "staccato": "basic", "sustained": "sustained"}
+            return escalation.get(default_style, default_style)
+        if avg_score < 0.7:
+            return "full" if default_style == "basic" else default_style
+    except Exception:
+        pass
+    return default_style
+
+
 @tool
 def write_pattern(
     track_index: int,
@@ -53,21 +74,25 @@ def write_pattern(
                       "brass", "piano", "uprightpiano", "pad", "chord",
                       "vg-", "vgironk2", "vgsilk2", "vgiron", "vgsilk"]
 
+    # Feedback aus vergangenen Generierungen abrufen (Ansatz 1: Feedback-Loop)
+    feedback_style = _get_feedback_style(instrument, genre, style)
+
     if "808kick" in inst_lower:
         notes = _808_kick(genre, bars); ptype = "808-kick"
     elif "808snare" in inst_lower:
         notes = _808_snare(genre, bars); ptype = "808-snare"
     elif any(k in inst_lower for k in drum_keywords):
-        notes = _drums(genre, bars, style); ptype = "drums"
+        notes = _drums(genre, bars, feedback_style); ptype = "drums"
     elif any(k in inst_lower for k in bass_keywords):
-        notes = _bass(genre, bars, _root_midi(key, octave=2), style); ptype = "bass"
+        notes = _bass(genre, bars, _root_midi(key, octave=2), feedback_style); ptype = "bass"
     elif any(k in inst_lower for k in chord_keywords):
         if not chords:
             chords = _DEFAULT_PROGRESSIONS.get(genre, _DEFAULT_PROGRESSIONS["default"])
-        notes = _chords(genre, bars, chords, style); ptype = "chords"
+        notes = _chords(genre, bars, chords, feedback_style); ptype = "chords"
     else:
-        notes = _melody(genre, bars, _root_midi(key, octave=3), scale, style); ptype = "melody"
+        notes = _melody(genre, bars, _root_midi(key, octave=3), scale, feedback_style); ptype = "melody"
 
+    feedback_note = f" [aus Feedback: style={feedback_style}]" if feedback_style != style else ""
     result = compose_notes({
         "context_type": "track",
         "target": {"bpm": bpm, "genre": genre},
@@ -80,4 +105,4 @@ def write_pattern(
             "status": "pending", "note": "",
         }],
     })
-    return f"[write_pattern] {ptype} | {len(notes)} Noten | {result}"
+    return f"[write_pattern] {ptype} | {len(notes)} Noten{feedback_note} | {result}"
