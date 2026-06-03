@@ -48,7 +48,7 @@ embed-server: ## Lokalen Embedding-Server starten (Port 8080, kein HF-Netzwerk)
 	$(PYTHON) start_agent.py --embed-server-up
 
 agent: ## Interaktiven CLI-Agent starten (vLLM nötig)
-	LD_LIBRARY_PATH=.cuda_compat:$(LD_LIBRARY_PATH) $(PYTHON) -m src.agent.core
+	@LD_LIBRARY_PATH=.cuda_compat:$(LD_LIBRARY_PATH) $(PYTHON) -m src.agent.core
 
 start: ## 🚀 MCP Server + Agent starten (vollständiger Stack)
 	$(PYTHON) start_agent.py
@@ -293,3 +293,42 @@ mlx-test: ## Fine-tuned Modell auf Mac testen (Anleitung)
 	@echo ""
 	@echo "  # Als Ollama-Modell bereitstellen (optional)"
 	@echo "  # → Modelfile erstellen und 'ollama create bitwig-music' ausführen"
+
+ml-export: ## ML Training-Daten aus Neo4j exportieren (für MLX Fine-tuning)
+	$(PYTHON) -c "\
+from src.knowledge.ml_export import export_patterns_to_jsonl, export_validator_conversations, get_export_stats; \
+print(export_patterns_to_jsonl()); \
+print(export_validator_conversations()); \
+print('Stats:', get_export_stats())"
+
+mlx-setup-mac: ## MLX Fine-tuning Setup auf Mac anzeigen
+	@echo "=== MLX Fine-tuning auf Apple Silicon Mac ==="
+	@echo ""
+	@echo "1. MLX installieren (auf Mac Terminal):"
+	@echo "   pip install mlx-lm"
+	@echo ""
+	@echo "2. Training-Daten von Linux kopieren:"
+	@echo "   scp $(LINUX_IP):$(CURDIR)/training_data/*.jsonl ~/training_data/"
+	@echo ""
+	@echo "3. LoRA Fine-tuning starten (auf Mac Terminal):"
+	@echo "   mlx_lm.lora \\"
+	@echo "     --model mlx-community/Qwen3-8B-4bit \\"
+	@echo "     --train \\"
+	@echo "     --data ~/training_data \\"
+	@echo "     --iters 100 \\"
+	@echo "     --batch-size 4 \\"
+	@echo "     --lora-layers 8 \\"
+	@echo "     --learning-rate 1e-4"
+	@echo ""
+	@echo "4. Modell in Ollama registrieren:"
+	@echo "   ollama create qwen3-music -f Modelfile"
+	@echo ""
+	@echo "Voraussetzung: mind. 200 bewertete Patterns (make ml-export zeigt aktuelle Anzahl)"
+
+ml-validate-test: ## Fine-tuned Modell mit Rock-Drums testen
+	$(PYTHON) -c "\
+from src.agent.tools.music_validator import validate_music_pattern; \
+from src.agent.tools.pattern_generators import _drums; \
+notes = _drums('rock', 2, 'full'); \
+r = validate_music_pattern(notes, 'VD-HEAVY', 'rock', 'A', 'minor'); \
+print('Score:', r.get('score')); print('Summary:', r.get('summary')); print('Issues:', r.get('issues'))"

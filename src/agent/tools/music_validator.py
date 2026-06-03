@@ -17,16 +17,87 @@ load_dotenv()
 log = logging.getLogger("bitwig-agent")
 
 MAC_LLM_URL   = os.getenv("MAC_LLM_URL",   "http://192.168.0.4:11434")
-MAC_LLM_MODEL = os.getenv("MAC_LLM_MODEL", "qwen3:4b")
+MAC_LLM_MODEL = os.getenv("MAC_LLM_MODEL", "qwen3:8b")
+MAC_LLM_TYPE  = os.getenv("MAC_LLM_TYPE",  "ollama")   # "ollama" | "mlx" | "vllm"
+MAC_MLX_URL   = os.getenv("MAC_MLX_URL",   "http://192.168.0.4:8080")
+# Fallback: Linux vLLM wenn Mac nicht erreichbar
+VLLM_URL      = os.getenv("VLLM_BASE_URL", "http://localhost:8100") + "/v1"
+VLLM_MODEL    = os.getenv("VLLM_MODEL",    "agent")
+
+
+def _ollama_available() -> bool:
+    try:
+        import httpx
+        return httpx.get(f"{MAC_LLM_URL}/api/tags", timeout=2.0).status_code == 200
+    except Exception:
+        return False
 
 
 def _is_available() -> bool:
+    """True wenn irgendein LLM-Backend erreichbar ist."""
+    import httpx
+    # 1. Mac MLX
+    if MAC_LLM_TYPE == "mlx":
+        try:
+            r = httpx.get(f"{MAC_MLX_URL}/v1/models", timeout=2.0)
+            if r.status_code == 200 and r.text.strip():
+                return True
+        except Exception:
+            pass
+    # 2. Mac Ollama
+    if _ollama_available():
+        return True
+    # 3. Fallback Linux vLLM
     try:
-        import httpx
-        r = httpx.get(f"{MAC_LLM_URL}/api/tags", timeout=2.0)
+        r = httpx.get(f"{VLLM_URL}/models", timeout=2.0)
         return r.status_code == 200
     except Exception:
         return False
+
+
+def _call_llm(prompt: str) -> str:
+    """LLM-Aufruf mit Priorität: Mac MLX → Mac Ollama → Linux vLLM (Fallback)."""
+    import httpx, re
+
+    # 1. Mac MLX Fine-tuned (wenn verfügbar)
+    if MAC_LLM_TYPE == "mlx":
+        try:
+            # /no_think verhindert Extended Thinking → content wird befüllt
+            r = httpx.post(f"{MAC_MLX_URL}/v1/chat/completions",
+                json={"messages": [{"role":"user","content":f"/no_think\n{prompt}"}],
+                      "temperature":0.1, "max_tokens":300}, timeout=90.0)
+            r.raise_for_status()
+            content = r.json()["choices"][0]["message"].get("content", "{}")
+            content = re.sub(r'```(?:json)?\n?', '', content).strip()
+            m = re.search(r'\{.*\}', content, re.DOTALL)
+            log.info("[MusicValidator] Backend: Mac MLX (fine-tuned Qwen3-8B)")
+            return m.group(0) if m else content
+        except Exception as exc:
+            log.debug("Mac MLX nicht verfügbar (%s)", exc)
+
+    # 2. Mac Ollama (wenn verfügbar)
+    if _ollama_available():
+        try:
+            r = httpx.post(f"{MAC_LLM_URL}/api/chat",
+                json={"model":MAC_LLM_MODEL, "messages":[{"role":"user","content":prompt}],
+                      "format":"json", "stream":False, "think":False,
+                      "options":{"temperature":0.1,"num_predict":256}}, timeout=30.0)
+            msg = r.json().get("message", {})
+            log.info("[MusicValidator] Backend: Mac Ollama (%s)", MAC_LLM_MODEL)
+            return msg.get("content") or msg.get("thinking", "{}")
+        except Exception as exc:
+            log.debug("Mac Ollama fehlgeschlagen (%s)", exc)
+
+    # 3. Linux vLLM (immer verfügbar — Qwen3-14B)
+    r = httpx.post(f"{VLLM_URL}/chat/completions",
+        json={"model": VLLM_MODEL,
+              "messages": [{"role":"user","content":prompt}],
+              "temperature":0.1, "max_tokens":256},
+        headers={"Authorization": "Bearer vllm"}, timeout=60.0)
+    content = r.json()["choices"][0]["message"]["content"]
+    m = re.search(r'\{.*\}', content, re.DOTALL)
+    log.info("[MusicValidator] Backend: Linux vLLM (Qwen3-14B)")
+    return m.group(0) if m else content
 
 
 def _build_validation_prompt(
@@ -115,25 +186,10 @@ def validate_music_pattern(
     prompt  = _build_validation_prompt(notes, instrument, genre, key, scale, bars, bpm) + rag_ctx
 
     try:
-        import httpx
-        response = httpx.post(
-            f"{MAC_LLM_URL}/api/chat",
-            json={
-                "model": MAC_LLM_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "format": "json",
-                "stream": False,
-                "think": False,
-                "options": {"temperature": 0.1, "num_predict": 512},
-            },
-            timeout=30.0,
-        )
-        data     = response.json()
-        msg      = data.get("message", {})
-        # Qwen3 thinking mode: content kann leer sein, Antwort in thinking
-        content  = msg.get("content") or msg.get("thinking", "{}")
-        result = json.loads(content)
-        log.info("[MusicValidator] score=%.2f  %s", result.get("score", 0), result.get("summary", ""))
+        content = _call_llm(prompt)
+        result  = json.loads(content)
+        log.info("[MusicValidator][%s] score=%.2f  %s",
+                 MAC_LLM_TYPE, result.get("score", 0), result.get("summary", ""))
         return result
     except Exception as exc:
         log.warning("Mac-LLM Validierung fehlgeschlagen: %s", exc)

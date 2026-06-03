@@ -129,7 +129,7 @@ def get_rag_examples(
             result = s.run(
                 """
                 MATCH (p:ProductionPattern)
-                WHERE p.avg_score >= $min_score
+                WHERE p.avg_score IS NOT NULL AND p.avg_score >= $min_score
                   AND (p.genre = $genre OR p.instrument = $instrument)
                 RETURN p.instrument AS instrument, p.genre AS genre,
                        p.key AS key, p.avg_score AS score,

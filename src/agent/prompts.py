@@ -79,7 +79,7 @@ Beispiel nach Rock-Setup in A-Moll:
 ### Drums
 | Ladename | Plugin | Einsatz |
 |---|---|---|
-| `"VD-HEAVY"` | UJAM Virtual Drummer Heavy | Rock, Metal, Pop — automatisches Drum-Arrangement |
+| `"VD-HEAVY"` | UJAM Virtual Drummer Heavy | Rock, Metal, Pop — **1 Track für komplettes Drum-Kit** (Kick+Snare+HiHat+Tom) |
 
 ### Bass
 | Ladename | Plugin | Einsatz |
@@ -102,6 +102,7 @@ Beispiel nach Rock-Setup in A-Moll:
 
 **Wichtig für UJAM-Instrumente:** Einfaches MIDI (Noten/Akkorde) → Plugin erzeugt realistisches Spiel automatisch.
 UJAM GM-MIDI: Kick=36, Snare=38, HiHat=42 für VD-HEAVY.
+**Wichtig:** VD-HEAVY = 1 Track für das komplette Drum-Kit. NIEMALS mehrere Tracks für Kick/Snare/HiHat anlegen.
 
 ---
 

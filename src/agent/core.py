@@ -126,7 +126,7 @@ Für Erklärungen einfach normal fragen — kein /  nötig.
 """
 
 _PHASE_SIGNALS: list[tuple[list[str], str]] = [
-    (["fehler", "error", "nicht erreichbar", "verbindung", "failed"],  "error"),
+    (["fehler aufgetreten", "nicht erreichbar", "verbindung fehlgeschlagen", "fatal error", "abbruch"],  "error"),
     (["fertig", "abgeschlossen", "song ist bereit", "done", "riff wurde"],  "done"),
     (["verif", "überprüf", "prüf", "playback", "abspielen"],              "verifying"),
     (["noten schreib", "write_notes", "clip", "midi schreib", "riff schreib"],  "generating"),
@@ -562,7 +562,9 @@ if __name__ == "__main__":
 
     _start_agent_ui_osc_listener(_run_request_threadsafe)
 
-    if not sys.stdin.isatty():
+    # Daemon-Modus nur wenn explizit gesetzt oder weder stdin noch stderr ein TTY ist
+    _daemon = os.getenv("AGENT_DAEMON", "").lower() in ("1", "true")
+    if _daemon or (not sys.stdin.isatty() and not sys.stderr.isatty()):
         # Daemon-Modus: OSC-Listener + Idle-Watchdog
         log.info("Daemon-Modus: OSC-Listener aktiv auf Port 9003. SIGTERM zum Beenden.")
         _signal.pause()
