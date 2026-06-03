@@ -127,21 +127,50 @@ def _build_validation_prompt(
     has_kick  = pitches.get(36, 0) + pitches.get(40, 0) > 0
     has_snare = pitches.get(38, 0) + pitches.get(39, 0) > 0
     has_hh    = pitches.get(42, 0) + pitches.get(44, 0) + pitches.get(46, 0) > 0
+    has_ride  = pitches.get(51, 0) > 0
     is_drum   = any(k in instrument.lower() for k in ["drum", "vd-", "kick", "snare"])
+    is_jazz   = genre.lower() == "jazz"
 
     context_hint = ""
     if is_drum:
-        if has_kick and has_snare and has_hh:
+        if is_jazz:
+            if has_ride and has_snare:
+                context_hint = "\nKontext: Jazz-Pattern mit Ride-Swing (MIDI51) und Snare — das ist korrekte Jazz-Struktur (score >= 0.75)."
+            elif has_ride:
+                context_hint = "\nKontext: Jazz-Ride-Rhythmus vorhanden. Snare auf Beat 2+4 als Brush wäre ideal."
+            else:
+                context_hint = "\nKontext: Jazz benötigt Ride-Cymbal (MIDI51) als Hauptrhythmus — kein HiHat-Pattern."
+        elif has_kick and has_snare and has_hh:
             context_hint = "\nKontext: Pattern hat Kick, Snare UND HiHat — das ist ein vollständiges Drum-Kit."
         elif not has_kick:
             context_hint = "\nKontext: KEIN Kick vorhanden — das ist ein wesentliches Problem."
         elif not has_snare:
             context_hint = "\nKontext: KEINE Snare vorhanden — das ist ein wesentliches Problem."
 
+    # Genre-spezifische Bewertungskriterien
+    if is_jazz:
+        genre_criteria = (
+            f"- Jazz: Ride-Cymbal (MIDI51) als Hauptrhythmus mit Swing-Feeling IST korrekt (score >= 0.75)\n"
+            f"- Jazz: Snare auf Beat 2+4 als Ghost-Note/Brush — kein harter Backbeat nötig\n"
+            f"- Jazz: HH-Pedal auf 2+4 (MIDI44) ist typisch und erwünscht\n"
+            f"- Jazz: Wenig Kick ist KEIN Problem — Jazz-Drummer spielen Kick sparsam"
+        )
+    elif is_drum:
+        genre_criteria = (
+            f"- Ein {bars}-Takt {genre}-Pattern mit Kick auf Beat 1/3 und Snare auf Beat 2/4 IST rhythmisch korrekt (score >= 0.65)"
+        )
+    else:
+        # Melodie/Harmonie-Instrumente: keine Drum-Kriterien
+        genre_criteria = (
+            f"- Melodie/Harmonie-Pattern: Beachte Intervalle, Phrasierung und Genre-Kontext\n"
+            f"- Komplexe Rhythmen (Triolen, Quintolen, Septolen) sind bei {genre} normal — kein Abzug\n"
+            f"- Atonale oder chromatische Passagen können bewusst eingesetzt sein"
+        )
+
     return f"""Du bist ein erfahrener Musik-Produzent. Bewerte dieses {bars}-Takt MIDI-Pattern objektiv.
 
 WICHTIG für die Bewertung:
-- Ein {bars}-Takt {genre}-Pattern mit Kick auf Beat 1/3 und Snare auf Beat 2/4 IST rhythmisch korrekt (score >= 0.65)
+{genre_criteria}
 - Kurze Patterns (1-2 Takte) sind normal für Bitwig Clips — kein Abzug dafür
 - Bewerte ob das Pattern FUNKTIONIERT, nicht ob es perfekt oder komplex ist
 - score: 0.8+ = sehr gut, 0.6-0.79 = gut/funktioniert, 0.4-0.59 = verbesserungswürdig, <0.4 = schlecht

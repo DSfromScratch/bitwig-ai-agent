@@ -38,11 +38,16 @@ def _drums(genre: str, bars: int, style: str) -> list[dict]:
             n(o+1.5, HH_O, 0.55, 0.5); n(o+3.5, HH_O, 0.50, 0.5)
 
         elif genre == "jazz":
-            n(o+0.0, KICK, 0.65)
-            n(o+1.0, HH_C, 0.80); n(o+3.0, HH_C, 0.80)
+            # Ride ist der Hauptrhythmus im Jazz (Swing-Pattern)
             for i in range(4):
-                n(o+i,      RIDE, 0.75)
-                n(o+i+0.67, RIDE, 0.52)
+                n(o+i,      RIDE, 0.78)       # Beat 1 2 3 4
+                n(o+i+0.67, RIDE, 0.50)       # Swing-Triolen-Feeling
+            n(o+1.0, SNARE, 0.55)             # Snare auf 2 (Ghost-Note / Brush)
+            n(o+3.0, SNARE, 0.60)             # Snare auf 4 (etwas lauter)
+            n(o+1.0, 44,    0.65)             # HH-Pedal auf 2 (typisch Jazz)
+            n(o+3.0, 44,    0.65)             # HH-Pedal auf 4
+            if bar == 0:
+                n(o+0.0, KICK, 0.55)          # Kick sparsam, nur 1x pro 2 Takte
 
         elif genre in ("dnb", "drum and bass"):
             n(o+0.0, KICK,  0.90); n(o+1.5, KICK,  0.72); n(o+3.0, KICK,  0.68)
