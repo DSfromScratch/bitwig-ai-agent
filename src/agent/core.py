@@ -161,218 +161,176 @@ def _recover_xml_fragment_once(system, messages, selected_tools, state) -> AIMes
     return _fn(system, messages, selected_tools, state, _get_tools, _get_llm, _log_token_usage)
 
 
-def call_llm(state: AgentState) -> dict:
-    all_messages = state["messages"]
-
-    # /hilfe — statische Antwort ohne LLM-Call
-    user_text = _latest_user_text(all_messages)
-    if user_text.lower().strip() in ("/hilfe", "/help", "/befehle", "/commands"):
-        return {"messages": [AIMessage(content=_HELP_TEXT)]}
-
-    messages = all_messages[-MAX_MESSAGES:]
-    # Tool-Results kürzen: notes_json-Antworten können Hunderte Tokens sein
+def _prepare_messages(all_messages: list, max_messages: int) -> list:
+    """Kürzt lange Tool-Antworten und begrenzt die Nachrichtenanzahl."""
     from langchain_core.messages import ToolMessage
+    messages = all_messages[-max_messages:]
     trimmed = []
     for m in messages:
         if isinstance(m, ToolMessage) and isinstance(m.content, str) and len(m.content) > 400:
             trimmed.append(ToolMessage(content=m.content[:400] + " …[gekürzt]", tool_call_id=m.tool_call_id))
         else:
             trimmed.append(m)
-    messages = trimmed
-    selected_tools = _select_tools_for_context(all_messages)
-    mode = _route_request(_latest_user_text(all_messages))
-    prompt_text = _get_prompt_for_mode(mode)
+    return trimmed
+
+
+def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: list) -> AIMessage:
+    """Ruft das LLM auf — mit Fallback bei Kontext-Overflow."""
     llm = _get_llm().bind_tools(selected_tools) if selected_tools else _get_llm()
-    system = SystemMessage(content=prompt_text)
-    log.info("LLM call — mode=%s %d Nachrichten, %d Tools", mode, len(messages), len(selected_tools))
     try:
         response = llm.invoke([system] + messages)
         _log_token_usage(response, label="main")
+        return response
     except BadRequestError as exc:
         msg = str(exc)
-        # Kontext-Overflow: mit kleinerem Toolset + weniger Output-Tokens erneut versuchen.
-        if "maximum context length" in msg or "input_tokens" in msg:
-            fallback_tools = [
-                t for t in _get_tools()
-                if getattr(t, "name", "") in {
-                    "check_bitwig_connection",
-                    "execute_setup",
-                }
-            ]
-            fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)
-            fallback_messages = messages[-6:]
-            log.warning(
-                "LLM Kontextlimit erreicht — Fallback mit %d Tools, %d Messages, max_tokens=700",
-                len(fallback_tools or selected_tools),
-                len(fallback_messages),
-            )
-            try:
-                response = fallback_llm.invoke([SystemMessage(content=PROMPT_CONTROL)] + fallback_messages)
-                _log_token_usage(response, label="fallback")
-            except Exception as fallback_exc:
-                log.error("LLM Fallback-Invoke fehlgeschlagen: %s", fallback_exc, exc_info=True)
-                get_event_bus().emit("agent_error", {
-                    "source": "llm_fallback",
-                    "error": type(fallback_exc).__name__,
-                    "message": str(fallback_exc),
-                })
-                raise RuntimeError(
-                    f"LLM nicht erreichbar — Kontext zu groß, Fallback ebenfalls fehlgeschlagen: {fallback_exc}"
-                ) from fallback_exc
-        else:
+        if "maximum context length" not in msg and "input_tokens" not in msg:
             raise
+        fallback_tools = [t for t in _get_tools() if getattr(t, "name", "") in
+                          {"check_bitwig_connection", "execute_setup"}]
+        fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)
+        log.warning("LLM Kontextlimit — Fallback mit %d Tools, max_tokens=700",
+                    len(fallback_tools or selected_tools))
+        try:
+            response = fallback_llm.invoke([SystemMessage(content=PROMPT_CONTROL)] + messages[-6:])
+            _log_token_usage(response, label="fallback")
+            return response
+        except Exception as fallback_exc:
+            log.error("LLM Fallback fehlgeschlagen: %s", fallback_exc, exc_info=True)
+            get_event_bus().emit("agent_error", {"source": "llm_fallback",
+                "error": type(fallback_exc).__name__, "message": str(fallback_exc)})
+            raise RuntimeError(
+                f"LLM nicht erreichbar — Kontext zu groß, Fallback fehlgeschlagen: {fallback_exc}"
+            ) from fallback_exc
 
-    # ── Reasoning extrahieren, emittieren, Phase ableiten ────────────────────
+
+def _process_reasoning(response: AIMessage, state: AgentState, msg_count: int) -> dict:
+    """Extrahiert <think>-Block, emittiert Events, leitet Phase ab."""
     updates: dict = {}
-    if hasattr(response, "content") and isinstance(response.content, str):
-        reasoning, cleaned = _extract_think(response.content)
-        response.content = cleaned
-        if reasoning:
-            current_phase: GenerationPhase = state.get("generation_phase", "idle")
-            new_phase = _phase_from_reasoning(reasoning, current_phase)
-            bus = get_event_bus()
-            bus.emit("reasoning", {
-                "text":         reasoning[:500],  # max 500 Zeichen im Event
-                "current_phase": current_phase,
-                "detected_phase": new_phase,
-                "msg_count":     len(messages),
-            })
-            if new_phase is not None:
-                log.info("Phase %s → %s (aus Reasoning)", current_phase, new_phase)
-                bus.emit("phase_change", {"from": current_phase, "to": new_phase})
-                updates["generation_phase"] = new_phase
+    if not (hasattr(response, "content") and isinstance(response.content, str)):
+        return updates
+    reasoning, cleaned = _extract_think(response.content)
+    response.content = cleaned
+    if not reasoning:
+        return updates
+    current_phase: GenerationPhase = state.get("generation_phase", "idle")
+    new_phase = _phase_from_reasoning(reasoning, current_phase)
+    bus = get_event_bus()
+    bus.emit("reasoning", {"text": reasoning[:500], "current_phase": current_phase,
+                            "detected_phase": new_phase, "msg_count": msg_count})
+    if new_phase is not None:
+        log.info("Phase %s → %s (aus Reasoning)", current_phase, new_phase)
+        bus.emit("phase_change", {"from": current_phase, "to": new_phase})
+        updates["generation_phase"] = new_phase
+    return updates
 
+
+def _handle_invalid_output(response: AIMessage, system: SystemMessage, messages: list,
+                            selected_tools: list, state: AgentState,
+                            updates: dict) -> dict | None:
+    """Behandelt kaputte Tool-Ausgaben — gibt Retry-Dict oder None zurück."""
+    if not _has_invalid_tool_output(response):
+        return None
+    retry      = state.get("retry_count", 0) + 1
+    snippet    = (response.content or "")[:300]
+    diagnostic = _classify_invalid_output(response)
+    user_text  = _latest_user_text(state["messages"])
+    outcome    = "abort" if retry >= 3 else "retry"
+    log.warning("LLM: ungültiger Tool-Output (%s) — Regenerierung #%d", diagnostic, retry)
+    get_event_bus().emit("invalid_tool_output", {"diagnostic": diagnostic,
+        "phase": state.get("generation_phase","idle"), "retry": retry,
+        "snippet": snippet, "outcome": outcome, "user_prompt": user_text[:200]})
+    _append_policy_feedback({"timestamp": datetime.now().isoformat(),
+        "action": "invalid_tool_output", "diagnostic": diagnostic,
+        "phase": state.get("generation_phase","idle"), "retry": retry,
+        "snippet": snippet, "outcome": outcome, "user_prompt": user_text[:200]})
+
+    if diagnostic == "xml_fragment":
+        recovered = _recover_xml_fragment_once(system, messages, selected_tools, state)
+        if recovered is not None:
+            log.info("LLM: xml_fragment auto-recovered")
+            get_event_bus().emit("invalid_tool_output_recovered",
+                {"diagnostic": diagnostic, "phase": state.get("generation_phase","idle"), "retry": retry})
+            _append_policy_feedback({"timestamp": datetime.now().isoformat(),
+                "action": "invalid_tool_output_recovered", "diagnostic": diagnostic,
+                "phase": state.get("generation_phase","idle"), "retry": retry})
+            return {"messages": [recovered], "retry_count": state.get("retry_count", 0), **updates}
+
+    if retry >= 3:
+        return {"messages": [AIMessage(content=(
+            "Abbruch: Wiederholt ungültige Tool-Ausgaben vom Modell. "
+            "Bitte Anfrage erneut senden oder Prompt vereinfachen."
+        ))], "retry_count": retry, **updates}
+
+    nudge = HumanMessage(content=(
+        "Dein Tool-Call war ungültig oder abgeschnitten. "
+        "Generiere denselben Schritt erneut als gültigen Tool-Call. "
+        "Kein Freitext, kein XML-Fragment, nur ein ausführbarer Tool-Call "
+        "mit validen JSON-Args."
+    ))
+    return {"messages": [response, nudge], "retry_count": retry, **updates}
+
+
+def _apply_policy(response: AIMessage, state: AgentState) -> tuple[AIMessage, dict]:
+    """Policy-Guard: validiert Tool-Entscheidungen, schreibt Feedback-Log."""
+    proposed   = [dict(tc) for tc in (response.tool_calls or [])]
+    response, policy_meta = enforce_policy_on_response(state, response)
+    final      = [dict(tc) for tc in (response.tool_calls or [])]
+    _append_policy_feedback({"timestamp": datetime.now().isoformat(),
+        "action": policy_meta.get("action","none"),
+        "violations": policy_meta.get("violations",[]),
+        "concrete_track_task": policy_meta.get("concrete_track_task",False),
+        "strict_fx_request": policy_meta.get("strict_fx_request",False),
+        "explicit_fx": policy_meta.get("explicit_fx",[]),
+        "phase": state.get("generation_phase","idle"),
+        "prompt": _latest_user_text(state.get("messages",[])),
+        "nudge_prompt": _latest_human_is_nudge(state.get("messages",[])),
+        "proposed_tool_calls": proposed, "final_tool_calls": final})
+    bus = get_event_bus()
+    if policy_meta.get("action") == "rewrite":
+        log.info("PolicyGuard rewrite: %s", policy_meta.get("violations",[]))
+        bus.emit("policy_violation", {"violations": policy_meta.get("violations",[]),
+            "action":"rewrite","phase":state.get("generation_phase","idle")})
+        bus.emit("policy_rewrite_applied", {"before": proposed, "after": final,
+            "phase": state.get("generation_phase","idle")})
+    elif policy_meta.get("action") == "allow":
+        bus.emit("policy_check", {"action":"allow","phase":state.get("generation_phase","idle")})
+    return response, policy_meta
+
+
+def call_llm(state: AgentState) -> dict:
+    """Orchestriert LLM-Aufruf: Vorbereitung → Invoke → Reasoning → Recovery → Policy."""
+    all_messages = state["messages"]
+
+    if _latest_user_text(all_messages).lower().strip() in ("/hilfe", "/help", "/befehle", "/commands"):
+        return {"messages": [AIMessage(content=_HELP_TEXT)]}
+
+    messages       = _prepare_messages(all_messages, MAX_MESSAGES)
+    selected_tools = _select_tools_for_context(all_messages)
+    mode           = _route_request(_latest_user_text(all_messages))
+    system         = SystemMessage(content=_get_prompt_for_mode(mode))
+    log.info("LLM call — mode=%s %d Nachrichten, %d Tools", mode, len(messages), len(selected_tools))
+
+    response = _invoke_with_retry(system, messages, selected_tools)
+    updates  = _process_reasoning(response, state, len(messages))
     response = _recover_tool_calls(response, state)
 
-    # ── Kaputte Tool-Ausgaben abfangen, Observer informieren, neu generieren ─
-    if _has_invalid_tool_output(response):
-        retry = state.get("retry_count", 0) + 1
-        snippet = (response.content or "")[:300]
-        diagnostic = _classify_invalid_output(response)
-        user_text = _latest_user_text(all_messages)
-        log.warning(
-            "LLM: ungültiger Tool-Output erkannt (%s) — Regenerierung #%d",
-            diagnostic,
-            retry,
-        )
-        outcome = "abort" if retry >= 3 else "retry"
-        event_payload = {
-            "diagnostic": diagnostic,
-            "phase": state.get("generation_phase", "idle"),
-            "retry": retry,
-            "snippet": snippet,
-            "outcome": outcome,
-            "user_prompt": user_text[:200],
-        }
-        get_event_bus().emit("invalid_tool_output", event_payload)
-        _append_policy_feedback({
-            "timestamp": datetime.now().isoformat(),
-            "action": "invalid_tool_output",
-            "diagnostic": diagnostic,
-            "phase": state.get("generation_phase", "idle"),
-            "retry": retry,
-            "snippet": snippet,
-            "outcome": outcome,
-            "user_prompt": user_text[:200],
-        })
+    retry_result = _handle_invalid_output(response, system, messages, selected_tools, state, updates)
+    if retry_result is not None:
+        return retry_result
 
-        # Spezieller Recovery-Pfad: XML-Fragment einmal hart regenerieren.
-        if diagnostic == "xml_fragment":
-            recovered = _recover_xml_fragment_once(system, messages, selected_tools, state)
-            if recovered is not None:
-                log.info("LLM: xml_fragment erfolgreich auto-recovered")
-                get_event_bus().emit("invalid_tool_output_recovered", {
-                    "diagnostic": diagnostic,
-                    "phase": state.get("generation_phase", "idle"),
-                    "retry": retry,
-                })
-                _append_policy_feedback({
-                    "timestamp": datetime.now().isoformat(),
-                    "action": "invalid_tool_output_recovered",
-                    "diagnostic": diagnostic,
-                    "phase": state.get("generation_phase", "idle"),
-                    "retry": retry,
-                })
-                return {
-                    "messages": [recovered],
-                    "retry_count": state.get("retry_count", 0),
-                    **updates,
-                }
+    response, _ = _apply_policy(response, state)
 
-        # Harte Grenze: nicht endlos regenerieren
-        if retry >= 3:
-            msg = AIMessage(
-                content=(
-                    "Abbruch: Wiederholt ungültige Tool-Ausgaben vom Modell. "
-                    "Bitte Anfrage erneut senden oder Prompt vereinfachen."
-                )
-            )
-            return {"messages": [msg], "retry_count": retry, **updates}
-
-        nudge = HumanMessage(
-            content=(
-                "Dein Tool-Call war ungültig oder abgeschnitten. "
-                "Generiere denselben Schritt erneut als gültigen Tool-Call. "
-                "Kein Freitext, kein XML-Fragment, nur ein ausführbarer Tool-Call "
-                "mit validen JSON-Args."
-            )
-        )
-        return {"messages": [response, nudge], "retry_count": retry, **updates}
-
-    proposed_tool_calls = [dict(tc) for tc in (response.tool_calls or [])]
-
-    # ── Policy-Guard: Tool-Entscheidungen deterministisch validieren ─────────
-    response, policy_meta = enforce_policy_on_response(state, response)
-    final_tool_calls = [dict(tc) for tc in (response.tool_calls or [])]
-
-    _append_policy_feedback({
-        "timestamp": datetime.now().isoformat(),
-        "action": policy_meta.get("action", "none"),
-        "violations": policy_meta.get("violations", []),
-        "concrete_track_task": policy_meta.get("concrete_track_task", False),
-        "strict_fx_request": policy_meta.get("strict_fx_request", False),
-        "explicit_fx": policy_meta.get("explicit_fx", []),
-        "phase": state.get("generation_phase", "idle"),
-        "prompt": _latest_user_text(state.get("messages", [])),
-        "nudge_prompt": _latest_human_is_nudge(state.get("messages", [])),
-        "proposed_tool_calls": proposed_tool_calls,
-        "final_tool_calls": final_tool_calls,
-    })
-
-    if policy_meta.get("action") == "rewrite":
-        log.info("PolicyGuard rewrite angewendet: %s", policy_meta.get("violations", []))
-        get_event_bus().emit("policy_violation", {
-            "violations": policy_meta.get("violations", []),
-            "action": "rewrite",
-            "phase": state.get("generation_phase", "idle"),
-        })
-        get_event_bus().emit("policy_rewrite_applied", {
-            "before": proposed_tool_calls,
-            "after": final_tool_calls,
-            "phase": state.get("generation_phase", "idle"),
-        })
-    elif policy_meta.get("action") == "allow":
-        get_event_bus().emit("policy_check", {
-            "action": "allow",
-            "phase": state.get("generation_phase", "idle"),
-        })
-
-    # ── Leere Antwort (think-only) — Nudge zurück zum Agenten ────────────────
     has_tool_calls = bool(getattr(response, "tool_calls", None))
     if not has_tool_calls and not (response.content or "").strip():
         retry = state.get("retry_count", 0) + 1
         log.warning("LLM: leere Antwort (think-only) — Nudge #%d", retry)
-        nudge = HumanMessage(
-            content="Deine Antwort war leer. Bitte ruf jetzt direkt ein passendes Tool auf "
-                    "um die Aufgabe zu erledigen. Kein Text, nur Tool-Call."
-        )
+        nudge = HumanMessage(content="Deine Antwort war leer. Bitte ruf jetzt direkt ein "
+                             "passendes Tool auf. Kein Text, nur Tool-Call.")
         return {"messages": [response, nudge], "retry_count": retry, **updates}
 
-    # Tool-Calls loggen
     if has_tool_calls:
         for tc in response.tool_calls:
-            log.info("Tool-Call: %s(%s)", tc["name"],
-                     str(tc.get("args", {}))[:120])
+            log.info("Tool-Call: %s(%s)", tc["name"], str(tc.get("args", {}))[:120])
     else:
         log.info("Agent-Antwort: %s", response.content[:200])
     return {"messages": [response], **updates}

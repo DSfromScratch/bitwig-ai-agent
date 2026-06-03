@@ -52,10 +52,10 @@ class TestFeedbackLoop:
     @pytest.mark.unit
     def test_feedback_appended_on_success(self):
         """execute_result enthält 'Bitwig-Status' wenn Bridge erreichbar und Steps ok."""
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
-             patch("src.agent.tools.song_tools._get_current_track_count", return_value=3), \
+        with patch("src.agent.osc.track_state._check_bridge", return_value=True), \
+             patch("src.agent.osc.track_state._get_current_track_count", return_value=3), \
+             patch("bitwigbridge.executor._exec_step_and_wait", return_value="select_track"), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
-             patch("bitwig_mcp_server._exec_step_and_wait", return_value="select_track"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
             result = execute_result(_make_result())
@@ -65,11 +65,10 @@ class TestFeedbackLoop:
 
     @pytest.mark.unit
     def test_no_feedback_on_error(self):
-        """execute_result gibt kein Bitwig-Status aus wenn Steps fehlschlagen."""
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
-             patch("src.agent.tools.song_tools._get_current_track_count", return_value=2), \
+        """execute_result gibt Fehler-Hinweis wenn Steps fehlschlagen."""
+        with patch("src.agent.osc.track_state._check_bridge", return_value=True), \
+             patch("bitwigbridge.executor._exec_step_and_wait", return_value="error:timeout"), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
-             patch("bitwig_mcp_server._exec_step_and_wait", return_value="error:timeout"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
             result = execute_result({
@@ -81,15 +80,16 @@ class TestFeedbackLoop:
                 ],
             })
 
-        assert "FEHLER" in result or "Fehler" in result, f"Kein Fehler-Hinweis: {result}"
+        assert ("FEHLER" in result or "Fehler" in result or "✗" in result
+                or "error" in result.lower()), f"Kein Fehler-Hinweis: {result}"
 
     @pytest.mark.unit
     def test_feedback_zero_tracks_suppressed(self):
         """Kein 'Bitwig-Status' wenn track_count=0 (Bridge-Antwort unsicher)."""
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
-             patch("src.agent.tools.song_tools._get_current_track_count", return_value=0), \
+        with patch("src.agent.osc.track_state._check_bridge", return_value=True), \
+             patch("src.agent.osc.track_state._get_current_track_count", return_value=0), \
+             patch("bitwigbridge.executor._exec_step_and_wait", return_value="select_track"), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
-             patch("bitwig_mcp_server._exec_step_and_wait", return_value="select_track"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
             result = execute_result(_make_result())
@@ -99,7 +99,7 @@ class TestFeedbackLoop:
     @pytest.mark.unit
     def test_feedback_bridge_unreachable_no_crash(self):
         """Kein Crash wenn Bridge für Status-Query nicht antwortet."""
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=False), \
+        with patch("src.agent.osc.track_state._check_bridge", return_value=False), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result

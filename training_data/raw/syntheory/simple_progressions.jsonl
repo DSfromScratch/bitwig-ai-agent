@@ -1,0 +1,162 @@
+{"progression": ["C major", "G major", "A minor", "F major"], "key": "C major", "name": "pop_I_V_vi_IV"}
+{"progression": ["G major", "D major", "E minor", "C major"], "key": "G major", "name": "pop_I_V_vi_IV"}
+{"progression": ["D major", "A major", "B minor", "G major"], "key": "D major", "name": "pop_I_V_vi_IV"}
+{"progression": ["A major", "E major", "F# minor", "D major"], "key": "A major", "name": "pop_I_V_vi_IV"}
+{"progression": ["E major", "B major", "C# minor", "A major"], "key": "E major", "name": "pop_I_V_vi_IV"}
+{"progression": ["F major", "C major", "D minor", "Bb major"], "key": "F major", "name": "pop_I_V_vi_IV"}
+{"progression": ["Bb major", "F major", "G minor", "Eb major"], "key": "Bb major", "name": "pop_I_V_vi_IV"}
+{"progression": ["Eb major", "Bb major", "C minor", "Ab major"], "key": "Eb major", "name": "pop_I_V_vi_IV"}
+{"progression": ["Ab major", "Eb major", "F minor", "C# major"], "key": "Ab major", "name": "pop_I_V_vi_IV"}
+{"progression": ["C major", "F major", "G major", "G major"], "key": "C major", "name": "blues_I_IV_V"}
+{"progression": ["G major", "C major", "D major", "D major"], "key": "G major", "name": "blues_I_IV_V"}
+{"progression": ["D major", "G major", "A major", "A major"], "key": "D major", "name": "blues_I_IV_V"}
+{"progression": ["A major", "D major", "E major", "E major"], "key": "A major", "name": "blues_I_IV_V"}
+{"progression": ["E major", "A major", "B major", "B major"], "key": "E major", "name": "blues_I_IV_V"}
+{"progression": ["F major", "Bb major", "C major", "C major"], "key": "F major", "name": "blues_I_IV_V"}
+{"progression": ["Bb major", "Eb major", "F major", "F major"], "key": "Bb major", "name": "blues_I_IV_V"}
+{"progression": ["Eb major", "Ab major", "Bb major", "Bb major"], "key": "Eb major", "name": "blues_I_IV_V"}
+{"progression": ["Ab major", "C# major", "Eb major", "Eb major"], "key": "Ab major", "name": "blues_I_IV_V"}
+{"progression": ["D minor", "G major", "C major", "C major"], "key": "C major", "name": "jazz_ii_V_I"}
+{"progression": ["A minor", "D major", "G major", "G major"], "key": "G major", "name": "jazz_ii_V_I"}
+{"progression": ["E minor", "A major", "D major", "D major"], "key": "D major", "name": "jazz_ii_V_I"}
+{"progression": ["B minor", "E major", "A major", "A major"], "key": "A major", "name": "jazz_ii_V_I"}
+{"progression": ["F# minor", "B major", "E major", "E major"], "key": "E major", "name": "jazz_ii_V_I"}
+{"progression": ["G minor", "C major", "F major", "F major"], "key": "F major", "name": "jazz_ii_V_I"}
+{"progression": ["C minor", "F major", "Bb major", "Bb major"], "key": "Bb major", "name": "jazz_ii_V_I"}
+{"progression": ["F minor", "Bb major", "Eb major", "Eb major"], "key": "Eb major", "name": "jazz_ii_V_I"}
+{"progression": ["Bb minor", "Eb major", "Ab major", "Ab major"], "key": "Ab major", "name": "jazz_ii_V_I"}
+{"progression": ["A minor", "G major", "F major", "E major"], "key": "A minor", "name": "andalusian"}
+{"progression": ["E minor", "D major", "C major", "B major"], "key": "E minor", "name": "andalusian"}
+{"progression": ["B minor", "A major", "G major", "F# major"], "key": "B minor", "name": "andalusian"}
+{"progression": ["D minor", "C major", "Bb major", "A major"], "key": "D minor", "name": "andalusian"}
+{"progression": ["G minor", "F major", "Eb major", "D major"], "key": "G minor", "name": "andalusian"}
+{"progression": ["C minor", "Bb major", "Ab major", "G major"], "key": "C minor", "name": "andalusian"}
+{"progression": ["F# minor", "E major", "D major", "C# major"], "key": "F# minor", "name": "andalusian"}
+{"progression": ["C minor", "Bb major", "Ab major", "G major"], "key": "Cm minor", "name": "andalusian"}
+{"progression": ["C minor", "Bb major", "Ab major", "G major"], "key": "Fm minor", "name": "andalusian"}
+{"progression": ["A major", "G major", "F major", "G major"], "key": "A minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["E major", "D major", "C major", "D major"], "key": "E minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["B major", "A major", "G major", "A major"], "key": "B minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["D major", "C major", "Bb major", "C major"], "key": "D minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["G major", "F major", "Eb major", "F major"], "key": "G minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["C major", "Bb major", "Ab major", "Bb major"], "key": "C minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["F# major", "E major", "D major", "E major"], "key": "F# minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["C major", "Bb major", "Ab major", "Bb major"], "key": "Cm minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["C major", "Bb major", "Ab major", "Bb major"], "key": "Fm minor", "name": "rock_I_VII_VI_VII"}
+{"progression": ["C major", "A minor", "F major", "G major"], "key": "C major", "name": "doo_wop"}
+{"progression": ["G major", "E minor", "C major", "D major"], "key": "G major", "name": "doo_wop"}
+{"progression": ["D major", "B minor", "G major", "A major"], "key": "D major", "name": "doo_wop"}
+{"progression": ["A major", "F# minor", "D major", "E major"], "key": "A major", "name": "doo_wop"}
+{"progression": ["E major", "C# minor", "A major", "B major"], "key": "E major", "name": "doo_wop"}
+{"progression": ["F major", "D minor", "Bb major", "C major"], "key": "F major", "name": "doo_wop"}
+{"progression": ["Bb major", "G minor", "Eb major", "F major"], "key": "Bb major", "name": "doo_wop"}
+{"progression": ["Eb major", "C minor", "Ab major", "Bb major"], "key": "Eb major", "name": "doo_wop"}
+{"progression": ["Ab major", "F minor", "C# major", "Eb major"], "key": "Ab major", "name": "doo_wop"}
+{"progression": ["C major", "F major", "B major", "E major"], "key": "C major", "name": "circle_of_fifths"}
+{"progression": ["G major", "C major", "F# major", "B major"], "key": "G major", "name": "circle_of_fifths"}
+{"progression": ["D major", "G major", "C# major", "F# major"], "key": "D major", "name": "circle_of_fifths"}
+{"progression": ["A major", "D major", "Ab major", "C# major"], "key": "A major", "name": "circle_of_fifths"}
+{"progression": ["E major", "A major", "Eb major", "Ab major"], "key": "E major", "name": "circle_of_fifths"}
+{"progression": ["F major", "Bb major", "E major", "A major"], "key": "F major", "name": "circle_of_fifths"}
+{"progression": ["Bb major", "Eb major", "A major", "D major"], "key": "Bb major", "name": "circle_of_fifths"}
+{"progression": ["Eb major", "Ab major", "D major", "G major"], "key": "Eb major", "name": "circle_of_fifths"}
+{"progression": ["Ab major", "C# major", "G major", "C major"], "key": "Ab major", "name": "circle_of_fifths"}
+{"progression": ["A minor", "F major", "C major", "G major"], "key": "A minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["E minor", "C major", "G major", "D major"], "key": "E minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["B minor", "G major", "D major", "A major"], "key": "B minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["D minor", "Bb major", "F major", "C major"], "key": "D minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["G minor", "Eb major", "Bb major", "F major"], "key": "G minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["C minor", "Ab major", "Eb major", "Bb major"], "key": "C minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["F# minor", "D major", "A major", "E major"], "key": "F# minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["C minor", "Ab major", "Eb major", "Bb major"], "key": "Cm minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["C minor", "Ab major", "Eb major", "Bb major"], "key": "Fm minor", "name": "minor_i_VI_III_VII"}
+{"progression": ["C major", "G major", "A minor", "E minor", "F major", "C major", "F major", "G major"], "key": "C major", "name": "pachelbel"}
+{"progression": ["G major", "D major", "E minor", "B minor", "C major", "G major", "C major", "D major"], "key": "G major", "name": "pachelbel"}
+{"progression": ["D major", "A major", "B minor", "F# minor", "G major", "D major", "G major", "A major"], "key": "D major", "name": "pachelbel"}
+{"progression": ["A major", "E major", "F# minor", "C# minor", "D major", "A major", "D major", "E major"], "key": "A major", "name": "pachelbel"}
+{"progression": ["E major", "B major", "C# minor", "Ab minor", "A major", "E major", "A major", "B major"], "key": "E major", "name": "pachelbel"}
+{"progression": ["F major", "C major", "D minor", "A minor", "Bb major", "F major", "Bb major", "C major"], "key": "F major", "name": "pachelbel"}
+{"progression": ["Bb major", "F major", "G minor", "D minor", "Eb major", "Bb major", "Eb major", "F major"], "key": "Bb major", "name": "pachelbel"}
+{"progression": ["Eb major", "Bb major", "C minor", "G minor", "Ab major", "Eb major", "Ab major", "Bb major"], "key": "Eb major", "name": "pachelbel"}
+{"progression": ["Ab major", "Eb major", "F minor", "C minor", "C# major", "Ab major", "C# major", "Eb major"], "key": "Ab major", "name": "pachelbel"}
+{"progression": ["C major", "C major", "C major", "C major", "F major", "F major", "C major", "C major", "G major", "F major", "C major", "G major"], "key": "C major", "name": "12bar_blues"}
+{"progression": ["G major", "G major", "G major", "G major", "C major", "C major", "G major", "G major", "D major", "C major", "G major", "D major"], "key": "G major", "name": "12bar_blues"}
+{"progression": ["D major", "D major", "D major", "D major", "G major", "G major", "D major", "D major", "A major", "G major", "D major", "A major"], "key": "D major", "name": "12bar_blues"}
+{"progression": ["A major", "A major", "A major", "A major", "D major", "D major", "A major", "A major", "E major", "D major", "A major", "E major"], "key": "A major", "name": "12bar_blues"}
+{"progression": ["E major", "E major", "E major", "E major", "A major", "A major", "E major", "E major", "B major", "A major", "E major", "B major"], "key": "E major", "name": "12bar_blues"}
+{"progression": ["F major", "F major", "F major", "F major", "Bb major", "Bb major", "F major", "F major", "C major", "Bb major", "F major", "C major"], "key": "F major", "name": "12bar_blues"}
+{"progression": ["Bb major", "Bb major", "Bb major", "Bb major", "Eb major", "Eb major", "Bb major", "Bb major", "F major", "Eb major", "Bb major", "F major"], "key": "Bb major", "name": "12bar_blues"}
+{"progression": ["Eb major", "Eb major", "Eb major", "Eb major", "Ab major", "Ab major", "Eb major", "Eb major", "Bb major", "Ab major", "Eb major", "Bb major"], "key": "Eb major", "name": "12bar_blues"}
+{"progression": ["Ab major", "Ab major", "Ab major", "Ab major", "C# major", "C# major", "Ab major", "Ab major", "Eb major", "C# major", "Ab major", "Eb major"], "key": "Ab major", "name": "12bar_blues"}
+{"progression": ["C major", "A minor", "D minor", "G major"], "key": "C major", "name": "jazz_turnaround"}
+{"progression": ["G major", "E minor", "A minor", "D major"], "key": "G major", "name": "jazz_turnaround"}
+{"progression": ["D major", "B minor", "E minor", "A major"], "key": "D major", "name": "jazz_turnaround"}
+{"progression": ["A major", "F# minor", "B minor", "E major"], "key": "A major", "name": "jazz_turnaround"}
+{"progression": ["E major", "C# minor", "F# minor", "B major"], "key": "E major", "name": "jazz_turnaround"}
+{"progression": ["F major", "D minor", "G minor", "C major"], "key": "F major", "name": "jazz_turnaround"}
+{"progression": ["Bb major", "G minor", "C minor", "F major"], "key": "Bb major", "name": "jazz_turnaround"}
+{"progression": ["Eb major", "C minor", "F minor", "Bb major"], "key": "Eb major", "name": "jazz_turnaround"}
+{"progression": ["Ab major", "F minor", "Bb minor", "Eb major"], "key": "Ab major", "name": "jazz_turnaround"}
+{"progression": ["C minor", "Bb major", "Ab major", "G major"], "key": "C phrygian", "name": "flamenco"}
+{"progression": ["G minor", "F major", "Eb major", "D major"], "key": "G phrygian", "name": "flamenco"}
+{"progression": ["D minor", "C major", "Bb major", "A major"], "key": "D phrygian", "name": "flamenco"}
+{"progression": ["A minor", "G major", "F major", "E major"], "key": "A phrygian", "name": "flamenco"}
+{"progression": ["E minor", "D major", "C major", "B major"], "key": "E phrygian", "name": "flamenco"}
+{"progression": ["F minor", "Eb major", "C# major", "C major"], "key": "F phrygian", "name": "flamenco"}
+{"progression": ["Bb minor", "Ab major", "F# major", "F major"], "key": "Bb phrygian", "name": "flamenco"}
+{"progression": ["Eb minor", "C# major", "B major", "Bb major"], "key": "Eb phrygian", "name": "flamenco"}
+{"progression": ["Ab minor", "F# major", "E major", "Eb major"], "key": "Ab phrygian", "name": "flamenco"}
+{"progression": ["C major", "E major", "F major", "C major"], "key": "C major", "name": "reggae"}
+{"progression": ["G major", "B major", "C major", "G major"], "key": "G major", "name": "reggae"}
+{"progression": ["D major", "F# major", "G major", "D major"], "key": "D major", "name": "reggae"}
+{"progression": ["A major", "C# major", "D major", "A major"], "key": "A major", "name": "reggae"}
+{"progression": ["E major", "Ab major", "A major", "E major"], "key": "E major", "name": "reggae"}
+{"progression": ["F major", "A major", "Bb major", "F major"], "key": "F major", "name": "reggae"}
+{"progression": ["Bb major", "D major", "Eb major", "Bb major"], "key": "Bb major", "name": "reggae"}
+{"progression": ["Eb major", "G major", "Ab major", "Eb major"], "key": "Eb major", "name": "reggae"}
+{"progression": ["Ab major", "C major", "C# major", "Ab major"], "key": "Ab major", "name": "reggae"}
+{"progression": ["C major", "F major", "C major", "G major"], "key": "C major", "name": "funk_groove"}
+{"progression": ["G major", "C major", "G major", "D major"], "key": "G major", "name": "funk_groove"}
+{"progression": ["D major", "G major", "D major", "A major"], "key": "D major", "name": "funk_groove"}
+{"progression": ["A major", "D major", "A major", "E major"], "key": "A major", "name": "funk_groove"}
+{"progression": ["E major", "A major", "E major", "B major"], "key": "E major", "name": "funk_groove"}
+{"progression": ["F major", "Bb major", "F major", "C major"], "key": "F major", "name": "funk_groove"}
+{"progression": ["Bb major", "Eb major", "Bb major", "F major"], "key": "Bb major", "name": "funk_groove"}
+{"progression": ["Eb major", "Ab major", "Eb major", "Bb major"], "key": "Eb major", "name": "funk_groove"}
+{"progression": ["Ab major", "C# major", "Ab major", "Eb major"], "key": "Ab major", "name": "funk_groove"}
+{"progression": ["A minor", "F major", "C major", "G major"], "key": "C major", "name": "sad_ballad"}
+{"progression": ["E minor", "C major", "G major", "D major"], "key": "G major", "name": "sad_ballad"}
+{"progression": ["B minor", "G major", "D major", "A major"], "key": "D major", "name": "sad_ballad"}
+{"progression": ["F# minor", "D major", "A major", "E major"], "key": "A major", "name": "sad_ballad"}
+{"progression": ["C# minor", "A major", "E major", "B major"], "key": "E major", "name": "sad_ballad"}
+{"progression": ["D minor", "Bb major", "F major", "C major"], "key": "F major", "name": "sad_ballad"}
+{"progression": ["G minor", "Eb major", "Bb major", "F major"], "key": "Bb major", "name": "sad_ballad"}
+{"progression": ["C minor", "Ab major", "Eb major", "Bb major"], "key": "Eb major", "name": "sad_ballad"}
+{"progression": ["F minor", "C# major", "Ab major", "Eb major"], "key": "Ab major", "name": "sad_ballad"}
+{"progression": ["A minor", "D minor", "E major", "A minor"], "key": "A minor", "name": "dramatic_minor"}
+{"progression": ["E minor", "A minor", "B major", "E minor"], "key": "E minor", "name": "dramatic_minor"}
+{"progression": ["B minor", "E minor", "F# major", "B minor"], "key": "B minor", "name": "dramatic_minor"}
+{"progression": ["D minor", "G minor", "A major", "D minor"], "key": "D minor", "name": "dramatic_minor"}
+{"progression": ["G minor", "C minor", "D major", "G minor"], "key": "G minor", "name": "dramatic_minor"}
+{"progression": ["C minor", "F minor", "G major", "C minor"], "key": "C minor", "name": "dramatic_minor"}
+{"progression": ["F# minor", "B minor", "C# major", "F# minor"], "key": "F# minor", "name": "dramatic_minor"}
+{"progression": ["C minor", "F minor", "G major", "C minor"], "key": "Cm minor", "name": "dramatic_minor"}
+{"progression": ["C minor", "F minor", "G major", "C minor"], "key": "Fm minor", "name": "dramatic_minor"}
+{"progression": ["D major", "G major", "C major", "A major"], "key": "C major", "name": "jazz_bossa"}
+{"progression": ["A major", "D major", "G major", "E major"], "key": "G major", "name": "jazz_bossa"}
+{"progression": ["E major", "A major", "D major", "B major"], "key": "D major", "name": "jazz_bossa"}
+{"progression": ["B major", "E major", "A major", "F# major"], "key": "A major", "name": "jazz_bossa"}
+{"progression": ["F# major", "B major", "E major", "C# major"], "key": "E major", "name": "jazz_bossa"}
+{"progression": ["G major", "C major", "F major", "D major"], "key": "F major", "name": "jazz_bossa"}
+{"progression": ["C major", "F major", "Bb major", "G major"], "key": "Bb major", "name": "jazz_bossa"}
+{"progression": ["F major", "Bb major", "Eb major", "C major"], "key": "Eb major", "name": "jazz_bossa"}
+{"progression": ["Bb major", "Eb major", "Ab major", "F major"], "key": "Ab major", "name": "jazz_bossa"}
+{"progression": ["F major", "C major", "F major", "C major"], "key": "C major", "name": "gospel_amen"}
+{"progression": ["C major", "G major", "C major", "G major"], "key": "G major", "name": "gospel_amen"}
+{"progression": ["G major", "D major", "G major", "D major"], "key": "D major", "name": "gospel_amen"}
+{"progression": ["D major", "A major", "D major", "A major"], "key": "A major", "name": "gospel_amen"}
+{"progression": ["A major", "E major", "A major", "E major"], "key": "E major", "name": "gospel_amen"}
+{"progression": ["Bb major", "F major", "Bb major", "F major"], "key": "F major", "name": "gospel_amen"}
+{"progression": ["Eb major", "Bb major", "Eb major", "Bb major"], "key": "Bb major", "name": "gospel_amen"}
+{"progression": ["Ab major", "Eb major", "Ab major", "Eb major"], "key": "Eb major", "name": "gospel_amen"}
+{"progression": ["C# major", "Ab major", "C# major", "Ab major"], "key": "Ab major", "name": "gospel_amen"}

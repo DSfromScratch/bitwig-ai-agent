@@ -1,0 +1,12 @@
+{"numerator": 2, "denominator": 4, "style": "march", "description": "Marsch/Polka \u2014 2 Schl\u00e4ge pro Takt, energetisch"}
+{"numerator": 3, "denominator": 4, "style": "waltz", "description": "Walzer \u2014 3 Schl\u00e4ge, flie\u00dfend und rund"}
+{"numerator": 4, "denominator": 4, "style": "standard", "description": "Standard \u2014 4 Schl\u00e4ge, universell f\u00fcr Pop/Rock/Electronic"}
+{"numerator": 6, "denominator": 8, "style": "compound_duple", "description": "6/8 \u2014 zusammengesetzt, Swingfeeling, 2 Gruppen \u00e1 3"}
+{"numerator": 9, "denominator": 8, "style": "compound_triple", "description": "9/8 \u2014 seltener, 3 Gruppen \u00e1 3, lyrisch"}
+{"numerator": 12, "denominator": 8, "style": "compound_quadruple", "description": "12/8 \u2014 Blues/Shuffle, 4 Gruppen \u00e1 3, groovend"}
+{"numerator": 5, "denominator": 4, "style": "quintuple", "description": "5/4 \u2014 ungerade, spannungsreich (Take Five)"}
+{"numerator": 7, "denominator": 4, "style": "septuple", "description": "7/4 \u2014 sehr ungerade, experimentell"}
+{"numerator": 7, "denominator": 8, "style": "septuple_eighth", "description": "7/8 \u2014 Balkan/Progressive Rock"}
+{"numerator": 5, "denominator": 8, "style": "quintuple_eighth", "description": "5/8 \u2014 schnell und asymmetrisch"}
+{"numerator": 3, "denominator": 8, "style": "simple_triple_eighth", "description": "3/8 \u2014 schneller Walzer"}
+{"numerator": 2, "denominator": 2, "style": "alla_breve", "description": "Alla Breve \u2014 2 halbe Noten, schnell und majest\u00e4tisch"}

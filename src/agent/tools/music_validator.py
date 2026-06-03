@@ -120,27 +120,50 @@ def _build_validation_prompt(
         note_summary.append(f"  {name}(MIDI{p}): {c}× vel={vels[:3]}")
 
     steps = sorted(set(n.get("step",0) for n in notes))
-    return f"""Du bist ein erfahrener Musik-Theoretiker und Produzent.
-Bewerte dieses MIDI-Pattern für Bitwig Studio:
+
+    # Drum-Pattern Analyse
+    from collections import Counter
+    pitches = Counter(n.get("pitch",0) for n in notes)
+    has_kick  = pitches.get(36, 0) + pitches.get(40, 0) > 0
+    has_snare = pitches.get(38, 0) + pitches.get(39, 0) > 0
+    has_hh    = pitches.get(42, 0) + pitches.get(44, 0) + pitches.get(46, 0) > 0
+    is_drum   = any(k in instrument.lower() for k in ["drum", "vd-", "kick", "snare"])
+
+    context_hint = ""
+    if is_drum:
+        if has_kick and has_snare and has_hh:
+            context_hint = "\nKontext: Pattern hat Kick, Snare UND HiHat — das ist ein vollständiges Drum-Kit."
+        elif not has_kick:
+            context_hint = "\nKontext: KEIN Kick vorhanden — das ist ein wesentliches Problem."
+        elif not has_snare:
+            context_hint = "\nKontext: KEINE Snare vorhanden — das ist ein wesentliches Problem."
+
+    return f"""Du bist ein erfahrener Musik-Produzent. Bewerte dieses {bars}-Takt MIDI-Pattern objektiv.
+
+WICHTIG für die Bewertung:
+- Ein {bars}-Takt {genre}-Pattern mit Kick auf Beat 1/3 und Snare auf Beat 2/4 IST rhythmisch korrekt (score >= 0.65)
+- Kurze Patterns (1-2 Takte) sind normal für Bitwig Clips — kein Abzug dafür
+- Bewerte ob das Pattern FUNKTIONIERT, nicht ob es perfekt oder komplex ist
+- score: 0.8+ = sehr gut, 0.6-0.79 = gut/funktioniert, 0.4-0.59 = verbesserungswürdig, <0.4 = schlecht
+{context_hint}
 
 Instrument: {instrument}
-Genre: {genre} | Key: {key} {scale} | {bars} Takte | {bpm} BPM
-Anzahl Noten: {len(notes)}
+Genre: {genre} | Key: {key} {scale} | {bars} Takte | {bpm} BPM | {len(notes)} Noten
 
-Noten-Zusammenfassung:
+Noten:
 {chr(10).join(note_summary)}
 
-Erste Steps: {steps[:12]}
+Steps (erste 12): {steps[:12]}
 
-Antworte NUR als JSON (kein Text davor/danach):
+Antworte NUR als JSON:
 {{
   "score": <0.0-1.0>,
-  "rhythmic_ok": <true/false>,
+  "rhythmic_ok": <true wenn Kick+Snare-Struktur erkennbar>,
   "harmonic_ok": <true/false>,
   "genre_fit": <true/false>,
-  "issues": ["<Problem 1>", "<Problem 2>"],
-  "suggestions": ["<Verbesserung 1>", "<Verbesserung 2>"],
-  "summary": "<1 Satz Gesamtbewertung>"
+  "issues": ["<nur echte Probleme, max 2>"],
+  "suggestions": ["<konkrete Verbesserungen, max 2>"],
+  "summary": "<1 Satz>"
 }}"""
 
 

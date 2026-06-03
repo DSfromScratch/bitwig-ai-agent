@@ -332,3 +332,28 @@ from src.agent.tools.pattern_generators import _drums; \
 notes = _drums('rock', 2, 'full'); \
 r = validate_music_pattern(notes, 'VD-HEAVY', 'rock', 'A', 'minor'); \
 print('Score:', r.get('score')); print('Summary:', r.get('summary')); print('Issues:', r.get('issues'))"
+
+prepare-training-data: ## Datasets herunterladen und in MLX-Format konvertieren
+	@echo "=== Training-Daten vorbereiten ==="
+	@echo "1. Datasets werden konvertiert..."
+	$(PYTHON) -c "\
+from src.knowledge.dataset_converter import prepare_all_datasets; \
+stats = prepare_all_datasets(); \
+print(f'Gesamt: {stats[\"total\"]} Beispiele — Train: {stats[\"train\"]}, Val: {stats[\"val\"]}')"
+	@echo ""
+	@echo "2. Training-Daten auf Mac kopieren:"
+	@echo "   scp training_data/train.jsonl training_data/valid.jsonl $(MAC_USER)@$(MAC_HOST):~/training_data/"
+	@echo ""
+	@echo "3. MLX Training auf Mac fortsetzen:"
+	@echo "   mlx_lm.lora \\"
+	@echo "     --model mlx-community/Qwen3-8B-4bit \\"
+	@echo "     --adapter-path ~/.ollama/models/mlx-models/bitwig-adapter \\"
+	@echo "     --resume-adapter-file ~/.ollama/models/mlx-models/bitwig-adapter/0001000_adapters.safetensors \\"
+	@echo "     --data ~/training_data \\"
+	@echo "     --iters 500 --batch-size 4 --lora-layers 8"
+
+sync-training-mac: ## Training-Daten auf Mac kopieren
+	scp -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+	    training_data/train.jsonl training_data/valid.jsonl \
+	    "$(MAC_USER)@$(MAC_HOST):~/training_data/"
+	@echo "✓ Trainingsdaten auf Mac"

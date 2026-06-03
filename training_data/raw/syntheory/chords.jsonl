@@ -1,0 +1,144 @@
+{"root_note": "C", "chord_type": "major", "notes": ["C", "E", "G"]}
+{"root_note": "C", "chord_type": "minor", "notes": ["C", "Eb", "G"]}
+{"root_note": "C", "chord_type": "dominant7", "notes": ["C", "E", "G", "Bb"]}
+{"root_note": "C", "chord_type": "major7", "notes": ["C", "E", "G", "B"]}
+{"root_note": "C", "chord_type": "minor7", "notes": ["C", "Eb", "G", "Bb"]}
+{"root_note": "C", "chord_type": "diminished", "notes": ["C", "Eb", "F#"]}
+{"root_note": "C", "chord_type": "diminished7", "notes": ["C", "Eb", "F#", "A"]}
+{"root_note": "C", "chord_type": "augmented", "notes": ["C", "E", "Ab"]}
+{"root_note": "C", "chord_type": "sus2", "notes": ["C", "D", "G"]}
+{"root_note": "C", "chord_type": "sus4", "notes": ["C", "F", "G"]}
+{"root_note": "C", "chord_type": "add9", "notes": ["C", "E", "G", "D"]}
+{"root_note": "C", "chord_type": "minor_major7", "notes": ["C", "Eb", "G", "B"]}
+{"root_note": "C#", "chord_type": "major", "notes": ["C#", "F", "Ab"]}
+{"root_note": "C#", "chord_type": "minor", "notes": ["C#", "E", "Ab"]}
+{"root_note": "C#", "chord_type": "dominant7", "notes": ["C#", "F", "Ab", "B"]}
+{"root_note": "C#", "chord_type": "major7", "notes": ["C#", "F", "Ab", "C"]}
+{"root_note": "C#", "chord_type": "minor7", "notes": ["C#", "E", "Ab", "B"]}
+{"root_note": "C#", "chord_type": "diminished", "notes": ["C#", "E", "G"]}
+{"root_note": "C#", "chord_type": "diminished7", "notes": ["C#", "E", "G", "Bb"]}
+{"root_note": "C#", "chord_type": "augmented", "notes": ["C#", "F", "A"]}
+{"root_note": "C#", "chord_type": "sus2", "notes": ["C#", "Eb", "Ab"]}
+{"root_note": "C#", "chord_type": "sus4", "notes": ["C#", "F#", "Ab"]}
+{"root_note": "C#", "chord_type": "add9", "notes": ["C#", "F", "Ab", "Eb"]}
+{"root_note": "C#", "chord_type": "minor_major7", "notes": ["C#", "E", "Ab", "C"]}
+{"root_note": "D", "chord_type": "major", "notes": ["D", "F#", "A"]}
+{"root_note": "D", "chord_type": "minor", "notes": ["D", "F", "A"]}
+{"root_note": "D", "chord_type": "dominant7", "notes": ["D", "F#", "A", "C"]}
+{"root_note": "D", "chord_type": "major7", "notes": ["D", "F#", "A", "C#"]}
+{"root_note": "D", "chord_type": "minor7", "notes": ["D", "F", "A", "C"]}
+{"root_note": "D", "chord_type": "diminished", "notes": ["D", "F", "Ab"]}
+{"root_note": "D", "chord_type": "diminished7", "notes": ["D", "F", "Ab", "B"]}
+{"root_note": "D", "chord_type": "augmented", "notes": ["D", "F#", "Bb"]}
+{"root_note": "D", "chord_type": "sus2", "notes": ["D", "E", "A"]}
+{"root_note": "D", "chord_type": "sus4", "notes": ["D", "G", "A"]}
+{"root_note": "D", "chord_type": "add9", "notes": ["D", "F#", "A", "E"]}
+{"root_note": "D", "chord_type": "minor_major7", "notes": ["D", "F", "A", "C#"]}
+{"root_note": "Eb", "chord_type": "major", "notes": ["Eb", "G", "Bb"]}
+{"root_note": "Eb", "chord_type": "minor", "notes": ["Eb", "F#", "Bb"]}
+{"root_note": "Eb", "chord_type": "dominant7", "notes": ["Eb", "G", "Bb", "C#"]}
+{"root_note": "Eb", "chord_type": "major7", "notes": ["Eb", "G", "Bb", "D"]}
+{"root_note": "Eb", "chord_type": "minor7", "notes": ["Eb", "F#", "Bb", "C#"]}
+{"root_note": "Eb", "chord_type": "diminished", "notes": ["Eb", "F#", "A"]}
+{"root_note": "Eb", "chord_type": "diminished7", "notes": ["Eb", "F#", "A", "C"]}
+{"root_note": "Eb", "chord_type": "augmented", "notes": ["Eb", "G", "B"]}
+{"root_note": "Eb", "chord_type": "sus2", "notes": ["Eb", "F", "Bb"]}
+{"root_note": "Eb", "chord_type": "sus4", "notes": ["Eb", "Ab", "Bb"]}
+{"root_note": "Eb", "chord_type": "add9", "notes": ["Eb", "G", "Bb", "F"]}
+{"root_note": "Eb", "chord_type": "minor_major7", "notes": ["Eb", "F#", "Bb", "D"]}
+{"root_note": "E", "chord_type": "major", "notes": ["E", "Ab", "B"]}
+{"root_note": "E", "chord_type": "minor", "notes": ["E", "G", "B"]}
+{"root_note": "E", "chord_type": "dominant7", "notes": ["E", "Ab", "B", "D"]}
+{"root_note": "E", "chord_type": "major7", "notes": ["E", "Ab", "B", "Eb"]}
+{"root_note": "E", "chord_type": "minor7", "notes": ["E", "G", "B", "D"]}
+{"root_note": "E", "chord_type": "diminished", "notes": ["E", "G", "Bb"]}
+{"root_note": "E", "chord_type": "diminished7", "notes": ["E", "G", "Bb", "C#"]}
+{"root_note": "E", "chord_type": "augmented", "notes": ["E", "Ab", "C"]}
+{"root_note": "E", "chord_type": "sus2", "notes": ["E", "F#", "B"]}
+{"root_note": "E", "chord_type": "sus4", "notes": ["E", "A", "B"]}
+{"root_note": "E", "chord_type": "add9", "notes": ["E", "Ab", "B", "F#"]}
+{"root_note": "E", "chord_type": "minor_major7", "notes": ["E", "G", "B", "Eb"]}
+{"root_note": "F", "chord_type": "major", "notes": ["F", "A", "C"]}
+{"root_note": "F", "chord_type": "minor", "notes": ["F", "Ab", "C"]}
+{"root_note": "F", "chord_type": "dominant7", "notes": ["F", "A", "C", "Eb"]}
+{"root_note": "F", "chord_type": "major7", "notes": ["F", "A", "C", "E"]}
+{"root_note": "F", "chord_type": "minor7", "notes": ["F", "Ab", "C", "Eb"]}
+{"root_note": "F", "chord_type": "diminished", "notes": ["F", "Ab", "B"]}
+{"root_note": "F", "chord_type": "diminished7", "notes": ["F", "Ab", "B", "D"]}
+{"root_note": "F", "chord_type": "augmented", "notes": ["F", "A", "C#"]}
+{"root_note": "F", "chord_type": "sus2", "notes": ["F", "G", "C"]}
+{"root_note": "F", "chord_type": "sus4", "notes": ["F", "Bb", "C"]}
+{"root_note": "F", "chord_type": "add9", "notes": ["F", "A", "C", "G"]}
+{"root_note": "F", "chord_type": "minor_major7", "notes": ["F", "Ab", "C", "E"]}
+{"root_note": "F#", "chord_type": "major", "notes": ["F#", "Bb", "C#"]}
+{"root_note": "F#", "chord_type": "minor", "notes": ["F#", "A", "C#"]}
+{"root_note": "F#", "chord_type": "dominant7", "notes": ["F#", "Bb", "C#", "E"]}
+{"root_note": "F#", "chord_type": "major7", "notes": ["F#", "Bb", "C#", "F"]}
+{"root_note": "F#", "chord_type": "minor7", "notes": ["F#", "A", "C#", "E"]}
+{"root_note": "F#", "chord_type": "diminished", "notes": ["F#", "A", "C"]}
+{"root_note": "F#", "chord_type": "diminished7", "notes": ["F#", "A", "C", "Eb"]}
+{"root_note": "F#", "chord_type": "augmented", "notes": ["F#", "Bb", "D"]}
+{"root_note": "F#", "chord_type": "sus2", "notes": ["F#", "Ab", "C#"]}
+{"root_note": "F#", "chord_type": "sus4", "notes": ["F#", "B", "C#"]}
+{"root_note": "F#", "chord_type": "add9", "notes": ["F#", "Bb", "C#", "Ab"]}
+{"root_note": "F#", "chord_type": "minor_major7", "notes": ["F#", "A", "C#", "F"]}
+{"root_note": "G", "chord_type": "major", "notes": ["G", "B", "D"]}
+{"root_note": "G", "chord_type": "minor", "notes": ["G", "Bb", "D"]}
+{"root_note": "G", "chord_type": "dominant7", "notes": ["G", "B", "D", "F"]}
+{"root_note": "G", "chord_type": "major7", "notes": ["G", "B", "D", "F#"]}
+{"root_note": "G", "chord_type": "minor7", "notes": ["G", "Bb", "D", "F"]}
+{"root_note": "G", "chord_type": "diminished", "notes": ["G", "Bb", "C#"]}
+{"root_note": "G", "chord_type": "diminished7", "notes": ["G", "Bb", "C#", "E"]}
+{"root_note": "G", "chord_type": "augmented", "notes": ["G", "B", "Eb"]}
+{"root_note": "G", "chord_type": "sus2", "notes": ["G", "A", "D"]}
+{"root_note": "G", "chord_type": "sus4", "notes": ["G", "C", "D"]}
+{"root_note": "G", "chord_type": "add9", "notes": ["G", "B", "D", "A"]}
+{"root_note": "G", "chord_type": "minor_major7", "notes": ["G", "Bb", "D", "F#"]}
+{"root_note": "Ab", "chord_type": "major", "notes": ["Ab", "C", "Eb"]}
+{"root_note": "Ab", "chord_type": "minor", "notes": ["Ab", "B", "Eb"]}
+{"root_note": "Ab", "chord_type": "dominant7", "notes": ["Ab", "C", "Eb", "F#"]}
+{"root_note": "Ab", "chord_type": "major7", "notes": ["Ab", "C", "Eb", "G"]}
+{"root_note": "Ab", "chord_type": "minor7", "notes": ["Ab", "B", "Eb", "F#"]}
+{"root_note": "Ab", "chord_type": "diminished", "notes": ["Ab", "B", "D"]}
+{"root_note": "Ab", "chord_type": "diminished7", "notes": ["Ab", "B", "D", "F"]}
+{"root_note": "Ab", "chord_type": "augmented", "notes": ["Ab", "C", "E"]}
+{"root_note": "Ab", "chord_type": "sus2", "notes": ["Ab", "Bb", "Eb"]}
+{"root_note": "Ab", "chord_type": "sus4", "notes": ["Ab", "C#", "Eb"]}
+{"root_note": "Ab", "chord_type": "add9", "notes": ["Ab", "C", "Eb", "Bb"]}
+{"root_note": "Ab", "chord_type": "minor_major7", "notes": ["Ab", "B", "Eb", "G"]}
+{"root_note": "A", "chord_type": "major", "notes": ["A", "C#", "E"]}
+{"root_note": "A", "chord_type": "minor", "notes": ["A", "C", "E"]}
+{"root_note": "A", "chord_type": "dominant7", "notes": ["A", "C#", "E", "G"]}
+{"root_note": "A", "chord_type": "major7", "notes": ["A", "C#", "E", "Ab"]}
+{"root_note": "A", "chord_type": "minor7", "notes": ["A", "C", "E", "G"]}
+{"root_note": "A", "chord_type": "diminished", "notes": ["A", "C", "Eb"]}
+{"root_note": "A", "chord_type": "diminished7", "notes": ["A", "C", "Eb", "F#"]}
+{"root_note": "A", "chord_type": "augmented", "notes": ["A", "C#", "F"]}
+{"root_note": "A", "chord_type": "sus2", "notes": ["A", "B", "E"]}
+{"root_note": "A", "chord_type": "sus4", "notes": ["A", "D", "E"]}
+{"root_note": "A", "chord_type": "add9", "notes": ["A", "C#", "E", "B"]}
+{"root_note": "A", "chord_type": "minor_major7", "notes": ["A", "C", "E", "Ab"]}
+{"root_note": "Bb", "chord_type": "major", "notes": ["Bb", "D", "F"]}
+{"root_note": "Bb", "chord_type": "minor", "notes": ["Bb", "C#", "F"]}
+{"root_note": "Bb", "chord_type": "dominant7", "notes": ["Bb", "D", "F", "Ab"]}
+{"root_note": "Bb", "chord_type": "major7", "notes": ["Bb", "D", "F", "A"]}
+{"root_note": "Bb", "chord_type": "minor7", "notes": ["Bb", "C#", "F", "Ab"]}
+{"root_note": "Bb", "chord_type": "diminished", "notes": ["Bb", "C#", "E"]}
+{"root_note": "Bb", "chord_type": "diminished7", "notes": ["Bb", "C#", "E", "G"]}
+{"root_note": "Bb", "chord_type": "augmented", "notes": ["Bb", "D", "F#"]}
+{"root_note": "Bb", "chord_type": "sus2", "notes": ["Bb", "C", "F"]}
+{"root_note": "Bb", "chord_type": "sus4", "notes": ["Bb", "Eb", "F"]}
+{"root_note": "Bb", "chord_type": "add9", "notes": ["Bb", "D", "F", "C"]}
+{"root_note": "Bb", "chord_type": "minor_major7", "notes": ["Bb", "C#", "F", "A"]}
+{"root_note": "B", "chord_type": "major", "notes": ["B", "Eb", "F#"]}
+{"root_note": "B", "chord_type": "minor", "notes": ["B", "D", "F#"]}
+{"root_note": "B", "chord_type": "dominant7", "notes": ["B", "Eb", "F#", "A"]}
+{"root_note": "B", "chord_type": "major7", "notes": ["B", "Eb", "F#", "Bb"]}
+{"root_note": "B", "chord_type": "minor7", "notes": ["B", "D", "F#", "A"]}
+{"root_note": "B", "chord_type": "diminished", "notes": ["B", "D", "F"]}
+{"root_note": "B", "chord_type": "diminished7", "notes": ["B", "D", "F", "Ab"]}
+{"root_note": "B", "chord_type": "augmented", "notes": ["B", "Eb", "G"]}
+{"root_note": "B", "chord_type": "sus2", "notes": ["B", "C#", "F#"]}
+{"root_note": "B", "chord_type": "sus4", "notes": ["B", "E", "F#"]}
+{"root_note": "B", "chord_type": "add9", "notes": ["B", "Eb", "F#", "C#"]}
+{"root_note": "B", "chord_type": "minor_major7", "notes": ["B", "D", "F#", "Bb"]}

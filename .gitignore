@@ -80,3 +80,6 @@ scripts/output/
 
 # Embedded submodule (agent-plugin/clap hat eigenes Git-Repo)
 agent-plugin/clap/
+
+# Raw Training-Daten (extern geklonte Repos, nicht committed)
+training_data/raw/drums-with-llm/

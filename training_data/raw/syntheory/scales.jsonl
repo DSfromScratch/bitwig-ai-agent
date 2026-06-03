@@ -1,0 +1,168 @@
+{"root_note": "C", "scale_type": "major", "notes": ["C", "D", "E", "F", "G", "A", "B"]}
+{"root_note": "C", "scale_type": "natural_minor", "notes": ["C", "D", "Eb", "F", "G", "Ab", "Bb"]}
+{"root_note": "C", "scale_type": "harmonic_minor", "notes": ["C", "D", "Eb", "F", "G", "Ab", "B"]}
+{"root_note": "C", "scale_type": "melodic_minor", "notes": ["C", "D", "Eb", "F", "G", "A", "B"]}
+{"root_note": "C", "scale_type": "dorian", "notes": ["C", "D", "Eb", "F", "G", "A", "Bb"]}
+{"root_note": "C", "scale_type": "phrygian", "notes": ["C", "C#", "Eb", "F", "G", "Ab", "Bb"]}
+{"root_note": "C", "scale_type": "lydian", "notes": ["C", "D", "E", "F#", "G", "A", "B"]}
+{"root_note": "C", "scale_type": "mixolydian", "notes": ["C", "D", "E", "F", "G", "A", "Bb"]}
+{"root_note": "C", "scale_type": "locrian", "notes": ["C", "C#", "Eb", "F", "F#", "Ab", "Bb"]}
+{"root_note": "C", "scale_type": "pentatonic_major", "notes": ["C", "D", "E", "G", "A"]}
+{"root_note": "C", "scale_type": "pentatonic_minor", "notes": ["C", "Eb", "F", "G", "Bb"]}
+{"root_note": "C", "scale_type": "blues", "notes": ["C", "Eb", "F", "F#", "G", "Bb"]}
+{"root_note": "C", "scale_type": "whole_tone", "notes": ["C", "D", "E", "F#", "Ab", "Bb"]}
+{"root_note": "C", "scale_type": "diminished", "notes": ["C", "D", "Eb", "F", "F#", "Ab", "A", "B"]}
+{"root_note": "C#", "scale_type": "major", "notes": ["C#", "Eb", "F", "F#", "Ab", "Bb", "C"]}
+{"root_note": "C#", "scale_type": "natural_minor", "notes": ["C#", "Eb", "E", "F#", "Ab", "A", "B"]}
+{"root_note": "C#", "scale_type": "harmonic_minor", "notes": ["C#", "Eb", "E", "F#", "Ab", "A", "C"]}
+{"root_note": "C#", "scale_type": "melodic_minor", "notes": ["C#", "Eb", "E", "F#", "Ab", "Bb", "C"]}
+{"root_note": "C#", "scale_type": "dorian", "notes": ["C#", "Eb", "E", "F#", "Ab", "Bb", "B"]}
+{"root_note": "C#", "scale_type": "phrygian", "notes": ["C#", "D", "E", "F#", "Ab", "A", "B"]}
+{"root_note": "C#", "scale_type": "lydian", "notes": ["C#", "Eb", "F", "G", "Ab", "Bb", "C"]}
+{"root_note": "C#", "scale_type": "mixolydian", "notes": ["C#", "Eb", "F", "F#", "Ab", "Bb", "B"]}
+{"root_note": "C#", "scale_type": "locrian", "notes": ["C#", "D", "E", "F#", "G", "A", "B"]}
+{"root_note": "C#", "scale_type": "pentatonic_major", "notes": ["C#", "Eb", "F", "Ab", "Bb"]}
+{"root_note": "C#", "scale_type": "pentatonic_minor", "notes": ["C#", "E", "F#", "Ab", "B"]}
+{"root_note": "C#", "scale_type": "blues", "notes": ["C#", "E", "F#", "G", "Ab", "B"]}
+{"root_note": "C#", "scale_type": "whole_tone", "notes": ["C#", "Eb", "F", "G", "A", "B"]}
+{"root_note": "C#", "scale_type": "diminished", "notes": ["C#", "Eb", "E", "F#", "G", "A", "Bb", "C"]}
+{"root_note": "D", "scale_type": "major", "notes": ["D", "E", "F#", "G", "A", "B", "C#"]}
+{"root_note": "D", "scale_type": "natural_minor", "notes": ["D", "E", "F", "G", "A", "Bb", "C"]}
+{"root_note": "D", "scale_type": "harmonic_minor", "notes": ["D", "E", "F", "G", "A", "Bb", "C#"]}
+{"root_note": "D", "scale_type": "melodic_minor", "notes": ["D", "E", "F", "G", "A", "B", "C#"]}
+{"root_note": "D", "scale_type": "dorian", "notes": ["D", "E", "F", "G", "A", "B", "C"]}
+{"root_note": "D", "scale_type": "phrygian", "notes": ["D", "Eb", "F", "G", "A", "Bb", "C"]}
+{"root_note": "D", "scale_type": "lydian", "notes": ["D", "E", "F#", "Ab", "A", "B", "C#"]}
+{"root_note": "D", "scale_type": "mixolydian", "notes": ["D", "E", "F#", "G", "A", "B", "C"]}
+{"root_note": "D", "scale_type": "locrian", "notes": ["D", "Eb", "F", "G", "Ab", "Bb", "C"]}
+{"root_note": "D", "scale_type": "pentatonic_major", "notes": ["D", "E", "F#", "A", "B"]}
+{"root_note": "D", "scale_type": "pentatonic_minor", "notes": ["D", "F", "G", "A", "C"]}
+{"root_note": "D", "scale_type": "blues", "notes": ["D", "F", "G", "Ab", "A", "C"]}
+{"root_note": "D", "scale_type": "whole_tone", "notes": ["D", "E", "F#", "Ab", "Bb", "C"]}
+{"root_note": "D", "scale_type": "diminished", "notes": ["D", "E", "F", "G", "Ab", "Bb", "B", "C#"]}
+{"root_note": "Eb", "scale_type": "major", "notes": ["Eb", "F", "G", "Ab", "Bb", "C", "D"]}
+{"root_note": "Eb", "scale_type": "natural_minor", "notes": ["Eb", "F", "F#", "Ab", "Bb", "B", "C#"]}
+{"root_note": "Eb", "scale_type": "harmonic_minor", "notes": ["Eb", "F", "F#", "Ab", "Bb", "B", "D"]}
+{"root_note": "Eb", "scale_type": "melodic_minor", "notes": ["Eb", "F", "F#", "Ab", "Bb", "C", "D"]}
+{"root_note": "Eb", "scale_type": "dorian", "notes": ["Eb", "F", "F#", "Ab", "Bb", "C", "C#"]}
+{"root_note": "Eb", "scale_type": "phrygian", "notes": ["Eb", "E", "F#", "Ab", "Bb", "B", "C#"]}
+{"root_note": "Eb", "scale_type": "lydian", "notes": ["Eb", "F", "G", "A", "Bb", "C", "D"]}
+{"root_note": "Eb", "scale_type": "mixolydian", "notes": ["Eb", "F", "G", "Ab", "Bb", "C", "C#"]}
+{"root_note": "Eb", "scale_type": "locrian", "notes": ["Eb", "E", "F#", "Ab", "A", "B", "C#"]}
+{"root_note": "Eb", "scale_type": "pentatonic_major", "notes": ["Eb", "F", "G", "Bb", "C"]}
+{"root_note": "Eb", "scale_type": "pentatonic_minor", "notes": ["Eb", "F#", "Ab", "Bb", "C#"]}
+{"root_note": "Eb", "scale_type": "blues", "notes": ["Eb", "F#", "Ab", "A", "Bb", "C#"]}
+{"root_note": "Eb", "scale_type": "whole_tone", "notes": ["Eb", "F", "G", "A", "B", "C#"]}
+{"root_note": "Eb", "scale_type": "diminished", "notes": ["Eb", "F", "F#", "Ab", "A", "B", "C", "D"]}
+{"root_note": "E", "scale_type": "major", "notes": ["E", "F#", "Ab", "A", "B", "C#", "Eb"]}
+{"root_note": "E", "scale_type": "natural_minor", "notes": ["E", "F#", "G", "A", "B", "C", "D"]}
+{"root_note": "E", "scale_type": "harmonic_minor", "notes": ["E", "F#", "G", "A", "B", "C", "Eb"]}
+{"root_note": "E", "scale_type": "melodic_minor", "notes": ["E", "F#", "G", "A", "B", "C#", "Eb"]}
+{"root_note": "E", "scale_type": "dorian", "notes": ["E", "F#", "G", "A", "B", "C#", "D"]}
+{"root_note": "E", "scale_type": "phrygian", "notes": ["E", "F", "G", "A", "B", "C", "D"]}
+{"root_note": "E", "scale_type": "lydian", "notes": ["E", "F#", "Ab", "Bb", "B", "C#", "Eb"]}
+{"root_note": "E", "scale_type": "mixolydian", "notes": ["E", "F#", "Ab", "A", "B", "C#", "D"]}
+{"root_note": "E", "scale_type": "locrian", "notes": ["E", "F", "G", "A", "Bb", "C", "D"]}
+{"root_note": "E", "scale_type": "pentatonic_major", "notes": ["E", "F#", "Ab", "B", "C#"]}
+{"root_note": "E", "scale_type": "pentatonic_minor", "notes": ["E", "G", "A", "B", "D"]}
+{"root_note": "E", "scale_type": "blues", "notes": ["E", "G", "A", "Bb", "B", "D"]}
+{"root_note": "E", "scale_type": "whole_tone", "notes": ["E", "F#", "Ab", "Bb", "C", "D"]}
+{"root_note": "E", "scale_type": "diminished", "notes": ["E", "F#", "G", "A", "Bb", "C", "C#", "Eb"]}
+{"root_note": "F", "scale_type": "major", "notes": ["F", "G", "A", "Bb", "C", "D", "E"]}
+{"root_note": "F", "scale_type": "natural_minor", "notes": ["F", "G", "Ab", "Bb", "C", "C#", "Eb"]}
+{"root_note": "F", "scale_type": "harmonic_minor", "notes": ["F", "G", "Ab", "Bb", "C", "C#", "E"]}
+{"root_note": "F", "scale_type": "melodic_minor", "notes": ["F", "G", "Ab", "Bb", "C", "D", "E"]}
+{"root_note": "F", "scale_type": "dorian", "notes": ["F", "G", "Ab", "Bb", "C", "D", "Eb"]}
+{"root_note": "F", "scale_type": "phrygian", "notes": ["F", "F#", "Ab", "Bb", "C", "C#", "Eb"]}
+{"root_note": "F", "scale_type": "lydian", "notes": ["F", "G", "A", "B", "C", "D", "E"]}
+{"root_note": "F", "scale_type": "mixolydian", "notes": ["F", "G", "A", "Bb", "C", "D", "Eb"]}
+{"root_note": "F", "scale_type": "locrian", "notes": ["F", "F#", "Ab", "Bb", "B", "C#", "Eb"]}
+{"root_note": "F", "scale_type": "pentatonic_major", "notes": ["F", "G", "A", "C", "D"]}
+{"root_note": "F", "scale_type": "pentatonic_minor", "notes": ["F", "Ab", "Bb", "C", "Eb"]}
+{"root_note": "F", "scale_type": "blues", "notes": ["F", "Ab", "Bb", "B", "C", "Eb"]}
+{"root_note": "F", "scale_type": "whole_tone", "notes": ["F", "G", "A", "B", "C#", "Eb"]}
+{"root_note": "F", "scale_type": "diminished", "notes": ["F", "G", "Ab", "Bb", "B", "C#", "D", "E"]}
+{"root_note": "F#", "scale_type": "major", "notes": ["F#", "Ab", "Bb", "B", "C#", "Eb", "F"]}
+{"root_note": "F#", "scale_type": "natural_minor", "notes": ["F#", "Ab", "A", "B", "C#", "D", "E"]}
+{"root_note": "F#", "scale_type": "harmonic_minor", "notes": ["F#", "Ab", "A", "B", "C#", "D", "F"]}
+{"root_note": "F#", "scale_type": "melodic_minor", "notes": ["F#", "Ab", "A", "B", "C#", "Eb", "F"]}
+{"root_note": "F#", "scale_type": "dorian", "notes": ["F#", "Ab", "A", "B", "C#", "Eb", "E"]}
+{"root_note": "F#", "scale_type": "phrygian", "notes": ["F#", "G", "A", "B", "C#", "D", "E"]}
+{"root_note": "F#", "scale_type": "lydian", "notes": ["F#", "Ab", "Bb", "C", "C#", "Eb", "F"]}
+{"root_note": "F#", "scale_type": "mixolydian", "notes": ["F#", "Ab", "Bb", "B", "C#", "Eb", "E"]}
+{"root_note": "F#", "scale_type": "locrian", "notes": ["F#", "G", "A", "B", "C", "D", "E"]}
+{"root_note": "F#", "scale_type": "pentatonic_major", "notes": ["F#", "Ab", "Bb", "C#", "Eb"]}
+{"root_note": "F#", "scale_type": "pentatonic_minor", "notes": ["F#", "A", "B", "C#", "E"]}
+{"root_note": "F#", "scale_type": "blues", "notes": ["F#", "A", "B", "C", "C#", "E"]}
+{"root_note": "F#", "scale_type": "whole_tone", "notes": ["F#", "Ab", "Bb", "C", "D", "E"]}
+{"root_note": "F#", "scale_type": "diminished", "notes": ["F#", "Ab", "A", "B", "C", "D", "Eb", "F"]}
+{"root_note": "G", "scale_type": "major", "notes": ["G", "A", "B", "C", "D", "E", "F#"]}
+{"root_note": "G", "scale_type": "natural_minor", "notes": ["G", "A", "Bb", "C", "D", "Eb", "F"]}
+{"root_note": "G", "scale_type": "harmonic_minor", "notes": ["G", "A", "Bb", "C", "D", "Eb", "F#"]}
+{"root_note": "G", "scale_type": "melodic_minor", "notes": ["G", "A", "Bb", "C", "D", "E", "F#"]}
+{"root_note": "G", "scale_type": "dorian", "notes": ["G", "A", "Bb", "C", "D", "E", "F"]}
+{"root_note": "G", "scale_type": "phrygian", "notes": ["G", "Ab", "Bb", "C", "D", "Eb", "F"]}
+{"root_note": "G", "scale_type": "lydian", "notes": ["G", "A", "B", "C#", "D", "E", "F#"]}
+{"root_note": "G", "scale_type": "mixolydian", "notes": ["G", "A", "B", "C", "D", "E", "F"]}
+{"root_note": "G", "scale_type": "locrian", "notes": ["G", "Ab", "Bb", "C", "C#", "Eb", "F"]}
+{"root_note": "G", "scale_type": "pentatonic_major", "notes": ["G", "A", "B", "D", "E"]}
+{"root_note": "G", "scale_type": "pentatonic_minor", "notes": ["G", "Bb", "C", "D", "F"]}
+{"root_note": "G", "scale_type": "blues", "notes": ["G", "Bb", "C", "C#", "D", "F"]}
+{"root_note": "G", "scale_type": "whole_tone", "notes": ["G", "A", "B", "C#", "Eb", "F"]}
+{"root_note": "G", "scale_type": "diminished", "notes": ["G", "A", "Bb", "C", "C#", "Eb", "E", "F#"]}
+{"root_note": "Ab", "scale_type": "major", "notes": ["Ab", "Bb", "C", "C#", "Eb", "F", "G"]}
+{"root_note": "Ab", "scale_type": "natural_minor", "notes": ["Ab", "Bb", "B", "C#", "Eb", "E", "F#"]}
+{"root_note": "Ab", "scale_type": "harmonic_minor", "notes": ["Ab", "Bb", "B", "C#", "Eb", "E", "G"]}
+{"root_note": "Ab", "scale_type": "melodic_minor", "notes": ["Ab", "Bb", "B", "C#", "Eb", "F", "G"]}
+{"root_note": "Ab", "scale_type": "dorian", "notes": ["Ab", "Bb", "B", "C#", "Eb", "F", "F#"]}
+{"root_note": "Ab", "scale_type": "phrygian", "notes": ["Ab", "A", "B", "C#", "Eb", "E", "F#"]}
+{"root_note": "Ab", "scale_type": "lydian", "notes": ["Ab", "Bb", "C", "D", "Eb", "F", "G"]}
+{"root_note": "Ab", "scale_type": "mixolydian", "notes": ["Ab", "Bb", "C", "C#", "Eb", "F", "F#"]}
+{"root_note": "Ab", "scale_type": "locrian", "notes": ["Ab", "A", "B", "C#", "D", "E", "F#"]}
+{"root_note": "Ab", "scale_type": "pentatonic_major", "notes": ["Ab", "Bb", "C", "Eb", "F"]}
+{"root_note": "Ab", "scale_type": "pentatonic_minor", "notes": ["Ab", "B", "C#", "Eb", "F#"]}
+{"root_note": "Ab", "scale_type": "blues", "notes": ["Ab", "B", "C#", "D", "Eb", "F#"]}
+{"root_note": "Ab", "scale_type": "whole_tone", "notes": ["Ab", "Bb", "C", "D", "E", "F#"]}
+{"root_note": "Ab", "scale_type": "diminished", "notes": ["Ab", "Bb", "B", "C#", "D", "E", "F", "G"]}
+{"root_note": "A", "scale_type": "major", "notes": ["A", "B", "C#", "D", "E", "F#", "Ab"]}
+{"root_note": "A", "scale_type": "natural_minor", "notes": ["A", "B", "C", "D", "E", "F", "G"]}
+{"root_note": "A", "scale_type": "harmonic_minor", "notes": ["A", "B", "C", "D", "E", "F", "Ab"]}
+{"root_note": "A", "scale_type": "melodic_minor", "notes": ["A", "B", "C", "D", "E", "F#", "Ab"]}
+{"root_note": "A", "scale_type": "dorian", "notes": ["A", "B", "C", "D", "E", "F#", "G"]}
+{"root_note": "A", "scale_type": "phrygian", "notes": ["A", "Bb", "C", "D", "E", "F", "G"]}
+{"root_note": "A", "scale_type": "lydian", "notes": ["A", "B", "C#", "Eb", "E", "F#", "Ab"]}
+{"root_note": "A", "scale_type": "mixolydian", "notes": ["A", "B", "C#", "D", "E", "F#", "G"]}
+{"root_note": "A", "scale_type": "locrian", "notes": ["A", "Bb", "C", "D", "Eb", "F", "G"]}
+{"root_note": "A", "scale_type": "pentatonic_major", "notes": ["A", "B", "C#", "E", "F#"]}
+{"root_note": "A", "scale_type": "pentatonic_minor", "notes": ["A", "C", "D", "E", "G"]}
+{"root_note": "A", "scale_type": "blues", "notes": ["A", "C", "D", "Eb", "E", "G"]}
+{"root_note": "A", "scale_type": "whole_tone", "notes": ["A", "B", "C#", "Eb", "F", "G"]}
+{"root_note": "A", "scale_type": "diminished", "notes": ["A", "B", "C", "D", "Eb", "F", "F#", "Ab"]}
+{"root_note": "Bb", "scale_type": "major", "notes": ["Bb", "C", "D", "Eb", "F", "G", "A"]}
+{"root_note": "Bb", "scale_type": "natural_minor", "notes": ["Bb", "C", "C#", "Eb", "F", "F#", "Ab"]}
+{"root_note": "Bb", "scale_type": "harmonic_minor", "notes": ["Bb", "C", "C#", "Eb", "F", "F#", "A"]}
+{"root_note": "Bb", "scale_type": "melodic_minor", "notes": ["Bb", "C", "C#", "Eb", "F", "G", "A"]}
+{"root_note": "Bb", "scale_type": "dorian", "notes": ["Bb", "C", "C#", "Eb", "F", "G", "Ab"]}
+{"root_note": "Bb", "scale_type": "phrygian", "notes": ["Bb", "B", "C#", "Eb", "F", "F#", "Ab"]}
+{"root_note": "Bb", "scale_type": "lydian", "notes": ["Bb", "C", "D", "E", "F", "G", "A"]}
+{"root_note": "Bb", "scale_type": "mixolydian", "notes": ["Bb", "C", "D", "Eb", "F", "G", "Ab"]}
+{"root_note": "Bb", "scale_type": "locrian", "notes": ["Bb", "B", "C#", "Eb", "E", "F#", "Ab"]}
+{"root_note": "Bb", "scale_type": "pentatonic_major", "notes": ["Bb", "C", "D", "F", "G"]}
+{"root_note": "Bb", "scale_type": "pentatonic_minor", "notes": ["Bb", "C#", "Eb", "F", "Ab"]}
+{"root_note": "Bb", "scale_type": "blues", "notes": ["Bb", "C#", "Eb", "E", "F", "Ab"]}
+{"root_note": "Bb", "scale_type": "whole_tone", "notes": ["Bb", "C", "D", "E", "F#", "Ab"]}
+{"root_note": "Bb", "scale_type": "diminished", "notes": ["Bb", "C", "C#", "Eb", "E", "F#", "G", "A"]}
+{"root_note": "B", "scale_type": "major", "notes": ["B", "C#", "Eb", "E", "F#", "Ab", "Bb"]}
+{"root_note": "B", "scale_type": "natural_minor", "notes": ["B", "C#", "D", "E", "F#", "G", "A"]}
+{"root_note": "B", "scale_type": "harmonic_minor", "notes": ["B", "C#", "D", "E", "F#", "G", "Bb"]}
+{"root_note": "B", "scale_type": "melodic_minor", "notes": ["B", "C#", "D", "E", "F#", "Ab", "Bb"]}
+{"root_note": "B", "scale_type": "dorian", "notes": ["B", "C#", "D", "E", "F#", "Ab", "A"]}
+{"root_note": "B", "scale_type": "phrygian", "notes": ["B", "C", "D", "E", "F#", "G", "A"]}
+{"root_note": "B", "scale_type": "lydian", "notes": ["B", "C#", "Eb", "F", "F#", "Ab", "Bb"]}
+{"root_note": "B", "scale_type": "mixolydian", "notes": ["B", "C#", "Eb", "E", "F#", "Ab", "A"]}
+{"root_note": "B", "scale_type": "locrian", "notes": ["B", "C", "D", "E", "F", "G", "A"]}
+{"root_note": "B", "scale_type": "pentatonic_major", "notes": ["B", "C#", "Eb", "F#", "Ab"]}
+{"root_note": "B", "scale_type": "pentatonic_minor", "notes": ["B", "D", "E", "F#", "A"]}
+{"root_note": "B", "scale_type": "blues", "notes": ["B", "D", "E", "F", "F#", "A"]}
+{"root_note": "B", "scale_type": "whole_tone", "notes": ["B", "C#", "Eb", "F", "G", "A"]}
+{"root_note": "B", "scale_type": "diminished", "notes": ["B", "C#", "D", "E", "F", "G", "Ab", "Bb"]}
