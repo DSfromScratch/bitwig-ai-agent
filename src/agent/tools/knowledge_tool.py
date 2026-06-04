@@ -433,7 +433,19 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                 """, emb=emb).data()
                 raw_grid += gw
 
-            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid
+            # GridAnalysis (Claude Vision Analysen von Grid-Patches)
+            ga_count = s.run("MATCH (n:GridAnalysis) RETURN count(n) AS c").single()["c"]
+            raw_ga: list[dict] = []
+            if ga_count > 0:
+                raw_ga = s.run("""
+                    CALL db.index.vector.queryNodes('gridanalysis_embedding', 2, $emb)
+                    YIELD node AS n, score
+                    RETURN n.content AS content, n.source AS source,
+                           'GridAnalysis' AS role, null AS doc_type, null AS video_url,
+                           'grid' AS kind, score
+                """, emb=emb).data()
+
+            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid + raw_ga
 
             # Score-Threshold: YouTube strenger als strukturierte Docs
             docs = [

@@ -36,6 +36,13 @@ print('Download abgeschlossen.')"
 scan-vsts: ## Installierte VST-Plugins aus Bitwig scannen und in Neo4j speichern
 	$(PYTHON) -c "from src.knowledge.vst_scanner import scan_and_store; print(scan_and_store())"
 
+screenshot-server: ## Screenshot-Server auf dem Mac starten (dort im Terminal ausführen!)
+	@echo ">>> Auf dem Mac in einem Terminal ausführen:"
+	@echo "    python3 agent-plugin/screenshot_server.py"
+
+analyze-grid: ## Grid-Screenshot mit Claude Vision analysieren → Neo4j (--track N --device NAME)
+	$(PYTHON) scripts/analyze_grid_screenshot.py --project "$(PROJECT)" $(ARGS)
+
 ingest-audio: ## WAV-Samples eines Projekts analysieren + in Neo4j speichern (embed-server nötig)
 	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" $(ARGS)
 
