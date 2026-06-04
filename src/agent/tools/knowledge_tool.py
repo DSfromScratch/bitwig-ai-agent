@@ -369,49 +369,76 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
     if neo4j_result:
         results.append("## Bitwig-Graph (Devices, Parameter, Presets)\n\n" + neo4j_result)
 
-    # ── Neo4j Vektor-Suche (Documents + KnowledgeQA) ──────────────────────
+    # ── Neo4j Vektor-Suche via HNSW-Index (Fix: kein Brute-Force-Scan) ───────
+    _SCORE_MIN_DOC = 0.70   # Mindest-Score für Docs / Q&A
+    _SCORE_MIN_YT  = 0.75   # Strenger für YouTube-Transkripte (mehr Rauschen)
+
     try:
         from src.knowledge.neo4j_graph import session as neo4j_session
         from src.knowledge.store import get_embeddings
         emb = get_embeddings().embed_query(query)
         with neo4j_session() as s:
-            # Bitwig-Dokumentation
-            docs = s.run("""
-                MATCH (d:Document) WHERE d.embedding IS NOT NULL
-                WITH d, vector.similarity.cosine(d.embedding, $emb) AS score
-                ORDER BY score DESC LIMIT $k
+            # Documents: HNSW-Index statt Brute-Force-Scan
+            raw_docs = s.run("""
+                CALL db.index.vector.queryNodes('document_embedding', $k, $emb)
+                YIELD node AS d, score
                 RETURN d.content AS content, d.source AS source,
+                       d.doc_type AS doc_type, d.video_url AS video_url,
                        'doc' AS kind, score
-            """, k=3, emb=emb).data()
+            """, k=8, emb=emb).data()
 
-            # Bitwig-spezifische Q&A zuerst
-            bw_qa = s.run("""
-                MATCH (k:KnowledgeQA)
-                WHERE k.source = 'Bitwig_Generated' AND k.embedding IS NOT NULL
-                WITH k, vector.similarity.cosine(k.embedding, $emb) AS score
-                ORDER BY score DESC LIMIT 2
-                RETURN k.text AS content, k.source AS source,
-                       'qa' AS kind, score
-            """, emb=emb).data()
-
-            # Allgemeines Musik-Wissen als Ergänzung
-            qa = s.run("""
-                MATCH (k:KnowledgeQA)
-                WHERE k.source <> 'Bitwig_Generated' AND k.embedding IS NOT NULL
-                WITH k, vector.similarity.cosine(k.embedding, $emb) AS score
-                ORDER BY score DESC LIMIT 2
-                RETURN k.text AS content, k.source AS source,
-                       'qa' AS kind, score
-            """, emb=emb).data()
-            qa = bw_qa + qa
-
-        all_results = sorted(docs + qa, key=lambda x: -x["score"])[:n_results]
-        if all_results:
-            vec_parts = [
-                f"**[{i+1}] {d['source']}** (score: {d['score']:.2f})\n"
-                f"{d['content'][:400].strip()}"
-                for i, d in enumerate(all_results)
+            # Score-Threshold: YouTube strenger als strukturierte Docs
+            docs = [
+                d for d in raw_docs
+                if d["score"] >= (_SCORE_MIN_YT if d.get("doc_type") == "youtube_transcript"
+                                  else _SCORE_MIN_DOC)
             ]
+
+            # NEXT_CHUNK Context-Fetch: zum besten YouTube-Treffer Nachbar-Chunk laden
+            yt_hit = next((d for d in docs if d.get("doc_type") == "youtube_transcript"), None)
+            if yt_hit:
+                neighbor = s.run("""
+                    MATCH (hit:Document {source: $src})-[:NEXT_CHUNK]->(nxt:Document)
+                    RETURN nxt.content AS content, nxt.source AS source,
+                           nxt.doc_type AS doc_type, nxt.video_url AS video_url,
+                           0.0 AS score
+                    LIMIT 1
+                """, src=yt_hit["source"]).single()
+                if neighbor and neighbor["source"] not in {d["source"] for d in docs}:
+                    docs.append({**dict(neighbor), "kind": "doc", "score": 0.0, "_context": True})
+
+            # KnowledgeQA: HNSW-Index, nur wenn Nodes vorhanden
+            qa_count = s.run("MATCH (k:KnowledgeQA) RETURN count(k) AS c").single()["c"]
+            raw_qa = []
+            if qa_count > 0:
+                raw_qa = s.run("""
+                    CALL db.index.vector.queryNodes('knowledgeqa_embedding', 6, $emb)
+                    YIELD node AS k, score
+                    RETURN coalesce(k.text, k.content, '') AS content, k.source AS source,
+                           'qa' AS kind, score
+                """, emb=emb).data()
+
+            bw_qa = [r for r in raw_qa
+                     if r["source"] == "Bitwig_Generated" and r["score"] >= _SCORE_MIN_DOC]
+            qa    = [r for r in raw_qa
+                     if r["source"] != "Bitwig_Generated" and r["score"] >= _SCORE_MIN_DOC]
+            # Bitwig-Q&A priorisieren, allgemeines Musik-Wissen als Ergänzung
+            qa_merged = (sorted(bw_qa, key=lambda x: -x["score"])[:2] +
+                         sorted(qa,    key=lambda x: -x["score"])[:2])
+
+        # Context-Chunks ans Ende — nach Score sortieren, Context-Chunk bleibt hinten
+        context_chunks = [d for d in docs if d.get("_context")]
+        scored_chunks   = [d for d in docs if not d.get("_context")]
+        all_results = (sorted(scored_chunks + qa_merged, key=lambda x: -x["score"])[:n_results]
+                       + context_chunks)
+        if all_results:
+            vec_parts = []
+            for i, d in enumerate(all_results):
+                label = "Kontext" if d.get("_context") else str(i + 1)
+                header = f"**[{label}] {d['source']}** (score: {d['score']:.2f})"
+                if d.get("video_url"):
+                    header += f" — [Video]({d['video_url']})"
+                vec_parts.append(f"{header}\n{d['content'][:400].strip()}")
             results.append(
                 "## Wissen (Neo4j Vektorsuche)\n\n" +
                 "\n\n---\n\n".join(vec_parts)

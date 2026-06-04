@@ -282,6 +282,25 @@ def embed_and_store(chunks: list[dict], batch_size: int, dry_run: bool) -> None:
               f"{rate:.1f}/s  ETA {eta:.0f}s")
 
     print(f"\n[done] {written} YouTube-Chunks in Neo4j gespeichert ({time.time()-t0:.0f}s)")
+
+    # NEXT_CHUNK-Kanten zwischen aufeinanderfolgenden Chunks desselben Videos
+    print("[links] Verknüpfe aufeinanderfolgende Chunks mit NEXT_CHUNK …")
+    linked = 0
+    titles = {c["meta"]["title"] for c in chunks}
+    with neo4j_session() as s:
+        for title in titles:
+            video_chunks = sorted(
+                [c for c in chunks if c["meta"]["title"] == title],
+                key=lambda x: x["meta"]["chunk_index"],
+            )
+            for prev, nxt in zip(video_chunks, video_chunks[1:]):
+                s.run("""
+                    MATCH (a:Document {source: $src_a})
+                    MATCH (b:Document {source: $src_b})
+                    MERGE (a)-[:NEXT_CHUNK]->(b)
+                """, src_a=prev["source"], src_b=nxt["source"])
+                linked += 1
+    print(f"[links] {linked} NEXT_CHUNK-Kanten gesetzt")
     print("Automatisch durchsuchbar via query_bitwig_docs (Vektorsuche über alle Document-Nodes)")
 
 
