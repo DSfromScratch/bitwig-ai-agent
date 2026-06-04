@@ -41,6 +41,10 @@ kernels
 # Bitwig / OSC
 python-osc>=1.8
 
+# YouTube Transcript Ingest
+yt-dlp>=2024.1
+webvtt-py>=0.5
+
 # DAWproject (Standard-Library reicht: zipfile, xml)
 
 # Visualisierung

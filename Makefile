@@ -36,6 +36,12 @@ print('Download abgeschlossen.')"
 scan-vsts: ## Installierte VST-Plugins aus Bitwig scannen und in Neo4j speichern
 	$(PYTHON) -c "from src.knowledge.vst_scanner import scan_and_store; print(scan_and_store())"
 
+yt-ingest: ## Bitwig YouTube-Transkripte holen und in Neo4j speichern (Embedding-Server muss laufen: make embed-server)
+	$(PYTHON) scripts/ingest_youtube_transcripts.py --channel "@bitwig" $(ARGS)
+
+yt-ingest-dry: ## Dry-Run: zeigt was yt-ingest tun würde (keine Änderungen, kein Embedding-Server nötig)
+	$(PYTHON) scripts/ingest_youtube_transcripts.py --channel "@bitwig" --limit 10 --dry-run
+
 neo4j-import: ## Neo4j Graph aus Bitwig-Installation neu aufbauen
 	$(PYTHON) -c "\
 from src.knowledge.neo4j_graph import create_schema, build_graph; \
