@@ -1,4 +1,5 @@
 from src.agent.tools.knowledge_tool import query_bitwig_docs
+from src.agent.tools.project_learning_tool import scan_and_learn_project
 from src.agent.tools.bitwig_tools import control_bitwig
 from src.agent.tools.song_tools import (
     check_bitwig_connection,
@@ -49,6 +50,7 @@ def scan_vst_plugins() -> str:
 
 ALL_TOOLS = [
     query_bitwig_docs,
+    scan_and_learn_project,
     control_bitwig,
     check_bitwig_connection,
     get_bitwig_track_state,

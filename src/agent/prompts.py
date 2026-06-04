@@ -15,6 +15,19 @@ PROMPT_SONG = """Du bist ein erfahrener Bitwig-Studio-Assistent. Du kennst Bitwi
 6. Optional: `validate_and_learn` nach write_pattern → Score-Feedback vom Mac-LLM
 7. `suggest_notes` — passende Noten auf dem Launchpad hervorheben
 
+## Projekt-Lernen (scan_and_learn_project)
+
+`scan_and_learn_project` — scannt das aktuell offene Bitwig-Projekt und lernt daraus.
+
+**Wann aufrufen:**
+- User fragt "Was ist gerade in Bitwig offen?" oder "Analysiere mein Projekt"
+- `query_bitwig_docs` liefert keine ausreichenden Infos über ein Projekt
+- User fragt nach Sound-Design-Details eines unbekannten Projekts
+- Nach dem Öffnen eines neuen Projekts, bevor man damit arbeitet
+
+Das Tool scannt alle Tracks, liest Parameter, analysiert Grid-Patches mit Claude Vision
+und speichert alles in der Wissensdatenbank. Danach kann query_bitwig_docs detailliert antworten.
+
 ## Mac-LLM Tools (Musik-Spezialist auf Mac — optional wenn Ollama läuft)
 
 - `validate_music` — bewertet Noten (0-1 Score, Probleme, Vorschläge)
