@@ -24,9 +24,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-MAC_HOST       = os.getenv("BITWIG_HOST", "192.168.0.4")
-SCREENSHOT_PORT = int(os.getenv("SCREENSHOT_PORT", "9010"))
-ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
+from dotenv import load_dotenv
+load_dotenv(ROOT / ".env")
+
+MAC_HOST        = os.getenv("BITWIG_HOST",         "192.168.0.4")
+SCREENSHOT_PORT = int(os.getenv("MAC_SCREENSHOT_PORT", "9010"))
+VNC_USER        = os.getenv("MAC_VNC_USER",        "sija")
+VNC_PASSWORD    = os.getenv("MAC_VNC_PASSWORD",    "")
+ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY",  "")
 
 
 # ── Screenshot holen ──────────────────────────────────────────────────────────
@@ -43,47 +48,59 @@ def fetch_screenshot_http(host: str = MAC_HOST, port: int = SCREENSHOT_PORT,
         return None
 
 
-def fetch_screenshot_vnc(host: str = MAC_HOST, password: str = "",
-                         timeout: float = 10.0) -> bytes | None:
-    """Holt Screenshot via VNC (benötigt Screen Sharing auf dem Mac, Port 5900)."""
+def fetch_screenshot_vnc(host: str = MAC_HOST,
+                         username: str = VNC_USER,
+                         password: str = VNC_PASSWORD,
+                         timeout: float = 15.0) -> bytes | None:
+    """Holt Screenshot via VNC (macOS Screen Sharing, Port 5900).
+    Credentials aus .env: MAC_VNC_USER / MAC_VNC_PASSWORD
+    """
     try:
         from vncdotool import api
-        import tempfile
-        import os
+        import tempfile, os as _os
 
-        print(f"[vnc] Verbinde mit {host}:5900 …")
+        print(f"[vnc] Verbinde mit {host}:5900 (user={username}) …")
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             tmp = f.name
         try:
-            with api.connect(host, password=password or None, timeout=timeout) as client:
+            with api.connect(
+                host,
+                username=username or None,
+                password=password or None,
+                timeout=timeout,
+            ) as client:
                 client.captureScreen(tmp)
+            if not Path(tmp).exists() or Path(tmp).stat().st_size < 1000:
+                print("[vnc] Screenshot leer oder zu klein")
+                return None
             data = Path(tmp).read_bytes()
             print(f"[vnc] Screenshot: {len(data)//1024} KB")
             return data
         finally:
-            try: os.unlink(tmp)
+            try: _os.unlink(tmp)
             except Exception: pass
     except ImportError:
         print("[vnc] vncdotool nicht installiert: uv pip install vncdotool")
         return None
     except Exception as e:
         print(f"[vnc] Fehler: {e}")
-        print("      Mac: System Settings → General → Sharing → Screen Sharing aktivieren")
         return None
 
 
 def fetch_screenshot(host: str = MAC_HOST, port: int = SCREENSHOT_PORT,
                      vnc_password: str = "", timeout: float = 8.0) -> bytes | None:
     """Versucht HTTP-Server zuerst, dann VNC als Fallback."""
-    # 1. HTTP-Screenshot-Server
+    # 1. HTTP-Screenshot-Server (screenshot_server.py läuft auf Mac)
     if check_server(host, port):
         data = fetch_screenshot_http(host, port, timeout)
         if data:
             return data
 
-    # 2. VNC-Fallback
-    print("[fallback] Versuche VNC …")
-    data = fetch_screenshot_vnc(host, password=vnc_password, timeout=timeout)
+    # 2. VNC (Screen Sharing) — Credentials aus .env
+    pwd  = vnc_password or VNC_PASSWORD
+    user = VNC_USER
+    print(f"[fallback] Versuche VNC (user={user}) …")
+    data = fetch_screenshot_vnc(host, username=user, password=pwd, timeout=15.0)
     if data:
         return data
 
@@ -237,8 +254,10 @@ def main() -> None:
     parser.add_argument("--project", default="Chee - Hey Now")
     parser.add_argument("--file",    default="",           help="Lokale Screenshot-Datei statt Live-Fetch")
     parser.add_argument("--dry-run", action="store_true",  help="Nur analysieren, nicht speichern")
-    parser.add_argument("--host",    default=MAC_HOST)
-    parser.add_argument("--port",    type=int, default=SCREENSHOT_PORT)
+    parser.add_argument("--host",         default=MAC_HOST)
+    parser.add_argument("--port",         type=int, default=SCREENSHOT_PORT)
+    parser.add_argument("--vnc-password", default="", dest="vnc_password",
+                        help="VNC-Passwort (leer = kein Passwort)")
     args = parser.parse_args()
 
     # Screenshot holen
@@ -246,14 +265,11 @@ def main() -> None:
         image_bytes = Path(args.file).read_bytes()
         print(f"[load] Screenshot aus Datei: {args.file} ({len(image_bytes)//1024} KB)")
     else:
-        if not check_server(args.host, args.port):
-            print(f"❌  Screenshot-Server nicht erreichbar auf {args.host}:{args.port}")
-            print(f"\n>>> Starte auf dem Mac in einem Terminal:")
-            print(f"    python3 agent-plugin/screenshot_server.py")
-            sys.exit(1)
-
-        print(f"[fetch] Screenshot von {args.host}:{args.port} …")
-        image_bytes = fetch_screenshot(args.host, args.port)
+        image_bytes = fetch_screenshot(
+            host=args.host, port=args.port,
+            vnc_password=getattr(args, "vnc_password", ""),
+            timeout=10.0,
+        )
         if not image_bytes:
             sys.exit(1)
         print(f"[fetch] {len(image_bytes)//1024} KB empfangen")
