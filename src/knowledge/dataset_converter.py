@@ -730,6 +730,137 @@ def convert_multi_instrument_examples(count_per_combo: int = 8) -> Iterator[dict
     log.info("Multi-Instrument: %d Arrangement-Beispiele generiert", count)
 
 
+# ── Konverter: Fehler-Erkennung ───────────────────────────────────────────────
+
+def convert_note_error_examples() -> Iterator[dict]:
+    """Generiert Training-Beispiele mit absichtlich falschen Noten.
+
+    Fehlertypen:
+      1. Harmonisch falsch  — Noten außerhalb Tonart/Skala
+      2. Bereich überschritten — Gitarre Fret>22, Bass<MIDI28, Piano<21
+      3. Physisch unmöglich — HH offen+zu gleichzeitig, negative Dauer
+      4. Falscher Bereich   — Drums mit Piano-MIDI, Bass zu hoch
+      5. Velocity ungültig  — >1.0 oder =0.0
+
+    Lehrinhalt: Modell lernt score < 0.55 UND konkretes Issue zu nennen.
+    """
+    try:
+        from src.agent.tools.music_validator import _build_validation_prompt
+    except ImportError as e:
+        log.warning("music_validator nicht importierbar: %s", e)
+        return
+
+    def _n(step, pitch, vel=0.75, dur=0.25):
+        return {"step": step, "pitch": pitch, "vel": round(vel, 2), "dur": dur}
+
+    # (notes, instrument, genre, key, scale, score, issues, rhythmic_ok, harmonic_ok)
+    error_cases = [
+        # ── Harmonisch falsch ──────────────────────────────────────────────────
+        ([_n(0,46,.85,.5),_n(.5,48,.72,.5),_n(1,46,.80,.5),_n(1.5,48,.68,.5),
+          _n(2,46,.82,.5),_n(2.5,50,.70,.5),_n(3,46,.78,.5)],
+         "VB-ROYAL","rock","A","minor", 0.22,
+         ["Bb2 (MIDI46) als Tonika statt A2 (MIDI45) in A minor — falsche Root-Note"],
+         True, False),
+
+        ([_n(0,60,.80,.5),_n(.5,64,.75,.5),_n(1,66,.78,.5),_n(1.5,67,.72,.5),_n(2,60,.80,.5)],
+         "VG-IRON2","rock","C","major", 0.30,
+         ["F#4 (MIDI66) ist nicht in C major — Tritonus erzeugt starke Dissonanz"],
+         True, False),
+
+        ([_n(0,61,.70,1),_n(0,65,.70,1),_n(0,68,.70,1),_n(2,60,.75,1),_n(2,64,.75,1),_n(2,67,.75,1)],
+         "Piano","jazz","C","major", 0.28,
+         ["Db-F-Ab (MIDI61,65,68) — Töne nicht in C major, starke harmonische Spannung"],
+         True, False),
+
+        # ── Außerhalb Instrument-Bereich ────────────────────────────────────────
+        ([_n(0,66,.80),_n(.5,69,.75),_n(1,94,.82),_n(1.5,71,.70),_n(2,69,.75)],
+         "Guitar","rock","A","minor", 0.18,
+         ["MIDI94 (Bb6) unmöglich auf Gitarre — Standard-Gitarre max Fret 22 = MIDI86"],
+         True, True),
+
+        ([_n(0,24,.85,.5),_n(.5,33,.75,.5),_n(1,33,.80,.5),_n(1.5,35,.72,.5)],
+         "VB-ROYAL","rock","C","minor", 0.20,
+         ["MIDI24 (C1) unter tiefster Bass-Saite E1 (MIDI28) — nicht spielbar"],
+         True, True),
+
+        ([_n(0,15,.70,.5),_n(.5,60,.75,.5),_n(1,64,.72,.5),_n(1.5,67,.68,.5)],
+         "Piano","contemporary","C","major", 0.18,
+         ["MIDI15 unter A0 (MIDI21) — außerhalb des 88-Tasten-Bereichs"],
+         True, False),
+
+        ([_n(0,60,.75),_n(.5,64,.72),_n(1,115,.80),_n(1.5,67,.70)],
+         "Phase-4","pop","C","major", 0.25,
+         ["MIDI115 (D8) weit über normalem Spielbereich — max C7=96 für Melodie"],
+         True, True),
+
+        # ── Physisch unmöglich ──────────────────────────────────────────────────
+        ([_n(0,36,.85),_n(0,42,.75),_n(0,46,.70),_n(1,38,.80),_n(2,36,.82),_n(2,42,.70),_n(3,38,.78)],
+         "VD-HEAVY","rock","A","minor", 0.28,
+         ["HH-closed (MIDI42) und HH-open (MIDI46) gleichzeitig auf Step 0 — physisch unmöglich"],
+         False, True),
+
+        ([_n(0,45,.80,.5),_n(.5,48,.75,-.25),_n(1,45,.78,.5),_n(1.5,50,.72,.5)],
+         "VB-ROYAL","rock","A","minor", 0.08,
+         ["Negative Dauer dur=-0.25 auf Step 0.5 (MIDI48) — ungültige Note"],
+         False, True),
+
+        ([_n(0,60,.80,2.0),_n(.5,64,.75,2.0),_n(1,67,.70,1.0)],
+         "Mono-Synth","pop","C","major", 0.22,
+         ["Überlappende Noten auf monophonem Instrument — C4 (dur=2) überlagert E4 (start=0.5)"],
+         False, True),
+
+        # ── Falscher Bereich ────────────────────────────────────────────────────
+        ([_n(0,60,.85),_n(1,64,.80),_n(.5,72,.65),_n(2,60,.82),_n(3,64,.78)],
+         "VD-HEAVY","rock","C","minor", 0.12,
+         ["Drum-Instrument nutzt Piano-Pitches (60,64,72) — Drums brauchen MIDI 36-59"],
+         False, True),
+
+        ([_n(0,81,.80,.5),_n(.5,83,.75,.5),_n(1,84,.78,.5),_n(1.5,83,.72,.5)],
+         "VB-ROYAL","rock","A","minor", 0.18,
+         ["Bass-Instrument in Sopran-Lage (A5=81, B5=83) — Bass soll unter MIDI48 bleiben"],
+         True, True),
+
+        # ── Velocity ungültig ───────────────────────────────────────────────────
+        ([_n(0,36,2.5),_n(.5,42,.65),_n(1,38,.80),_n(1.5,42,.60)],
+         "VD-HEAVY","rock","A","minor", 0.18,
+         ["Velocity 2.5 auf MIDI36 — muss zwischen 0.0 und 1.0 liegen"],
+         True, True),
+
+        ([_n(0,45,.80,.5),_n(.5,48,0.0,.5),_n(1,45,.75,.5),_n(1.5,50,.70,.5)],
+         "VB-ROYAL","rock","A","minor", 0.32,
+         ["Stumme Note: vel=0.0 auf MIDI48 (Step 0.5) — Note ist unhörbar"],
+         True, True),
+    ]
+
+    count = 0
+    for (notes, instrument, genre, key, scale,
+         score, issues, rhythmic_ok, harmonic_ok) in error_cases:
+        try:
+            prompt = _build_validation_prompt(notes, instrument, genre, key, scale, 2, 120)
+            # Fehler explizit in den Prompt einbauen (Modell soll sie finden)
+            prompt = (
+                f"ACHTUNG: Dieses Pattern enthält möglicherweise einen Fehler.\n"
+                f"Prüfe auf: harmonisch falsche Töne, Bereich-Überschreitung, "
+                f"physisch unmögliche Kombinationen, ungültige Werte.\n\n"
+                + prompt
+            )
+            completion = json.dumps({
+                "score":       round(score + random.uniform(-0.03, 0.03), 2),
+                "rhythmic_ok": rhythmic_ok,
+                "harmonic_ok": harmonic_ok,
+                "genre_fit":   harmonic_ok,
+                "issues":      issues,
+                "suggestions": ["Fehlerhafte Note entfernen oder korrigieren"],
+                "summary":     f"Pattern enthält Fehler: {issues[0][:60]}",
+            }, ensure_ascii=False)
+            yield {"prompt": prompt, "completion": completion}
+            count += 1
+        except Exception as exc:
+            log.debug("Note-Error Beispiel fehlgeschlagen: %s", exc)
+
+    log.info("Note-Errors: %d Fehler-Erkennungs-Beispiele generiert", count)
+
+
 # ── Haupt-Funktion ────────────────────────────────────────────────────────────
 
 def prepare_all_datasets(
@@ -751,6 +882,7 @@ def prepare_all_datasets(
         ("Gold-Standard",     generate_gold_standard_examples, None),  # Positive-Ausgleich
         ("Black-Page",        convert_black_page_examples,        None),   # Avant-garde Edge-Cases
         ("Multi-Instrument",  convert_multi_instrument_examples,  None),   # Arrangement-Aufgaben
+        ("Note-Errors",       convert_note_error_examples,        None),   # Fehler-Erkennung
         ("Neo4j",             convert_neo4j_patterns,        None),
     ]
 
