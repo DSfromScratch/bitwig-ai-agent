@@ -31,18 +31,69 @@ ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── Screenshot holen ──────────────────────────────────────────────────────────
 
-def fetch_screenshot(host: str = MAC_HOST, port: int = SCREENSHOT_PORT,
-                     timeout: float = 8.0) -> bytes | None:
-    """Holt Screenshot vom Mac-Screenshot-Server."""
+def fetch_screenshot_http(host: str = MAC_HOST, port: int = SCREENSHOT_PORT,
+                          timeout: float = 8.0) -> bytes | None:
+    """Holt Screenshot vom Mac HTTP-Screenshot-Server (Port 9010)."""
     url = f"http://{host}:{port}/screenshot"
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             return r.read()
     except Exception as e:
-        print(f"❌  Screenshot-Server nicht erreichbar ({url}): {e}")
-        print("\nStarte auf dem Mac:")
-        print(f"  python3 agent-plugin/screenshot_server.py")
+        print(f"[http] Screenshot-Server nicht erreichbar ({url}): {e}")
         return None
+
+
+def fetch_screenshot_vnc(host: str = MAC_HOST, password: str = "",
+                         timeout: float = 10.0) -> bytes | None:
+    """Holt Screenshot via VNC (benötigt Screen Sharing auf dem Mac, Port 5900)."""
+    try:
+        from vncdotool import api
+        import tempfile
+        import os
+
+        print(f"[vnc] Verbinde mit {host}:5900 …")
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            tmp = f.name
+        try:
+            with api.connect(host, password=password or None, timeout=timeout) as client:
+                client.captureScreen(tmp)
+            data = Path(tmp).read_bytes()
+            print(f"[vnc] Screenshot: {len(data)//1024} KB")
+            return data
+        finally:
+            try: os.unlink(tmp)
+            except Exception: pass
+    except ImportError:
+        print("[vnc] vncdotool nicht installiert: uv pip install vncdotool")
+        return None
+    except Exception as e:
+        print(f"[vnc] Fehler: {e}")
+        print("      Mac: System Settings → General → Sharing → Screen Sharing aktivieren")
+        return None
+
+
+def fetch_screenshot(host: str = MAC_HOST, port: int = SCREENSHOT_PORT,
+                     vnc_password: str = "", timeout: float = 8.0) -> bytes | None:
+    """Versucht HTTP-Server zuerst, dann VNC als Fallback."""
+    # 1. HTTP-Screenshot-Server
+    if check_server(host, port):
+        data = fetch_screenshot_http(host, port, timeout)
+        if data:
+            return data
+
+    # 2. VNC-Fallback
+    print("[fallback] Versuche VNC …")
+    data = fetch_screenshot_vnc(host, password=vnc_password, timeout=timeout)
+    if data:
+        return data
+
+    print("\n❌  Kein Screenshot-Weg verfügbar. Optionen:")
+    print("   A) Mac Terminal: python3 agent-plugin/screenshot_server.py")
+    print("   B) Mac: System Settings → General → Sharing → Screen Sharing aktivieren")
+    print("   C) Manuell: Screenshot auf Mac (Cmd+Shift+3), dann:")
+    print("      scp sija@192.168.0.4:~/Desktop/Screenshot*.png /tmp/screen.png")
+    print("      python scripts/analyze_grid_screenshot.py --file /tmp/screen.png")
+    return None
 
 
 def check_server(host: str = MAC_HOST, port: int = SCREENSHOT_PORT) -> bool:
