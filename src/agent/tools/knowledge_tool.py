@@ -387,6 +387,20 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                        'doc' AS kind, score
             """, k=8, emb=emb).data()
 
+            # SoundRecipes (live aus Bitwig-Projekten): eigener Index
+            sr_count = s.run("MATCH (n:SoundRecipe) RETURN count(n) AS c").single()["c"]
+            raw_recipes: list[dict] = []
+            if sr_count > 0:
+                raw_recipes = s.run("""
+                    CALL db.index.vector.queryNodes('sound_recipe_embedding', 4, $emb)
+                    YIELD node AS n, score
+                    RETURN n.content AS content, n.source AS source,
+                           n.project AS project, n.role AS role,
+                           null AS doc_type, null AS video_url,
+                           'recipe' AS kind, score
+                """, emb=emb).data()
+            raw_docs = raw_docs + raw_recipes
+
             # Score-Threshold: YouTube strenger als strukturierte Docs
             docs = [
                 d for d in raw_docs

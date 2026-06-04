@@ -27,6 +27,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     private static final int CLIP_STEPS      = 512;
     private static final int REMOTE_PARAMS   = 8;
     private static final int BROWSER_SCAN    = 128;
+    private static final int MAX_DEVICES_PER_TRACK = 8;
 
     // ── Bitwig API ────────────────────────────────────────────────────────────
 
@@ -71,6 +72,10 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     private final Map<String, Integer> noteCountMap = new HashMap<>();
     private final Map<String, Integer> paramCatalog = new HashMap<>();
 
+    // ── Device Banks (pro Track, für Project-Scan) ────────────────────────────
+
+    private DeviceBank[] trackDeviceBanks;
+
     // ── Built-in Device UUIDs — delegiert an BuiltinDeviceUuids ────────────────
 
     private static final Map<String, String> BUILTIN_UUIDS = new HashMap<>(BuiltinDeviceUuids.MAP);
@@ -101,11 +106,19 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         locationBank   = popupBrowser.locationColumn().createItemBank(LOC_BANK_SIZE);
         deviceTypeBank = popupBrowser.deviceTypeColumn().createItemBank(LOC_BANK_SIZE);
 
-        // Mark interested
+        // Mark interested — Track-Namen + Device-Banks für Project-Scan
+        trackDeviceBanks = new DeviceBank[TRACK_BANK_SIZE];
         for (int i = 0; i < TRACK_BANK_SIZE; i++) {
             Channel t = (Channel) trackBank.getItemAt(i);
             t.name().markInterested();
             t.exists().markInterested();
+            Track tr = (Track) trackBank.getItemAt(i);
+            DeviceBank db = tr.createDeviceBank(MAX_DEVICES_PER_TRACK);
+            trackDeviceBanks[i] = db;
+            for (int j = 0; j < MAX_DEVICES_PER_TRACK; j++) {
+                db.getDevice(j).name().markInterested();
+                db.getDevice(j).exists().markInterested();
+            }
         }
         cursorTrack.name().markInterested();
         cursorDevice.name().markInterested();
@@ -319,6 +332,72 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 sb.append("}");
                 sendReply("/devices/export/response", sb.toString());
                 host.println("[BitwigStep] /devices/export → " + BUILTIN_UUIDS.size() + " Einträge");
+            });
+
+        // ── Project-Scan: alle Tracks + ihre Device-Ketten ───────────────
+        space.registerMethod("/agent/project/scan", "*", "Scan all tracks and devices",
+            (src, msg) -> {
+                StringBuilder sb = new StringBuilder("{\"tracks\":[");
+                int trackCount = 0;
+                double tempo = transport.tempo().get();
+                for (int i = 0; i < TRACK_BANK_SIZE; i++) {
+                    Channel t = (Channel) trackBank.getItemAt(i);
+                    if (!t.exists().get()) continue;
+                    if (trackCount > 0) sb.append(",");
+                    sb.append("{\"idx\":").append(i + 1);
+                    sb.append(",\"name\":\"").append(jsonEsc(t.name().get())).append("\"");
+                    sb.append(",\"devices\":[");
+                    DeviceBank db = trackDeviceBanks[i];
+                    int devCount = 0;
+                    for (int j = 0; j < MAX_DEVICES_PER_TRACK; j++) {
+                        Device d = db.getDevice(j);
+                        if (!d.exists().get()) break;
+                        String dn = d.name().get();
+                        if (dn == null || dn.isBlank()) break;
+                        if (devCount > 0) sb.append(",");
+                        sb.append("\"").append(jsonEsc(dn)).append("\"");
+                        devCount++;
+                    }
+                    sb.append("]}");
+                    trackCount++;
+                }
+                sb.append("],\"tempo\":").append(String.format("%.1f", tempo));
+                sb.append(",\"total\":").append(trackCount).append("}");
+                sendReply("/agent/project/scan/response", sb.toString());
+                host.println("[BitwigStep] /agent/project/scan → " + trackCount + " Tracks");
+            });
+
+        // ── Track-Parameter: Remote Controls des ausgewählten Geräts ─────
+        space.registerMethod("/agent/track/params", "*", "Remote control params for track",
+            (src, msg) -> {
+                int trackIdx = 1;
+                try {
+                    String raw = JsonStepParser.argStr(msg, 0);
+                    if (raw != null) trackIdx = (int) Double.parseDouble(raw);
+                } catch (Exception e) {}
+                final int ti = Math.max(1, Math.min(TRACK_BANK_SIZE, trackIdx));
+                Track tr = (Track) trackBank.getItemAt(ti - 1);
+                if (!tr.exists().get()) {
+                    sendReply("/agent/track/params/response", ti, "{}");
+                    return;
+                }
+                tr.selectInMixer();
+                final int finalTi = ti;
+                host.scheduleTask(() -> {
+                    StringBuilder sb = new StringBuilder("{");
+                    sb.append("\"track\":").append(finalTi);
+                    sb.append(",\"device\":\"").append(jsonEsc(cursorDevice.name().get())).append("\"");
+                    sb.append(",\"params\":[");
+                    for (int i = 0; i < REMOTE_PARAMS; i++) {
+                        if (i > 0) sb.append(",");
+                        String pn = remoteControls.getParameter(i).name().get();
+                        double pv = remoteControls.getParameter(i).value().get();
+                        sb.append("{\"name\":\"").append(jsonEsc(pn != null ? pn : "")).append("\"");
+                        sb.append(",\"value\":").append(String.format("%.4f", pv)).append("}");
+                    }
+                    sb.append("]}");
+                    sendReply("/agent/track/params/response", finalTi, sb.toString());
+                }, 450);
             });
 
         // ── HAUPTENDPUNKT: /step/exec ─────────────────────────────────────
@@ -701,6 +780,12 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     // ── Hilfe ────────────────────────────────────────────────────────────────
+
+    private static String jsonEsc(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "");
+    }
 
     private Channel channel(int trackIndex) {
         return (Channel) trackBank.getItemAt(Math.max(0, Math.min(TRACK_BANK_SIZE - 1, trackIndex - 1)));
