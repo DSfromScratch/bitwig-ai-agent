@@ -115,46 +115,82 @@ def _classify_track_role(track_name: str, devices: list[str]) -> str:
 
 
 def _build_recipe(project_name: str, track: dict, params: dict) -> dict:
-    """Erstellt ein vollständiges Sound-Rezept aus Track- und Param-Daten."""
+    """Erstellt ein vollständiges Sound-Rezept aus Track- und Param-Daten.
+
+    params kann entweder aus query_track_params (flach, "params":[]) oder
+    query_track_params_all (mehrseitig, "pages":[{"name":..., "params":[]}]) kommen.
+    """
     track_name = track.get("name", "Unbekannt")
     devices    = track.get("devices", [])
     idx        = track.get("idx", 0)
     role       = _classify_track_role(track_name, devices)
     device_str = _describe_device_chain(devices)
+    primary_device = params.get("device") or (devices[0] if devices else "")
+
+    # Mehrseitiger Modus (query_track_params_all)
+    pages = params.get("pages", [])
+    all_params: list[dict] = []
+    if pages:
+        for page in pages:
+            for p in page.get("params", []):
+                p["_page"] = page.get("name", "")
+                all_params.append(p)
+    else:
+        all_params = params.get("params", [])
 
     # Parameterbeschreibung
     param_parts: list[str] = []
-    for p in params.get("params", []):
-        pname = p.get("name", "")
-        pval  = p.get("value", 0.0)
-        if pname and pname.lower() not in ("", "—", "-", "unnamed"):
-            param_parts.append(f"{pname}: {_interpret_param(pname, pval)}")
-
-    # Lernbarer Inhalt für RAG
+    current_page = ""
     content_lines = [
         f"**Sound-Rezept: {track_name}** [{role}] — {project_name}",
         f"Device-Kette: {device_str}",
     ]
-    if param_parts:
-        content_lines.append("Remote-Control-Parameter:")
-        content_lines.extend(f"  • {p}" for p in param_parts)
 
-    primary_device = params.get("device") or (devices[0] if devices else "")
-    recipe_id = f"{project_name.lower().replace(' ', '_').replace('-', '_')}__track{idx}__{track_name.lower().replace(' ', '_')}"
+    if pages:
+        content_lines.append(f"Patch-Struktur ({len(pages)} Seiten):")
+        for page in pages:
+            pname = page.get("name", "")
+            page_params = [
+                p for p in page.get("params", [])
+                if p.get("name") and p["name"].lower() not in ("", "—", "-", "unnamed")
+            ]
+            if not page_params:
+                continue
+            content_lines.append(f"  [{pname}]")
+            for p in page_params:
+                desc = f"    • {p['name']}: {_interpret_param(p['name'], p['value'])}"
+                content_lines.append(desc)
+                param_parts.append(f"{pname}/{p['name']}: {p['value']:.3f}")
+    else:
+        for p in all_params:
+            pname = p.get("name", "")
+            pval  = p.get("value", 0.0)
+            if pname and pname.lower() not in ("", "—", "-", "unnamed"):
+                param_parts.append(f"{pname}: {_interpret_param(pname, pval)}")
+        if param_parts:
+            content_lines.append("Remote-Control-Parameter:")
+            content_lines.extend(f"  • {p}" for p in param_parts)
+
+    recipe_id = (
+        f"{project_name.lower().replace(' ', '_').replace('-', '_')}"
+        f"__track{idx}__{track_name.lower().replace(' ', '_').replace('/', '_')}"
+    )
 
     return {
-        "id":           recipe_id,
-        "track_name":   track_name,
-        "track_index":  idx,
-        "role":         role,
-        "project":      project_name,
-        "devices":      devices,
+        "id":            recipe_id,
+        "track_name":    track_name,
+        "track_index":   idx,
+        "role":          role,
+        "project":       project_name,
+        "devices":       devices,
         "primary_device": primary_device,
-        "device_chain": device_str,
-        "params":       params.get("params", []),
-        "param_summary": " | ".join(param_parts[:5]),
-        "content":      "\n".join(content_lines),
-        "source":       f"SoundRecipe:{recipe_id}",
+        "device_chain":  device_str,
+        "params":        all_params,
+        "pages":         pages,
+        "page_count":    len(pages),
+        "param_summary": " | ".join(param_parts[:8]),
+        "content":       "\n".join(content_lines),
+        "source":        f"SoundRecipe:{recipe_id}",
     }
 
 
@@ -260,7 +296,8 @@ def main() -> None:
                         help="Zeigt Beispiel-Output ohne Bitwig-Verbindung")
     parser.add_argument("--reset",     action="store_true", help="Bestehende SoundRecipes löschen")
     parser.add_argument("--no-params", action="store_true", help="Keine Param-Abfrage pro Track")
-    parser.add_argument("--timeout",   type=float, default=4.0, help="OSC-Timeout pro Anfrage")
+    parser.add_argument("--timeout",   type=float, default=8.0,
+                        help="OSC-Timeout für Projekt-Scan (Standard: 8s)")
     args = parser.parse_args()
 
     project_name = args.project or "Unbekanntes Projekt"
@@ -303,7 +340,7 @@ def main() -> None:
 
     # Projekt scannen
     print("\n[scan] Lese Projekt-Struktur …")
-    from src.agent.osc.project_scan import scan_project, query_track_params
+    from src.agent.osc.project_scan import scan_project, query_track_params_all
     project_data = scan_project(timeout=args.timeout)
 
     tracks = project_data.get("tracks", [])
@@ -327,12 +364,18 @@ def main() -> None:
         devs = track.get("devices", [])
         print(f"  Track {idx:>2}: {name:<30} Devices: {', '.join(devs) or '–'}", end="")
 
-        params: dict = {"track": idx, "device": devs[0] if devs else "", "params": []}
+        params: dict = {"track": idx, "device": devs[0] if devs else "", "params": [], "pages": []}
         if not args.no_params and devs:
-            params = query_track_params(idx, timeout=args.timeout)
-            param_count = len([p for p in params.get("params", [])
-                               if p.get("name") and p["name"] not in ("", "—", "-")])
-            print(f" → {param_count} Params")
+            params = query_track_params_all(idx, timeout=args.timeout)
+            pages = params.get("pages", [])
+            param_count = sum(
+                len([p for p in pg.get("params", [])
+                     if p.get("name") and p["name"] not in ("", "—", "-")])
+                for pg in pages
+            ) if pages else len([p for p in params.get("params", [])
+                                  if p.get("name") and p["name"] not in ("", "—", "-")])
+            page_count = len(pages)
+            print(f" → {page_count} Seiten, {param_count} Params")
         else:
             print()
 
@@ -353,7 +396,7 @@ def main() -> None:
         with neo4j_session() as s:
             result = s.run("""
                 MATCH (n:SoundRecipe) WHERE n.project = $p
-                DELETE n RETURN count(n) AS c
+                DETACH DELETE n RETURN count(n) AS c
             """, p=project_name).single()
             print(f"[reset] {result['c']} bestehende SoundRecipes gelöscht")
 

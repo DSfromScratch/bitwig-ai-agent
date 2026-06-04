@@ -4,6 +4,7 @@ Kommuniziert mit BitwigStepPlugin auf Port 8002, empfängt auf 9002.
 """
 from __future__ import annotations
 import json
+import re
 import socket
 import struct
 import time
@@ -131,6 +132,24 @@ def scan_project(timeout: float = 5.0) -> dict:
             return json.loads(fixed)
         except json.JSONDecodeError:
             return {"tracks": [], "tempo": 0.0, "total": 0, "_raw": raw}
+
+
+def query_track_params_all(track_index: int, timeout: float = 20.0) -> dict:
+    """Ruft /agent/track/params/all auf — liest ALLE Remote-Control-Seiten.
+
+    Returns:
+        {"track": 1, "device": "Poly Grid", "page_count": 5, "total_pages": 5,
+         "pages": [{"page": 0, "name": "Oscillators", "params": [...]}]}
+    """
+    _send("/agent/track/params/all", float(track_index))
+    raw = _osc_str_reply("/agent/track/params/all/response", timeout=timeout)
+    if not raw:
+        return {"track": track_index, "device": "", "pages": [], "total_pages": 0}
+    try:
+        fixed = re.sub(r'("value"\s*:\s*)(\d+),(\d+)', r'\g<1>\2.\3', raw)
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        return {"track": track_index, "device": "", "pages": [], "total_pages": 0, "_raw": raw}
 
 
 def query_track_params(track_index: int, timeout: float = 3.0) -> dict:

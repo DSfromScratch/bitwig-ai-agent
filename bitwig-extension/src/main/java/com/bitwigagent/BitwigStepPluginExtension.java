@@ -150,6 +150,10 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             remoteControls.getParameter(i).name().markInterested();
             remoteControls.getParameter(i).value().markInterested();
         }
+        remoteControls.pageCount().markInterested();
+        remoteControls.pageNames().markInterested();
+        remoteControls.selectedPageIndex().markInterested();
+        remoteControls.getName().markInterested();
 
         // Browser observer: fires when browser closes → stepDone für load/append
         popupBrowser.exists().addValueObserver(new BooleanValueChangedCallback() {
@@ -397,6 +401,47 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     }
                     sb.append("]}");
                     sendReply("/agent/track/params/response", finalTi, sb.toString());
+                }, 450);
+            });
+
+        // ── Alle Parameter-Seiten eines Tracks (vollständiger Grid-Scan) ──
+        space.registerMethod("/agent/track/params/all", "*", "All remote control pages for track",
+            (src, msg) -> {
+                int trackIdx = 1;
+                try {
+                    String raw = JsonStepParser.argStr(msg, 0);
+                    if (raw != null) trackIdx = (int) Double.parseDouble(raw);
+                } catch (Exception e) {}
+                final int ti = Math.max(1, Math.min(TRACK_BANK_SIZE, trackIdx));
+                Track tr = (Track) trackBank.getItemAt(ti - 1);
+                if (!tr.exists().get()) {
+                    sendReply("/agent/track/params/all/response", ti, "{}");
+                    return;
+                }
+                tr.selectInMixer();
+                final int finalTi = ti;
+
+                // Seite 0 auswählen, dann alle Seiten durchlaufen
+                host.scheduleTask(() -> {
+                    // Zur ersten Seite gehen
+                    remoteControls.selectNextPage(true); // wrap=true, geht zu Seite 0
+                    host.scheduleTask(() -> {
+                        int totalPages = remoteControls.pageCount().get();
+                        String[] pnames = remoteControls.pageNames().get();
+                        String devName = cursorDevice.name().get();
+
+                        // Alle Seiten akkumulieren via rekursive scheduleTask-Kette
+                        final StringBuilder sb = new StringBuilder();
+                        sb.append("{\"track\":").append(finalTi);
+                        sb.append(",\"device\":\"").append(jsonEsc(devName)).append("\"");
+                        sb.append(",\"page_count\":").append(totalPages);
+                        sb.append(",\"pages\":[");
+                        final int[] pagesDone = {0};
+                        final int pagesToScan = Math.min(totalPages, 16); // max 16 Seiten
+
+                        // Seite 0 ist bereits aktiv — sammeln
+                        collectPageAndNext(sb, pagesDone, pagesToScan, pnames, finalTi, devName);
+                    }, 300);
                 }, 450);
             });
 
@@ -780,6 +825,43 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     }
 
     // ── Hilfe ────────────────────────────────────────────────────────────────
+
+    /**
+     * Liest Parameter der aktuellen Remote-Controls-Seite und navigiert
+     * rekursiv zur nächsten Seite via scheduleTask bis alle Seiten gelesen sind.
+     * Sendet am Ende /agent/track/params/all/response.
+     */
+    private void collectPageAndNext(StringBuilder sb, int[] pagesDone,
+                                    int pagesToScan, String[] pnames,
+                                    int trackIdx, String devName) {
+        // Aktuelle Seite lesen
+        String pageName = (pnames != null && pagesDone[0] < pnames.length)
+                ? pnames[pagesDone[0]] : "Page " + pagesDone[0];
+        if (pagesDone[0] > 0) sb.append(",");
+        sb.append("{\"page\":").append(pagesDone[0]);
+        sb.append(",\"name\":\"").append(jsonEsc(pageName)).append("\"");
+        sb.append(",\"params\":[");
+        for (int i = 0; i < REMOTE_PARAMS; i++) {
+            if (i > 0) sb.append(",");
+            String pn = remoteControls.getParameter(i).name().get();
+            double pv = remoteControls.getParameter(i).value().get();
+            sb.append("{\"name\":\"").append(jsonEsc(pn != null ? pn : "")).append("\"");
+            sb.append(",\"value\":").append(String.format(java.util.Locale.US, "%.4f", pv)).append("}");
+        }
+        sb.append("]}");
+        pagesDone[0]++;
+
+        if (pagesDone[0] < pagesToScan) {
+            // Zur nächsten Seite navigieren und nach Delay weiterlesen
+            remoteControls.selectNextPage(false);
+            host.scheduleTask(() -> collectPageAndNext(sb, pagesDone, pagesToScan, pnames, trackIdx, devName), 250);
+        } else {
+            // Alle Seiten gelesen — Antwort senden
+            sb.append("],\"total_pages\":").append(pagesToScan).append("}");
+            sendReply("/agent/track/params/all/response", trackIdx, sb.toString());
+            host.println("[BitwigStep] /agent/track/params/all → " + pagesToScan + " Seiten für Track " + trackIdx);
+        }
+    }
 
     private static String jsonEsc(String s) {
         if (s == null) return "";
