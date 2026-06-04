@@ -36,6 +36,12 @@ print('Download abgeschlossen.')"
 scan-vsts: ## Installierte VST-Plugins aus Bitwig scannen und in Neo4j speichern
 	$(PYTHON) -c "from src.knowledge.vst_scanner import scan_and_store; print(scan_and_store())"
 
+ingest-audio: ## WAV-Samples eines Projekts analysieren + in Neo4j speichern (embed-server nötig)
+	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" $(ARGS)
+
+ingest-audio-dry: ## Dry-Run: zeigt was ingest-audio analysieren würde
+	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" --dry-run
+
 ingest-project: ## Aktuelles Bitwig-Projekt live scannen + Sound-Rezepte in Neo4j (Bitwig + embed-server nötig)
 	$(PYTHON) scripts/ingest_live_project.py --project "$(PROJECT)" $(ARGS)
 
