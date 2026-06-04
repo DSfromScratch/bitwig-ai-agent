@@ -120,9 +120,17 @@ def scan_project(timeout: float = 5.0) -> dict:
     if not raw:
         return {"tracks": [], "tempo": 0.0, "total": 0}
     try:
-        return json.loads(raw)
+        # Locale-Fix: deutsches Komma als Dezimaltrenner (Java String.format ohne Locale.US)
+        return json.loads(raw.replace(",\"", ',"').replace("\"tempo\":", '"tempo":')
+                          if False else raw)
     except json.JSONDecodeError:
-        return {"tracks": [], "tempo": 0.0, "total": 0, "_raw": raw}
+        # Fallback: tempo-Komma reparieren (z.B. "tempo\":130,0" → "tempo\":130.0")
+        import re
+        fixed = re.sub(r'("tempo"\s*:\s*)(\d+),(\d+)', r'\g<1>\2.\3', raw)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            return {"tracks": [], "tempo": 0.0, "total": 0, "_raw": raw}
 
 
 def query_track_params(track_index: int, timeout: float = 3.0) -> dict:

@@ -289,15 +289,15 @@ def main() -> None:
         print(f"  5. make ingest-project PROJECT=\"{project_name or 'Chee - Hey Now'}\"")
         return
 
-    # Verbindung prüfen (nur für echten Scan)
-    from src.agent.osc.track_state import _check_bridge
-    if not _check_bridge(timeout=2.0):
+    # Verbindung prüfen via Step-Plugin Port 8002 (Port 8001 auf Mac nicht aktiv)
+    from src.agent.osc.project_scan import scan_project as _ping_scan
+    _ping = _ping_scan(timeout=2.0)
+    if not _ping.get("tracks") and not _ping.get("_raw"):
         print("❌  Bitwig nicht erreichbar (Port 8002).")
         print("\nCheckliste:")
-        print("  1. Bitwig Studio starten")
-        print("  2. Projekt öffnen")
-        print("  3. Settings → Controller → BitwigStepPlugin → Reload Extension")
-        print("     (nötig nach dem letzten Update mit /agent/project/scan)")
+        print("  1. Bitwig Studio starten + Projekt öffnen")
+        print("  2. Settings → Controller → BitwigStepPlugin aktiv?")
+        print("  3. Nach Extension-Update: Bitwig neu starten")
         sys.exit(1)
     print("✅  Bitwig verbunden")
 

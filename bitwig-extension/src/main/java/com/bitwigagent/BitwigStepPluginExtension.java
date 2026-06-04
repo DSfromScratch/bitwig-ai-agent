@@ -361,7 +361,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     sb.append("]}");
                     trackCount++;
                 }
-                sb.append("],\"tempo\":").append(String.format("%.1f", tempo));
+                sb.append("],\"tempo\":").append(String.format(java.util.Locale.US, "%.1f", tempo));
                 sb.append(",\"total\":").append(trackCount).append("}");
                 sendReply("/agent/project/scan/response", sb.toString());
                 host.println("[BitwigStep] /agent/project/scan → " + trackCount + " Tracks");
@@ -393,7 +393,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                         String pn = remoteControls.getParameter(i).name().get();
                         double pv = remoteControls.getParameter(i).value().get();
                         sb.append("{\"name\":\"").append(jsonEsc(pn != null ? pn : "")).append("\"");
-                        sb.append(",\"value\":").append(String.format("%.4f", pv)).append("}");
+                        sb.append(",\"value\":").append(String.format(java.util.Locale.US, "%.4f", pv)).append("}");
                     }
                     sb.append("]}");
                     sendReply("/agent/track/params/response", finalTi, sb.toString());
