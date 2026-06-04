@@ -562,6 +562,174 @@ def convert_black_page_examples() -> Iterator[dict]:
     log.info("Black Page: %d Edge-Case Beispiele generiert", count)
 
 
+# ── Konverter: Multi-Instrument Arrangement ───────────────────────────────────
+
+def convert_multi_instrument_examples(count_per_combo: int = 8) -> Iterator[dict]:
+    """Generiert Training-Beispiele: 2 Instrumente gegeben → 3. passend erstellen.
+
+    Lehrinhalt:
+      - Harmonisches Zusammenspiel (Bass + Chords → Drums, etc.)
+      - Genre-spezifische Rhythmen im Kontext
+      - Output-Format: JSON mit notes-Liste
+
+    Kombinationen:
+      Drums + Bass     → Chords/Melodie
+      Drums + Chords   → Bass/Melodie
+      Bass  + Chords   → Drums/Melodie
+      Drums + Melodie  → Bass
+    """
+    try:
+        from src.agent.tools.pattern_generators import _drums, _bass, _chords, _melody
+        from src.agent.tools.music_data import _root_midi, _DEFAULT_PROGRESSIONS
+    except ImportError as e:
+        log.warning("pattern_generators nicht importierbar: %s", e)
+        return
+
+    _DRUM_NAMES = {36:"Kick",38:"Snare",42:"HH",46:"OpenHH",44:"PedHH",
+                   51:"Ride",49:"Crash",50:"Tom1",47:"Tom2",45:"TomF"}
+
+    _NOTE_NAMES_REV = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"]
+
+    def _pitch_name(midi: int, is_drum: bool) -> str:
+        if is_drum:
+            return _DRUM_NAMES.get(midi, f"MIDI{midi}")
+        octave = (midi // 12) - 1
+        note   = _NOTE_NAMES_REV[midi % 12]
+        return f"{note}{octave}"
+
+    def _note_summary(notes: list[dict], is_drum: bool = False, max_items: int = 6) -> str:
+        """Kompakte Darstellung eines Patterns für den Prompt."""
+        from collections import Counter
+        pitches = Counter(n["pitch"] for n in notes)
+        parts = []
+        for p, c in sorted(pitches.items(), key=lambda x: -x[1])[:max_items]:
+            name  = _pitch_name(p, is_drum)
+            steps = sorted(n["step"] % 4 for n in notes if n["pitch"] == p)[:4]
+            step_str = ",".join(f"{s:.2f}".rstrip("0").rstrip(".") for s in steps)
+            parts.append(f"{name}({c}×,beat={step_str})")
+        return " | ".join(parts)
+
+    def _notes_json(notes: list[dict]) -> str:
+        """Kompakte JSON-Darstellung der Noten."""
+        compact = [{"s": round(n["step"],3), "p": n["pitch"],
+                    "v": round(n["vel"],2),  "d": round(n["dur"],3)}
+                   for n in notes]
+        return json.dumps(compact, ensure_ascii=False, separators=(",",":"))
+
+    # Konfigurationen: (genre, key, bars, style_1, style_2)
+    configs = [
+        ("rock",    "A", 2, "basic",  "basic"),
+        ("rock",    "E", 2, "full",   "basic"),
+        ("pop",     "C", 2, "basic",  "basic"),
+        ("hip-hop", "A", 2, "basic",  "basic"),
+        ("funk",    "D", 2, "basic",  "funk"),
+        ("jazz",    "C", 2, "basic",  "jazz"),
+        ("blues",   "A", 2, "basic",  "basic"),
+        ("trap",    "A", 2, "basic",  "basic"),
+    ]
+
+    # Instrument-Kombinationen: (inst1_type, inst1_name, inst2_type, inst2_name,
+    #                             target_type, target_name, target_desc)
+    combos = [
+        # Drums + Bass → Chords
+        ("drums", "VD-HEAVY", "bass", "VB-ROYAL",
+         "chords", "VG-IRON2",
+         "Power-Chords die harmonisch zu Bass-Root-Noten passen"),
+        # Drums + Bass → Melodie
+        ("drums", "VD-HEAVY", "bass", "VB-MELLOW",
+         "melody", "VG-SILK2",
+         "Melodie-Linie die über Bass und Drums passt"),
+        # Drums + Chords → Bass
+        ("drums", "VD-HEAVY", "chords", "VG-IRON2",
+         "bass", "VB-ROYAL",
+         "Bass-Linie die Chord-Roots verdoppelt und Drums stützt"),
+        # Bass + Chords → Drums
+        ("bass", "VB-ROYAL", "chords", "VG-SILK2",
+         "drums", "VD-HEAVY",
+         "Drum-Pattern das zum harmonischen Rhythmus von Bass und Chords passt"),
+        # Drums + Melodie → Bass
+        ("drums", "VD-HEAVY", "melody", "Phase-4",
+         "bass", "VB-MELLOW",
+         "Bass-Fundament unter Melodie und Drums"),
+        # Bass + Melodie → Chords
+        ("bass", "VB-ROYAL", "melody", "Phase-4",
+         "chords", "Dexed",
+         "Chord-Voicings die Melodie harmonisieren"),
+    ]
+
+    count = 0
+    for genre, key, bars, style1, style2 in configs:
+        root     = _root_midi(key, octave=2)
+        root_mel = _root_midi(key, octave=3)
+        prog     = _DEFAULT_PROGRESSIONS.get(genre, _DEFAULT_PROGRESSIONS["default"])
+        scale    = "minor" if genre in ("rock","hip-hop","trap","blues","funk") else "major"
+
+        for (t1, n1, t2, n2, t3, n3, desc) in combos[:count_per_combo]:
+            try:
+                # Instrument 1 generieren
+                if t1 == "drums":
+                    notes1 = _drums(genre, bars, style1)
+                elif t1 == "bass":
+                    notes1 = _bass(genre, bars, root, style1)
+                elif t1 == "chords":
+                    notes1 = _chords(genre, bars, prog, style1)
+                else:
+                    notes1 = _melody(genre, bars, root_mel, scale, style1)
+
+                # Instrument 2 generieren
+                if t2 == "drums":
+                    notes2 = _drums(genre, bars, style2)
+                elif t2 == "bass":
+                    notes2 = _bass(genre, bars, root, style2)
+                elif t2 == "chords":
+                    notes2 = _chords(genre, bars, prog, style2)
+                else:
+                    notes2 = _melody(genre, bars, root_mel, scale, style2)
+
+                # Ziel-Instrument generieren (= erwarteter Output)
+                if t3 == "drums":
+                    notes3 = _drums(genre, bars, "basic")
+                elif t3 == "bass":
+                    notes3 = _bass(genre, bars, root, "basic")
+                elif t3 == "chords":
+                    notes3 = _chords(genre, bars, prog, "staccato")
+                else:
+                    notes3 = _melody(genre, bars, root_mel, scale, "basic")
+
+                if not notes1 or not notes2 or not notes3:
+                    continue
+
+                summary1 = _note_summary(notes1, is_drum=(t1 == "drums"))
+                summary2 = _note_summary(notes2, is_drum=(t2 == "drums"))
+
+                prompt = (
+                    f"Du bist ein Musik-Produzent. Zwei Instrumente sind bereits geschrieben:\n\n"
+                    f"1. {n1} ({t1.capitalize()}): {summary1}\n"
+                    f"2. {n2} ({t2.capitalize()}): {summary2}\n\n"
+                    f"Genre: {genre} | Key: {key} {scale} | {bars} Takte | 120 BPM\n\n"
+                    f"Erstelle jetzt ein passendes {n3} ({t3.capitalize()}-Pattern).\n"
+                    f"Anforderung: {desc}.\n\n"
+                    f"Antworte NUR als JSON:\n"
+                    f'{{"instrument": "{n3}", "bars": {bars}, "genre": "{genre}", '
+                    f'"notes": [{{"step": <0-{bars*4:.0f}>, "pitch": <MIDI>, "vel": <0-1>, "dur": <beats>}}, ...]}}'
+                )
+
+                completion = json.dumps({
+                    "instrument": n3,
+                    "bars":       bars,
+                    "genre":      genre,
+                    "notes":      notes3,
+                }, ensure_ascii=False)
+
+                yield {"prompt": prompt, "completion": completion}
+                count += 1
+
+            except Exception as exc:
+                log.debug("Multi-Instrument Beispiel fehlgeschlagen: %s", exc)
+
+    log.info("Multi-Instrument: %d Arrangement-Beispiele generiert", count)
+
+
 # ── Haupt-Funktion ────────────────────────────────────────────────────────────
 
 def prepare_all_datasets(
@@ -581,7 +749,8 @@ def prepare_all_datasets(
         ("MusicTheoryBench",  convert_music_theory_bench,  300),
         ("SynTheory",         convert_syntheory,            300),
         ("Gold-Standard",     generate_gold_standard_examples, None),  # Positive-Ausgleich
-        ("Black-Page",        convert_black_page_examples,   None),   # Avant-garde Edge-Cases
+        ("Black-Page",        convert_black_page_examples,        None),   # Avant-garde Edge-Cases
+        ("Multi-Instrument",  convert_multi_instrument_examples,  None),   # Arrangement-Aufgaben
         ("Neo4j",             convert_neo4j_patterns,        None),
     ]
 
