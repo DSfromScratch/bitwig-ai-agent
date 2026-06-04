@@ -65,7 +65,7 @@ def _call_llm(prompt: str) -> str:
             # /no_think verhindert Extended Thinking → content wird befüllt
             r = httpx.post(f"{MAC_MLX_URL}/v1/chat/completions",
                 json={"messages": [{"role":"user","content":f"/no_think\n{prompt}"}],
-                      "temperature":0.1, "max_tokens":300}, timeout=90.0)
+                      "temperature":0.1, "max_tokens":400}, timeout=90.0)
             r.raise_for_status()
             content = r.json()["choices"][0]["message"].get("content", "{}")
             content = re.sub(r'```(?:json)?\n?', '', content).strip()
@@ -173,7 +173,10 @@ WICHTIG für die Bewertung:
 {genre_criteria}
 - Kurze Patterns (1-2 Takte) sind normal für Bitwig Clips — kein Abzug dafür
 - Bewerte ob das Pattern FUNKTIONIERT, nicht ob es perfekt oder komplex ist
-- score: 0.8+ = sehr gut, 0.6-0.79 = gut/funktioniert, 0.4-0.59 = verbesserungswürdig, <0.4 = schlecht
+- score: MUSS zwischen 0.0 und 1.0 liegen (NICHT 0-10!) — 0.8+=sehr gut, 0.65-0.79=gut, 0.4-0.64=verbesserungswürdig
+- Niedriges BPM (z.B. 60) ist KEIN Problem — es ist das gewählte Tempo
+- Komplexe Rhythmen (Tuplets, Polyrhythmen) sind KEIN Issue, sondern ein Qualitätsmerkmal
+- issues: nur echte musikalische Probleme nennen, NICHT BPM oder Komplexität
 {context_hint}
 
 Instrument: {instrument}
@@ -240,6 +243,12 @@ def validate_music_pattern(
     try:
         content = _call_llm(prompt)
         result  = json.loads(content)
+        # Score-Normalisierung: Modell gibt manchmal 0-10 statt 0-1 zurück
+        score = result.get("score", 0)
+        if isinstance(score, (int, float)) and score > 1.0:
+            result["score"] = round(score / 10.0, 2)
+            log.debug("[MusicValidator] Score %s → %s normalisiert (0-10 auf 0-1)",
+                      score, result["score"])
         log.info("[MusicValidator][%s] score=%.2f  %s",
                  MAC_LLM_TYPE, result.get("score", 0), result.get("summary", ""))
         return result
