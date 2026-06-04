@@ -74,7 +74,11 @@ public class BitwigStepPluginExtension extends ControllerExtension {
 
     // ── Device Banks (pro Track, für Project-Scan) ────────────────────────────
 
-    private DeviceBank[] trackDeviceBanks;
+    private DeviceBank[]  trackDeviceBanks;
+
+    // ── Konstante für Sub-Track Limit ─────────────────────────────────────────
+
+    private static final int MAX_SUB_TRACKS = 8;
 
     // ── Built-in Device UUIDs — delegiert an BuiltinDeviceUuids ────────────────
 
@@ -119,6 +123,12 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 db.getDevice(j).name().markInterested();
                 db.getDevice(j).exists().markInterested();
             }
+        }
+
+        // isGroup markieren (kein createTrackBank — zu ressourcenintensiv für 16 Tracks)
+        for (int i = 0; i < TRACK_BANK_SIZE; i++) {
+            Track tr = (Track) trackBank.getItemAt(i);
+            tr.isGroup().markInterested();
         }
         cursorTrack.name().markInterested();
         cursorDevice.name().markInterested();
@@ -369,6 +379,39 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 sb.append(",\"total\":").append(trackCount).append("}");
                 sendReply("/agent/project/scan/response", sb.toString());
                 host.println("[BitwigStep] /agent/project/scan → " + trackCount + " Tracks");
+            });
+
+        // ── Track-Hierarchie: Group-Tracks erkennen ───────────────────────
+        space.registerMethod("/agent/project/hierarchy", "*", "Track group detection",
+            (src, msg) -> {
+                StringBuilder sb = new StringBuilder("{\"groups\":[");
+                int groupCount = 0;
+                for (int i = 0; i < TRACK_BANK_SIZE; i++) {
+                    Track tr = (Track) trackBank.getItemAt(i);
+                    if (!tr.exists().get()) continue;
+                    if (!tr.isGroup().get()) continue;
+                    if (groupCount > 0) sb.append(",");
+                    sb.append("{\"idx\":").append(i + 1);
+                    sb.append(",\"name\":\"").append(jsonEsc(tr.name().get())).append("\"}");
+                    groupCount++;
+                }
+                sb.append("],\"total_groups\":").append(groupCount).append("}");
+                sendReply("/agent/project/hierarchy/response", sb.toString());
+                host.println("[BitwigStep] /agent/project/hierarchy → " + groupCount + " Groups");
+            });
+
+        // ── Szenen-Slots des Cursor-Tracks ────────────────────────────────
+        space.registerMethod("/agent/project/scenes", "*", "Scene slots from cursor track",
+            (src, msg) -> {
+                StringBuilder sb = new StringBuilder("{\"scenes\":[");
+                int count = 0;
+                for (int i = 0; i < SLOT_BANK_SIZE; i++) {
+                    if (count > 0) sb.append(",");
+                    sb.append("{\"idx\":").append(i + 1).append("}");
+                    count++;
+                }
+                sb.append("],\"total\":").append(count).append("}");
+                sendReply("/agent/project/scenes/response", sb.toString());
             });
 
         // ── Track-Parameter: Remote Controls des ausgewählten Geräts ─────
