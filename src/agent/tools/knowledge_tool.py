@@ -445,7 +445,19 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                            'grid' AS kind, score
                 """, emb=emb).data()
 
-            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid + raw_ga
+            # MidiClip-Nodes (MIDI-Analyse: Key, Akkorde, Rhythmus)
+            mc_count = s.run("MATCH (n:MidiClip) RETURN count(n) AS c").single()["c"]
+            raw_midi: list[dict] = []
+            if mc_count > 0:
+                raw_midi = s.run("""
+                    CALL db.index.vector.queryNodes('midiclip_embedding', 3, $emb)
+                    YIELD node AS n, score
+                    RETURN n.content AS content, n.source AS source,
+                           n.full_key AS role, null AS doc_type, null AS video_url,
+                           'midi' AS kind, score
+                """, emb=emb).data()
+
+            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid + raw_ga + raw_midi
 
             # Score-Threshold: YouTube strenger als strukturierte Docs
             docs = [

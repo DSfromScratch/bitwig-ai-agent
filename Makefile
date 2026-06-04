@@ -49,6 +49,9 @@ show-grids: ## Grid-Patches als Mermaid-Workflow + VNC-Screenshots anzeigen
 analyze-grid: ## Grid-Screenshot mit Claude Vision analysieren → Neo4j (--track N --device NAME)
 	$(PYTHON) scripts/analyze_grid_screenshot.py --project "$(PROJECT)" $(ARGS)
 
+ingest-midi: ## MIDI-Clips aus Bitwig lesen + Tonart/Akkorde/Rhythmus analysieren (Bitwig + embed-server)
+	$(PYTHON) scripts/ingest_midi_clips.py --project "$(PROJECT)" $(ARGS)
+
 ingest-audio: ## WAV-Samples eines Projekts analysieren + in Neo4j speichern (embed-server nötig)
 	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" $(ARGS)
 

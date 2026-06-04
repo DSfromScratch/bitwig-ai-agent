@@ -152,6 +152,24 @@ def query_track_params_all(track_index: int, timeout: float = 20.0) -> dict:
         return {"track": track_index, "device": "", "pages": [], "total_pages": 0, "_raw": raw}
 
 
+def query_track_clip_notes(track_index: int, timeout: float = 5.0) -> dict:
+    """Liest MIDI-Noten aus dem ersten Launcher-Clip eines Tracks.
+
+    Returns:
+        {"track": 1, "loop_beats": 8.0, "count": 12,
+         "notes": [{"step": 0, "pitch": 60, "vel": 0.8, "dur": 0.25}, ...]}
+    """
+    _send("/agent/track/clip/notes", float(track_index))
+    raw = _osc_str_reply("/agent/track/clip/notes/response", timeout=timeout)
+    if not raw:
+        return {"track": track_index, "notes": [], "count": 0, "loop_beats": 0}
+    try:
+        fixed = re.sub(r'(\d),(\d)', r'\1.\2', raw)
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        return {"track": track_index, "notes": [], "count": 0, "_raw": raw[:200]}
+
+
 def open_track_device(track_index: int, timeout: float = 3.0) -> str:
     """Öffnet das Device-Fenster des ersten Geräts auf einem Track.
     Returns device name oder "" bei Fehler.

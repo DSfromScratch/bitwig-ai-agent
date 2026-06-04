@@ -72,6 +72,12 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     private final Map<String, Integer> noteCountMap = new HashMap<>();
     private final Map<String, Integer> paramCatalog = new HashMap<>();
 
+    // ── MIDI Clip Note Collection ─────────────────────────────────────────────
+
+    private volatile boolean            collectingClipNotes = false;
+    private final java.util.concurrent.CopyOnWriteArrayList<String> clipNoteBuf
+        = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     // ── Device Banks (pro Track, für Project-Scan) ────────────────────────────
 
     private DeviceBank[]  trackDeviceBanks;
@@ -125,11 +131,19 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             }
         }
 
-        // isGroup markieren (kein createTrackBank — zu ressourcenintensiv für 16 Tracks)
+        // isGroup markieren
         for (int i = 0; i < TRACK_BANK_SIZE; i++) {
             Track tr = (Track) trackBank.getItemAt(i);
             tr.isGroup().markInterested();
         }
+
+        // MIDI Clip Notes: Step-Data-Observer (state: 0=leer, 1=Note, 2=Sustain)
+        cursorClip.addStepDataObserver((step, pitch, state) -> {
+            if (collectingClipNotes && state == 1) {
+                clipNoteBuf.add(step + "," + pitch);
+            }
+        });
+        cursorClip.getLoopLength().markInterested();
         cursorTrack.name().markInterested();
         cursorDevice.name().markInterested();
         cursorDevice.exists().markInterested();
@@ -412,6 +426,52 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 }
                 sb.append("],\"total\":").append(count).append("}");
                 sendReply("/agent/project/scenes/response", sb.toString());
+            });
+
+        // ── MIDI Clip Notes aus dem ersten Launcher-Clip ──────────────────
+        space.registerMethod("/agent/track/clip/notes", "*", "Read MIDI notes from first clip",
+            (src, msg) -> {
+                int trackIdx = 1;
+                try {
+                    String raw = JsonStepParser.argStr(msg, 0);
+                    if (raw != null) trackIdx = (int) Double.parseDouble(raw);
+                } catch (Exception e) {}
+                final int ti = Math.max(1, Math.min(TRACK_BANK_SIZE, trackIdx));
+
+                Track tr = (Track) trackBank.getItemAt(ti - 1);
+                if (!tr.exists().get()) {
+                    sendReply("/agent/track/clip/notes/response", ti, "{}");
+                    return;
+                }
+                tr.selectInMixer();
+
+                host.scheduleTask(() -> {
+                    clipNoteBuf.clear();
+                    collectingClipNotes = true;
+                    double loopLen = cursorClip.getLoopLength().get();
+                    // Observer durch scrollToStep(0) triggern
+                    cursorClip.scrollToStep(0);
+
+                    host.scheduleTask(() -> {
+                        collectingClipNotes = false;
+                        StringBuilder sb = new StringBuilder("{\"track\":");
+                        sb.append(ti);
+                        sb.append(",\"loop_beats\":").append(
+                            String.format(java.util.Locale.US, "%.2f", loopLen));
+                        sb.append(",\"notes\":[");
+                        java.util.List<String> snapshot = new java.util.ArrayList<>(clipNoteBuf);
+                        for (int i = 0; i < snapshot.size(); i++) {
+                            if (i > 0) sb.append(",");
+                            String[] p = snapshot.get(i).split(",");
+                            sb.append("{\"step\":").append(p[0]);
+                            sb.append(",\"pitch\":").append(p[1]).append("}");
+                        }
+                        sb.append("],\"count\":").append(snapshot.size()).append("}");
+                        sendReply("/agent/track/clip/notes/response", ti, sb.toString());
+                        host.println("[BitwigStep] /clip/notes → " + snapshot.size()
+                            + " Noten, Track " + ti);
+                    }, 600);
+                }, 400);
             });
 
         // ── Track-Parameter: Remote Controls des ausgewählten Geräts ─────
