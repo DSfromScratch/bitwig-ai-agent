@@ -152,6 +152,15 @@ def query_track_params_all(track_index: int, timeout: float = 20.0) -> dict:
         return {"track": track_index, "device": "", "pages": [], "total_pages": 0, "_raw": raw}
 
 
+def open_track_device(track_index: int, timeout: float = 3.0) -> str:
+    """Öffnet das Device-Fenster des ersten Geräts auf einem Track.
+    Returns device name oder "" bei Fehler.
+    """
+    _send("/agent/track/device/open", float(track_index))
+    raw = _osc_str_reply("/agent/track/device/open/response", timeout=timeout)
+    return raw or ""
+
+
 def query_track_params(track_index: int, timeout: float = 3.0) -> dict:
     """Ruft /agent/track/params auf, gibt geparsten Dict zurück.
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -264,6 +265,66 @@ def _store_recipes(recipes: list[dict], project_name: str) -> int:
     return stored
 
 
+# ── Automatische Grid-Visual-Analyse ─────────────────────────────────────────
+
+def _run_grid_analyses(grid_tracks: list[dict], project_name: str, args) -> None:
+    """Öffnet Grid-Editor für jeden Grid-Track, macht VNC-Screenshot, analysiert mit Claude Vision."""
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+
+    # Screenshot- und Analyse-Funktionen laden
+    from scripts.analyze_grid_screenshot import (
+        fetch_screenshot, analyze_with_claude, store_analysis, check_server
+    )
+    from src.agent.osc.project_scan import open_track_device
+
+    vnc_available = True  # wir versuchen es und handeln Fehler ab
+
+    for recipe in grid_tracks:
+        idx        = recipe["track_index"]
+        name       = recipe["track_name"]
+        device     = recipe["primary_device"]
+        print(f"\n  [vision] Track {idx:>2}: {name} ({device})")
+
+        # 1. Device-Fenster in Bitwig öffnen
+        print(f"         → Öffne Grid-Editor …", end="", flush=True)
+        opened_device = open_track_device(idx, timeout=3.0)
+        if not opened_device:
+            print(" Timeout — übersprungen")
+            continue
+        print(f" {opened_device} geöffnet")
+
+        # 2. Kurz warten damit Bitwig die UI rendert
+        time.sleep(1.5)
+
+        # 3. Screenshot
+        print(f"         → VNC-Screenshot …", end="", flush=True)
+        img = fetch_screenshot(timeout=12.0)
+        if not img:
+            print(" fehlgeschlagen — übersprungen")
+            vnc_available = False
+            break
+        print(f" {len(img)//1024} KB")
+
+        # 4. Claude Vision Analyse
+        print(f"         → Claude Vision …", end="", flush=True)
+        analysis = analyze_with_claude(img, track_name=name, device_name=opened_device)
+        if not analysis:
+            print(" fehlgeschlagen")
+            continue
+        print(f" ✅")
+
+        # 5. Speichern
+        store_analysis(idx, name, opened_device, analysis, project_name)
+
+        # Kurze Pause zwischen Tracks
+        time.sleep(0.5)
+
+    if not vnc_available:
+        print("\n  [vision] VNC nicht verfügbar — restliche Tracks übersprungen")
+        print("           MAC_VNC_PASSWORD in .env gesetzt?")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 _DRY_RUN_DEMO = {
@@ -338,9 +399,17 @@ def main() -> None:
         sys.exit(1)
     print("✅  Bitwig verbunden")
 
+    # Claude Vision für Grid-Analyse verfügbar?
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    vision_enabled = bool(anthropic_key) and not args.no_params
+    if vision_enabled:
+        print("✅  Claude Vision aktiv — Grid-Patches werden automatisch analysiert")
+    else:
+        print("ℹ️   Kein ANTHROPIC_API_KEY → Grid-Screenshots übersprungen")
+
     # Projekt scannen
     print("\n[scan] Lese Projekt-Struktur …")
-    from src.agent.osc.project_scan import scan_project, query_track_params_all
+    from src.agent.osc.project_scan import scan_project, query_track_params_all, open_track_device
     project_data = scan_project(timeout=args.timeout)
 
     tracks = project_data.get("tracks", [])
@@ -402,7 +471,23 @@ def main() -> None:
 
     stored = _store_recipes(recipes, project_name)
     print(f"\n✅  {stored} SoundRecipes in Neo4j gespeichert")
-    print("Durchsuchbar via query_bitwig_docs (Vektorsuche über SoundRecipe-Nodes)")
+
+    # ── Automatische Grid-Analyse via Claude Vision ────────────────────────
+    _GRID_DEVICES = {"poly grid", "fx grid", "note grid"}
+
+    if vision_enabled:
+        grid_tracks = [
+            r for r in recipes
+            if any(d.lower() in _GRID_DEVICES for d in r.get("devices", []))
+            or r.get("primary_device", "").lower() in _GRID_DEVICES
+        ]
+        if grid_tracks:
+            print(f"\n[vision] {len(grid_tracks)} Grid-Tracks → starte visuelle Analyse …")
+            _run_grid_analyses(grid_tracks, project_name, args)
+        else:
+            print("\n[vision] Keine Poly Grid / FX Grid Tracks gefunden")
+
+    print("\nDurchsuchbar via query_bitwig_docs (Vektorsuche über alle Nodes)")
 
 
 if __name__ == "__main__":

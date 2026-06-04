@@ -404,6 +404,31 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 }, 450);
             });
 
+        // ── Device-Fenster öffnen (für Grid-Screenshot) ───────────────────
+        space.registerMethod("/agent/track/device/open", "*", "Open device editor for track",
+            (src, msg) -> {
+                int trackIdx = 1;
+                try {
+                    String raw = JsonStepParser.argStr(msg, 0);
+                    if (raw != null) trackIdx = (int) Double.parseDouble(raw);
+                } catch (Exception e) {}
+                final int ti = Math.max(1, Math.min(TRACK_BANK_SIZE, trackIdx));
+                Track tr = (Track) trackBank.getItemAt(ti - 1);
+                if (!tr.exists().get()) {
+                    sendReply("/agent/track/device/open/response", ti, "not_found");
+                    return;
+                }
+                tr.selectInMixer();
+                host.scheduleTask(() -> {
+                    cursorDevice.isWindowOpen().set(true);
+                    host.scheduleTask(() -> {
+                        String devName = cursorDevice.name().get();
+                        sendReply("/agent/track/device/open/response", ti, devName);
+                        host.println("[BitwigStep] Device-Fenster geöffnet: " + devName + " (Track " + ti + ")");
+                    }, 300);
+                }, 400);
+            });
+
         // ── Alle Parameter-Seiten eines Tracks (vollständiger Grid-Scan) ──
         space.registerMethod("/agent/track/params/all", "*", "All remote control pages for track",
             (src, msg) -> {
