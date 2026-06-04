@@ -40,6 +40,9 @@ screenshot-server: ## Screenshot-Server auf dem Mac starten (dort im Terminal au
 	@echo ">>> Auf dem Mac in einem Terminal ausführen:"
 	@echo "    python3 agent-plugin/screenshot_server.py"
 
+show-grids: ## Grid-Patches als Mermaid-Workflow + VNC-Screenshots anzeigen
+	$(PYTHON) scripts/show_grid_workflow.py --project "$(PROJECT)" $(ARGS)
+
 analyze-grid: ## Grid-Screenshot mit Claude Vision analysieren → Neo4j (--track N --device NAME)
 	$(PYTHON) scripts/analyze_grid_screenshot.py --project "$(PROJECT)" $(ARGS)
 
