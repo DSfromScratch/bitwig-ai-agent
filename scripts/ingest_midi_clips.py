@@ -198,17 +198,29 @@ def build_content(track_name: str, project: str, key_info: dict,
 def store_midi_clip(track_idx: int, track_name: str, project: str,
                     raw_notes: list[dict], loop_beats: float,
                     key_info: dict, rhythm: dict, melody: dict,
-                    chords: list[str]) -> None:
+                    chords: list[str],
+                    scene_idx: int = 0, scene_name: str = "") -> None:
+    import json as _json
     from src.knowledge.neo4j_graph import session as neo4j_session
     from src.knowledge.store import get_embeddings
 
-    content = build_content(track_name, project, key_info, rhythm, melody, chords)
-    emb = get_embeddings().embed_documents([content])[0]
+    # Szenen-Info in Content einbauen
+    scene_suffix = f" | Szene: {scene_name}" if scene_name else ""
+    content = build_content(track_name + scene_suffix, project, key_info, rhythm, melody, chords)
+    try:
+        emb = get_embeddings().embed_documents([content])[0]
+    except RuntimeError:
+        emb = None  # Embedding-Server nicht verfügbar — Metadaten trotzdem speichern
+
+    # Raw Notes als JSON für Rekonstruktion
+    notes_json = _json.dumps(raw_notes, ensure_ascii=False)
 
     with neo4j_session() as s:
-        s.run("""
-            MERGE (n:MidiClip {track_index: $ti, project: $project})
+        # MERGE per Track + Szene (Matrix-Key: ein Node pro Track×Scene)
+        cypher = """
+            MERGE (n:MidiClip {track_index: $ti, project: $project, scene_idx: $scene_idx})
             SET n.track_name      = $name,
+                n.scene_name      = $scene_name,
                 n.key             = $key,
                 n.mode            = $mode,
                 n.key_confidence  = $key_conf,
@@ -221,10 +233,14 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
                 n.ambitus         = $ambitus,
                 n.pitch_names     = $pitch_names,
                 n.loop_beats      = $loop_beats,
+                n.notes_json      = $notes_json,
                 n.content         = $content,
-                n.source          = $source,
-                n.embedding       = $emb
-        """, ti=track_idx, project=project, name=track_name,
+                n.source          = $source
+        """
+        if emb is not None:
+            cypher += ", n.embedding = $emb"
+        s.run(cypher, ti=track_idx, project=project, scene_idx=scene_idx,
+             scene_name=scene_name, name=track_name,
              key=key_info.get("key","?"), mode=key_info.get("mode","?"),
              key_conf=key_info.get("confidence",0),
              full_key=key_info.get("full_key","?"),
@@ -232,8 +248,8 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
              quant=rhythm.get("quantization",""),
              density=rhythm.get("density",0), note_count=rhythm.get("note_count",0),
              ambitus=melody.get("ambitus",""), pitch_names=melody.get("pitch_names",[]),
-             loop_beats=loop_beats, content=content,
-             source=f"MidiClip:{project}/Track{track_idx}",
+             loop_beats=loop_beats, notes_json=notes_json, content=content,
+             source=f"MidiClip:{project}/Track{track_idx}/Scene{scene_idx}",
              emb=emb)
 
         # HNSW-Index
@@ -248,12 +264,83 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
 
         # Mit SoundRecipe verknüpfen
         s.run("""
-            MATCH (mc:MidiClip {track_index: $ti, project: $project})
+            MATCH (mc:MidiClip {track_index: $ti, project: $project, scene_idx: $scene_idx})
             MATCH (sr:SoundRecipe {track_index: $ti, project: $project})
             MERGE (mc)-[:CLIP_OF]->(sr)
             SET sr.midi_key = $key, sr.midi_mode = $mode
-        """, ti=track_idx, project=project,
+        """, ti=track_idx, project=project, scene_idx=scene_idx,
              key=key_info.get("key","?"), mode=key_info.get("mode","?"))
+
+        # Mit Scene-Node verknüpfen (falls vorhanden)
+        if scene_idx > 0:
+            s.run("""
+                MATCH (mc:MidiClip {track_index: $ti, project: $project, scene_idx: $scene_idx})
+                MATCH (sc:Scene {idx: $scene_idx, project: $project})
+                MERGE (mc)-[:IN_SCENE]->(sc)
+            """, ti=track_idx, project=project, scene_idx=scene_idx)
+
+
+# ── Audio-Analyse (integriert) ────────────────────────────────────────────────
+
+def _run_audio_analysis(project: str, has_embed: bool) -> None:
+    """Analysiert alle WAV-Dateien im samples/-Verzeichnis des Projekts."""
+    from scripts.ingest_audio_samples import analyze_file, store_samples, PROJECTS_DIR
+
+    samples_dir = PROJECTS_DIR / project / "samples"
+    if not samples_dir.exists():
+        print(f"\n[audio] Kein samples/-Ordner gefunden: {samples_dir}")
+        return
+
+    wav_files = sorted(samples_dir.glob("*.wav"))
+    if not wav_files:
+        print(f"\n[audio] Keine WAV-Dateien in {samples_dir}")
+        return
+
+    print(f"\n[audio] Analysiere {len(wav_files)} WAV-Dateien …")
+    features = []
+    for wav in wav_files:
+        print(f"  {wav.name:<50}", end="", flush=True)
+        feat = analyze_file(wav)
+        if feat:
+            features.append(feat)
+            print(f"{feat['duration_s']:>6.1f}s  {feat['category']:<20} {feat['key_note']} ({feat['key_conf']:.0%})")
+        else:
+            print("übersprungen")
+        time.sleep(0.05)
+
+    if not features:
+        print("[audio] Keine Ergebnisse")
+        return
+
+    if not has_embed:
+        print(f"[audio] ⚠️  Embedding-Server fehlt — AudioSample-Nodes ohne Vektoren")
+        # Metadaten ohne Embeddings speichern
+        from src.knowledge.neo4j_graph import session as neo4j_session
+        with neo4j_session() as s:
+            for feat in features:
+                from scripts.ingest_audio_samples import _build_content
+                content = _build_content(feat, project)
+                s.run("""
+                    MERGE (n:AudioSample {filename: $filename, project: $project})
+                    SET n.category      = $category,
+                        n.duration_s    = $duration_s,
+                        n.rms           = $rms,
+                        n.centroid_hz   = $centroid_hz,
+                        n.key_note      = $key_note,
+                        n.key_conf      = $key_conf,
+                        n.onset_density = $onset_density,
+                        n.content       = $content,
+                        n.source        = $source
+                """, filename=feat["filename"], project=project,
+                     category=feat["category"], duration_s=feat["duration_s"],
+                     rms=feat["rms"], centroid_hz=feat["centroid_hz"],
+                     key_note=feat["key_note"], key_conf=feat["key_conf"],
+                     onset_density=feat["onset_density"], content=content,
+                     source=f"AudioSample:{project}/{feat['filename']}")
+        print(f"✅  {len(features)} AudioSample-Nodes (ohne Embedding) in Neo4j")
+    else:
+        stored = store_samples(features, project)
+        print(f"✅  {stored} AudioSample-Nodes in Neo4j")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -265,14 +352,17 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    from src.agent.osc.project_scan import scan_project, query_track_clip_notes
+    from src.agent.osc.project_scan import query_project_snapshot, query_track_clip_notes
 
-    print(f"[scan] Lade Tracks von '{args.project}' …")
-    project_data = scan_project(timeout=5.0)
-    all_tracks = project_data.get("tracks", [])
-    if not all_tracks and not project_data.get("_raw"):
-        print("❌  Bitwig nicht erreichbar")
+    print(f"[scan] Lade Projekt-Snapshot für '{args.project}' …")
+    try:
+        snapshot = query_project_snapshot(args.project, timeout=8.0)
+    except RuntimeError as e:
+        print(f"❌  {e}")
         sys.exit(1)
+
+    print(f"  {len(snapshot.tracks)} Tracks, {len(snapshot.scenes)} Szenen: "
+          f"{[s.name for s in snapshot.scenes]}")
 
     # Melodische Tracks priorisieren (Percussion hat kaum harmonischen Inhalt)
     SKIP_ROLES = {"Kick", "Snare/Clap", "Hi-Hat/Percussion"}
@@ -284,48 +374,79 @@ def main() -> None:
         """, p=args.project).data()}
 
     results = []
-    for track in all_tracks:
-        idx  = track.get("idx", 0)
-        name = track.get("name", f"Track {idx}")
+    for track in snapshot.instrument_tracks():
+        idx  = track.idx
+        name = track.name
         if args.track and idx != args.track:
             continue
-        role = role_map.get(idx, "")
+        role = role_map.get(idx, track.role or "")
         if role in SKIP_ROLES and not args.track:
             print(f"  Track {idx:>2}: {name:<28} [{role}] — übersprungen (Percussion)")
             continue
 
-        print(f"  Track {idx:>2}: {name:<28} ", end="", flush=True)
-        clip = query_track_clip_notes(idx, timeout=5.0)
-        notes = clip.get("notes", [])
-        beats = clip.get("loop_beats", 0.0)
-
-        if not notes:
-            print("kein Clip / leer")
+        # Alle Szenen mit Content aus Snapshot (Matrix) — O(1) pro Slot
+        scene_slots = track.clips_with_notes()
+        if not scene_slots and not args.track:
+            print(f"  Track {idx:>2}: {name:<28} — kein Slot mit Content")
             continue
 
-        key_info = detect_key(notes)
-        chords   = detect_chords(notes)
-        rhythm   = describe_rhythm(notes, beats)
-        melody   = describe_melody(notes)
+        # Fallback: wenn Snapshot keinen Content zeigt, Slot 0 versuchen
+        if not scene_slots:
+            scene_slots = [0]
 
-        print(f"{len(notes):>3} Noten · {key_info['full_key']:<15} "
-              f"{rhythm['pattern'][:20]}")
-        if chords:
-            print(f"           Akkorde: {', '.join(chords)}")
+        for scene_idx in scene_slots:
+            sc = snapshot.scene_by_idx(scene_idx)
+            scene_name = sc.name if sc else f"Slot{scene_idx}"
 
-        results.append((idx, name, notes, beats, key_info, rhythm, melody, chords))
-        time.sleep(0.3)
+            print(f"  Track {idx:>2}: {name:<28} [{scene_name}] ", end="", flush=True)
+            clip = query_track_clip_notes(idx, scene_idx=scene_idx, timeout=5.0)
+            notes = clip.get("notes", [])
+            beats = clip.get("loop_beats", 0.0)
+
+            if not notes:
+                print("leer")
+                continue
+
+            key_info = detect_key(notes)
+            chords   = detect_chords(notes)
+            rhythm   = describe_rhythm(notes, beats)
+            melody   = describe_melody(notes)
+
+            print(f"{len(notes):>3} Noten · {key_info['full_key']:<15} "
+                  f"{rhythm['pattern'][:20]}")
+            if chords:
+                print(f"             Akkorde: {', '.join(chords)}")
+
+            results.append((idx, name, notes, beats, key_info, rhythm, melody, chords,
+                            scene_idx, scene_name))
+            time.sleep(0.3)
 
     if args.dry_run:
         print(f"\n[dry-run] {len(results)} Tracks analysiert — nichts gespeichert")
         return
 
-    print(f"\n[embed] Speichere {len(results)} MidiClip-Nodes …")
-    for idx, name, notes, beats, key_info, rhythm, melody, chords in results:
+    from src.knowledge.store import _server_available
+    has_embed = _server_available() is not None
+
+    label = "[embed]" if has_embed else "[store] (kein Embedding-Server — nur Metadaten)"
+    print(f"\n{label} Speichere {len(results)} MidiClip-Nodes …")
+    for idx, name, notes, beats, key_info, rhythm, melody, chords, scene_idx, scene_name in results:
         store_midi_clip(idx, name, args.project, notes, beats,
-                        key_info, rhythm, melody, chords)
-    print(f"✅  {len(results)} MidiClip-Nodes in Neo4j")
-    print("Durchsuchbar via query_bitwig_docs")
+                        key_info, rhythm, melody, chords,
+                        scene_idx=scene_idx, scene_name=scene_name)
+
+    n_tracks = len({r[0] for r in results})
+    n_scenes = len({r[8] for r in results})
+    print(f"✅  {len(results)} MidiClip-Nodes in Neo4j  [{n_tracks} Tracks × {n_scenes} Szenen]")
+    if not has_embed:
+        print("⚠️   Embeddings fehlen → Vektorsuche für neue Nodes nicht aktiv")
+        print("    Nachholen mit: make embed-server  dann  make ingest-midi")
+    else:
+        print("Durchsuchbar via query_bitwig_docs")
+
+    # ── Audio-Samples analysieren ─────────────────────────────────────────────
+    if not args.dry_run:
+        _run_audio_analysis(args.project, has_embed)
 
 
 if __name__ == "__main__":

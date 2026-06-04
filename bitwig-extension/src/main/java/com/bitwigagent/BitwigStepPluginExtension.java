@@ -43,6 +43,12 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     private CursorClip cursorClip;
     private BrowserItemBank resultBank;
 
+    // ── Arranger / Timeline ───────────────────────────────────────────────────
+
+    private Arranger arranger;
+    private CueMarkerBank cueMarkerBank;
+    private static final int CUE_MARKER_COUNT = 16;
+
     // ── OSC Reply ─────────────────────────────────────────────────────────────
 
     private OscConnection replyV4;
@@ -78,10 +84,20 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     private volatile boolean collectingClipNotes = false;
     private final java.util.concurrent.CopyOnWriteArrayList<String> clipNoteBuf = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final boolean[] slotHasContent = new boolean[SLOT_BANK_SIZE];
+    private com.bitwig.extension.controller.api.Clip readCursorClip;
 
     // ── Device Banks (pro Track, für Project-Scan) ────────────────────────────
 
     private DeviceBank[] trackDeviceBanks;
+
+    // ── Scene Bank ────────────────────────────────────────────────────────────
+
+    private SceneBank sceneBank;
+
+    // ── Per-Track Clip-Slot Content (für full-snapshot) ───────────────────────
+    // trackSlotHasContent[trackIdx][slotIdx] = true wenn Clip vorhanden
+
+    private final boolean[][] trackSlotHasContent = new boolean[TRACK_BANK_SIZE][SLOT_BANK_SIZE];
 
     // ── Konstante für Sub-Track Limit ─────────────────────────────────────────
 
@@ -108,9 +124,17 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         popupBrowser = host.createPopupBrowser();
         application = host.createApplication();
         remoteControls = cursorDevice.createCursorRemoteControlsPage(REMOTE_PARAMS);
-        clipSlotBank = cursorTrack.clipLauncherSlotBank();
-        cursorClip = cursorTrack.createLauncherCursorClip(CLIP_STEPS, 128);
+        clipSlotBank   = cursorTrack.clipLauncherSlotBank();
+        cursorClip     = cursorTrack.createLauncherCursorClip(CLIP_STEPS, 128); // Schreiben + Lesen
+        readCursorClip = host.createArrangerCursorClip(CLIP_STEPS, 128);         // Arranger (Backup)
         cursorClip.setStepSize(0.25);
+        cursorClip.getLoopLength().markInterested();
+        // Step-Observer auf Launcher-Cursor: feuert wenn Clip-Inhalt geladen
+        cursorClip.addStepDataObserver((step, pitch, state) -> {
+            if (collectingClipNotes && state == 1) {
+                clipNoteBuf.add(step + "," + pitch);
+            }
+        });
         resultBank = popupBrowser.resultsColumn().createItemBank(BROWSER_SCAN);
         locationBank = popupBrowser.locationColumn().createItemBank(LOC_BANK_SIZE);
         deviceTypeBank = popupBrowser.deviceTypeColumn().createItemBank(LOC_BANK_SIZE);
@@ -130,19 +154,42 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             }
         }
 
-        // isGroup markieren
+        // isGroup markieren + Clip-Slot-Content pro Track beobachten
         for (int i = 0; i < TRACK_BANK_SIZE; i++) {
             Track tr = (Track) trackBank.getItemAt(i);
             tr.isGroup().markInterested();
+            final int trackIdx = i;
+            tr.clipLauncherSlotBank().addHasContentObserver((slotIdx, hasContent) -> {
+                if (slotIdx < SLOT_BANK_SIZE) trackSlotHasContent[trackIdx][slotIdx] = hasContent;
+            });
         }
 
-        // MIDI Clip Notes: Step-Data-Observer
-        cursorClip.addStepDataObserver((step, pitch, state) -> {
+        // SceneBank: Szenen-Namen + Existenz markieren
+        sceneBank = trackBank.sceneBank();
+        for (int i = 0; i < SLOT_BANK_SIZE; i++) {
+            sceneBank.getScene(i).getName().markInterested();
+            sceneBank.getScene(i).clipCount().markInterested();
+        }
+
+        // Arranger / Cue Markers
+        arranger = host.createArranger();
+        cueMarkerBank = arranger.createCueMarkerBank(CUE_MARKER_COUNT);
+        for (int i = 0; i < CUE_MARKER_COUNT; i++) {
+            CueMarker cm = (CueMarker) cueMarkerBank.getItemAt(i);
+            cm.getName().markInterested();
+            cm.position().markInterested();
+            cm.exists().markInterested();
+        }
+
+
+        // MIDI Lesen: Arranger-Cursor-Clip Step-Observer
+        readCursorClip.setStepSize(0.25);
+        readCursorClip.addStepDataObserver((step, pitch, state) -> {
             if (collectingClipNotes && state == 1) {
                 clipNoteBuf.add(step + "," + pitch);
             }
         });
-        cursorClip.getLoopLength().markInterested();
+        readCursorClip.getLoopLength().markInterested();
 
         // Clip-Slot hasContent via indexed Observer (kein getItemAt-Cast nötig)
         clipSlotBank.addHasContentObserver((slotIdx, hasContent) -> {
@@ -161,6 +208,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 .getStringSetting("Agent Host (IP)", "Network", 64, "127.0.0.1");
         agentHost.markInterested();
         transport.tempo().markInterested();
+        application.projectName().markInterested();
         for (int i = 0; i < BROWSER_SCAN; i++) {
             resultBank.getItem(i).name().markInterested();
             resultBank.getItem(i).exists().markInterested();
@@ -225,6 +273,61 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 (src, msg) -> {
                     sendReply("/pong", 1);
                     host.println("[BitwigStep] Pong");
+                });
+
+        // ── Alle Actions auflisten (Debugging) ────────────────────────────
+        space.registerMethod("/agent/actions/list", "*", "List all Bitwig actions",
+                (src, msg) -> {
+                    com.bitwig.extension.controller.api.Action[] actions = application.getActions();
+                    StringBuilder sb = new StringBuilder("[");
+                    int count = 0;
+                    for (com.bitwig.extension.controller.api.Action a : actions) {
+                        try {
+                            String id   = a.getId();
+                            String name = a.getName();
+                            if (count > 0) sb.append(",");
+                            sb.append("{\"id\":\"").append(jsonEsc(id))
+                              .append("\",\"name\":\"").append(jsonEsc(name)).append("\"}");
+                            count++;
+                        } catch (Exception ignore) {}
+                    }
+                    sb.append("]");
+                    sendReply("/agent/actions/list/response", sb.toString());
+                    host.println("[BitwigStep] /agent/actions/list → " + count + " Actions");
+                });
+
+        // ── Projekt-Name abfragen ──────────────────────────────────────────
+        space.registerMethod("/agent/project/name", "*", "Get current project name",
+                (src, msg) -> {
+                    String name = application.projectName().get();
+                    sendReply("/agent/project/name/response", name != null ? name : "");
+                });
+
+        // ── Neues Projekt anlegen ──────────────────────────────────────────
+        space.registerMethod("/agent/project/new", "*", "Create new empty project",
+                (src, msg) -> {
+                    try {
+                        sendReply("/agent/project/new/response", "triggered");
+                        application.getAction("New").invoke();
+                        host.println("[BitwigStep] Neues Projekt angelegt");
+                    } catch (Exception e) {
+                        host.println("[BitwigStep] New fehlgeschlagen: " + e.getMessage());
+                    }
+                });
+
+        // ── Projekt speichern (Collect and Save — kein Dialog bei bekanntem Projekt) ──
+        space.registerMethod("/agent/project/save", "*", "Save current project",
+                (src, msg) -> {
+                    try {
+                        String name = application.projectName().get();
+                        sendReply("/agent/project/save/response", name != null ? name : "saved");
+                        // "Collect and Save" speichert mit allen Dateien ohne neuen Dialog
+                        // Fallback auf "Save" wenn Projekt schon einen Namen hat
+                        application.getAction("Save").invoke();
+                        host.println("[BitwigStep] Projekt gespeichert: " + name);
+                    } catch (Exception e) {
+                        host.println("[BitwigStep] Save fehlgeschlagen: " + e.getMessage());
+                    }
                 });
 
         // ── Track-Zustand abfragen ─────────────────────────────────────────
@@ -437,32 +540,158 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     host.println("[BitwigStep] /agent/project/hierarchy → " + groupCount + " Groups");
                 });
 
-        // ── Szenen-Slots des Cursor-Tracks ────────────────────────────────
-        space.registerMethod("/agent/project/scenes", "*", "Scene slots from cursor track",
+        // ── Szenen-Slots mit Namen ─────────────────────────────────────────
+        space.registerMethod("/agent/project/scenes", "*", "Scene slots with names",
                 (src, msg) -> {
                     StringBuilder sb = new StringBuilder("{\"scenes\":[");
                     int count = 0;
                     for (int i = 0; i < SLOT_BANK_SIZE; i++) {
                         if (count > 0)
                             sb.append(",");
-                        sb.append("{\"idx\":").append(i + 1).append("}");
+                        String sceneName = sceneBank.getScene(i).getName().get();
+                        if (sceneName == null || sceneName.isBlank())
+                            sceneName = "Scene " + (i + 1);
+                        sb.append("{\"idx\":").append(i + 1);
+                        sb.append(",\"name\":\"").append(jsonEsc(sceneName)).append("\"");
+                        sb.append(",\"clip_count\":").append(sceneBank.getScene(i).clipCount().get());
+                        sb.append("}");
                         count++;
                     }
                     sb.append("],\"total\":").append(count).append("}");
                     sendReply("/agent/project/scenes/response", sb.toString());
+                    host.println("[BitwigStep] /agent/project/scenes → " + count + " Szenen");
                 });
 
-        // ── MIDI Clip Notes aus dem ersten Launcher-Clip ──────────────────
-        space.registerMethod("/agent/track/clip/notes", "*", "Read MIDI notes from first clip",
+        // ── Cue Markers: Arranger-Sektionsmarker mit Taktposition ────────────
+        space.registerMethod("/agent/project/cue-markers", "*", "Arranger cue markers",
+                (src, msg) -> {
+                    StringBuilder sb = new StringBuilder("{\"markers\":[");
+                    int count = 0;
+                    for (int i = 0; i < CUE_MARKER_COUNT; i++) {
+                        CueMarker cm = (CueMarker) cueMarkerBank.getItemAt(i);
+                        if (!cm.exists().get()) continue;
+                        if (count > 0) sb.append(",");
+                        String name = cm.getName().get();
+                        double posBeats = cm.position().get();
+                        double posBar   = posBeats / 4.0 + 1.0; // 4/4 → Bar (1-basiert)
+                        if (name == null || name.isBlank()) name = "Marker " + (i + 1);
+                        sb.append("{\"idx\":").append(i + 1);
+                        sb.append(",\"name\":\"").append(jsonEsc(name)).append("\"");
+                        sb.append(",\"beat\":").append(String.format(java.util.Locale.US, "%.2f", posBeats));
+                        sb.append(",\"bar\":").append(String.format(java.util.Locale.US, "%.1f", posBar));
+                        sb.append("}");
+                        count++;
+                    }
+                    sb.append("],\"total\":").append(count).append("}");
+                    sendReply("/agent/project/cue-markers/response", sb.toString());
+                    host.println("[BitwigStep] /agent/project/cue-markers → " + count + " Marker");
+                });
+
+        // ── Full Project Snapshot: tracks + groups + scenes in einem Roundtrip ──
+        space.registerMethod("/agent/project/full-snapshot", "*", "Full project snapshot",
+                (src, msg) -> {
+                    double tempo = transport.tempo().get();
+                    StringBuilder sb = new StringBuilder("{");
+
+                    // tracks
+                    sb.append("\"tracks\":[");
+                    int trackCount = 0;
+                    for (int i = 0; i < TRACK_BANK_SIZE; i++) {
+                        Track tr = (Track) trackBank.getItemAt(i);
+                        if (!tr.exists().get()) continue;
+                        if (trackCount > 0) sb.append(",");
+                        sb.append("{\"idx\":").append(i + 1);
+                        sb.append(",\"name\":\"").append(jsonEsc(tr.name().get())).append("\"");
+                        sb.append(",\"is_group\":").append(tr.isGroup().get());
+                        // devices
+                        sb.append(",\"devices\":[");
+                        DeviceBank db = trackDeviceBanks[i];
+                        int devCount = 0;
+                        for (int j = 0; j < MAX_DEVICES_PER_TRACK; j++) {
+                            Device d = db.getDevice(j);
+                            if (!d.exists().get()) break;
+                            String dn = d.name().get();
+                            if (dn == null || dn.isBlank()) break;
+                            if (devCount > 0) sb.append(",");
+                            sb.append("\"").append(jsonEsc(dn)).append("\"");
+                            devCount++;
+                        }
+                        sb.append("]");
+                        // Clip-Slot-Content: welche Szenen-Slots haben einen Clip?
+                        sb.append(",\"slots\":[");
+                        for (int s = 0; s < SLOT_BANK_SIZE; s++) {
+                            if (s > 0) sb.append(",");
+                            sb.append(trackSlotHasContent[i][s] ? "true" : "false");
+                        }
+                        sb.append("]}");
+                        trackCount++;
+                    }
+                    sb.append("]");
+
+                    // scenes
+                    sb.append(",\"scenes\":[");
+                    for (int i = 0; i < SLOT_BANK_SIZE; i++) {
+                        if (i > 0) sb.append(",");
+                        String sn = sceneBank.getScene(i).getName().get();
+                        if (sn == null || sn.isBlank()) sn = "Scene " + (i + 1);
+                        sb.append("{\"idx\":").append(i + 1);
+                        sb.append(",\"name\":\"").append(jsonEsc(sn)).append("\"");
+                        sb.append(",\"clip_count\":").append(sceneBank.getScene(i).clipCount().get());
+                        sb.append("}");
+                    }
+                    sb.append("]");
+
+                    // groups (group-track indices)
+                    sb.append(",\"groups\":[");
+                    int groupCount = 0;
+                    for (int i = 0; i < TRACK_BANK_SIZE; i++) {
+                        Track tr = (Track) trackBank.getItemAt(i);
+                        if (!tr.exists().get() || !tr.isGroup().get()) continue;
+                        if (groupCount > 0) sb.append(",");
+                        sb.append("{\"idx\":").append(i + 1);
+                        sb.append(",\"name\":\"").append(jsonEsc(tr.name().get())).append("\"}");
+                        groupCount++;
+                    }
+                    sb.append("]");
+
+                    // Cue Markers (Arranger-Sektionen)
+                    sb.append(",\"cue_markers\":[");
+                    int markerCount = 0;
+                    for (int i = 0; i < CUE_MARKER_COUNT; i++) {
+                        CueMarker cm = (CueMarker) cueMarkerBank.getItemAt(i);
+                        if (!cm.exists().get()) continue;
+                        if (markerCount > 0) sb.append(",");
+                        String mn = cm.getName().get();
+                        if (mn == null || mn.isBlank()) mn = "Marker " + (i + 1);
+                        double posBeats = cm.position().get();
+                        sb.append("{\"name\":\"").append(jsonEsc(mn)).append("\"");
+                        sb.append(",\"beat\":").append(String.format(java.util.Locale.US, "%.2f", posBeats));
+                        sb.append(",\"bar\":").append(String.format(java.util.Locale.US, "%.1f", posBeats / 4.0 + 1.0));
+                        sb.append("}");
+                        markerCount++;
+                    }
+                    sb.append("]");
+
+                    sb.append(",\"tempo\":").append(String.format(java.util.Locale.US, "%.1f", tempo));
+                    sb.append(",\"total_tracks\":").append(trackCount).append("}");
+                    sendReply("/agent/project/full-snapshot/response", sb.toString());
+                    host.println("[BitwigStep] /agent/project/full-snapshot → " + trackCount + " Tracks, " + markerCount + " CueMarker");
+                });
+
+        // ── MIDI Clip Notes aus Launcher-Clip ────────────────────────────
+        // Parameter: trackIdx [sceneIdx]  — sceneIdx optional (0=erster mit Inhalt)
+        space.registerMethod("/agent/track/clip/notes", "*", "Read MIDI notes from launcher clip",
                 (src, msg) -> {
                     int trackIdx = 1;
+                    int sceneIdx = 0; // 0 = erster Slot mit Inhalt
                     try {
-                        String raw = JsonStepParser.argStr(msg, 0);
-                        if (raw != null)
-                            trackIdx = (int) Double.parseDouble(raw);
-                    } catch (Exception e) {
-                    }
+                        String raw0 = JsonStepParser.argStr(msg, 0);
+                        if (raw0 != null) trackIdx = (int) Double.parseDouble(raw0);
+                        String raw1 = JsonStepParser.argStr(msg, 1);
+                        if (raw1 != null) sceneIdx = (int) Double.parseDouble(raw1);
+                    } catch (Exception e) {}
                     final int ti = Math.max(1, Math.min(TRACK_BANK_SIZE, trackIdx));
+                    final int requestedScene = sceneIdx;
 
                     Track tr = (Track) trackBank.getItemAt(ti - 1);
                     if (!tr.exists().get()) {
@@ -472,44 +701,52 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     tr.selectInMixer();
 
                     host.scheduleTask(() -> {
-                        // Ersten Slot mit Clip-Inhalt finden (über alle Szenen)
+                        // Ziel-Slot bestimmen
                         int _targetSlot = 0;
-                        for (int s = 0; s < SLOT_BANK_SIZE; s++) {
-                            if (slotHasContent[s]) { _targetSlot = s; break; }
+                        if (requestedScene > 0) {
+                            _targetSlot = requestedScene - 1; // 1-basiert → 0-basiert
+                        } else {
+                            for (int s = 0; s < SLOT_BANK_SIZE; s++) {
+                                if (trackSlotHasContent[ti - 1][s]) { _targetSlot = s; break; }
+                            }
                         }
                         final int targetSlot = _targetSlot;
-                        // Cursor auf diesen Slot navigieren
-                        clipSlotBank.select(targetSlot);
 
-                        host.scheduleTask(() -> {
+                        // Buffer leeren + Flag SETZEN bevor Select → Observer fängt sofort ein
                         clipNoteBuf.clear();
                         collectingClipNotes = true;
-                        double loopLen = cursorClip.getLoopLength().get();
-                        // Observer durch scrollToStep(0) triggern
-                        cursorClip.scrollToStep(0);
 
+                        // Slot selektieren → cursorClip folgt → addStepDataObserver feuert
+                        clipSlotBank.select(targetSlot);
+
+                        // scrollToStep(0) nach kurzer Pause: sicherstellt dass alle Steps
+                        // im Fenster neu geliefert werden (falls Observer schon gefeuert hat)
                         host.scheduleTask(() -> {
-                            collectingClipNotes = false;
-                            StringBuilder sb = new StringBuilder("{\"track\":");
-                            sb.append(ti);
-                            sb.append(",\"loop_beats\":").append(
-                                    String.format(java.util.Locale.US, "%.2f", loopLen));
-                            sb.append(",\"notes\":[");
-                            java.util.List<String> snapshot = new java.util.ArrayList<>(clipNoteBuf);
-                            for (int i = 0; i < snapshot.size(); i++) {
-                                if (i > 0)
-                                    sb.append(",");
-                                String[] p = snapshot.get(i).split(",");
-                                sb.append("{\"step\":").append(p[0]);
-                                sb.append(",\"pitch\":").append(p[1]).append("}");
-                            }
-                            sb.append("],\"count\":").append(snapshot.size()).append("}");
-                            sendReply("/agent/track/clip/notes/response", ti, sb.toString());
-                            host.println("[BitwigStep] /clip/notes → " + snapshot.size()
-                                    + " Noten, Track " + ti + " Slot " + targetSlot);
-                        }, 600);
-                        }, 300); // warte auf Slot-Selektion
-                    }, 400);
+                            cursorClip.scrollToStep(0);
+
+                            host.scheduleTask(() -> {
+                                collectingClipNotes = false;
+                                double loopLen = cursorClip.getLoopLength().get();
+                                StringBuilder sb = new StringBuilder("{\"track\":");
+                                sb.append(ti);
+                                sb.append(",\"loop_beats\":").append(
+                                        String.format(java.util.Locale.US, "%.2f", loopLen));
+                                sb.append(",\"notes\":[");
+                                java.util.List<String> noteSnap = new java.util.ArrayList<>(clipNoteBuf);
+                                for (int i = 0; i < noteSnap.size(); i++) {
+                                    if (i > 0) sb.append(",");
+                                    String[] p = noteSnap.get(i).split(",");
+                                    sb.append("{\"step\":").append(p[0]);
+                                    sb.append(",\"pitch\":").append(p[1]).append("}");
+                                }
+                                sb.append("],\"count\":").append(noteSnap.size());
+                                sb.append(",\"scene_slot\":").append(targetSlot + 1).append("}");
+                                sendReply("/agent/track/clip/notes/response", ti, sb.toString());
+                                host.println("[BitwigStep] /clip/notes → " + noteSnap.size()
+                                        + " Noten, Track " + ti + " Szene-Slot " + (targetSlot + 1));
+                            }, 800); // Fenster zum Sammeln
+                        }, 300); // kurze Pause nach Select
+                    }, 500); // warte bis cursorTrack dem selectInMixer folgt
                 });
 
         // ── Track-Parameter: Remote Controls des ausgewählten Geräts ─────

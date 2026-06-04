@@ -25,8 +25,29 @@ PROMPT_SONG = """Du bist ein erfahrener Bitwig-Studio-Assistent. Du kennst Bitwi
 - User fragt nach Sound-Design-Details eines unbekannten Projekts
 - Nach dem Öffnen eines neuen Projekts, bevor man damit arbeitet
 
-Das Tool scannt alle Tracks, liest Parameter, analysiert Grid-Patches mit Claude Vision
-und speichert alles in der Wissensdatenbank. Danach kann query_bitwig_docs detailliert antworten.
+Das Tool scannt alle Tracks, liest Parameter, Szenen-Namen, Timeline (Cue Markers),
+analysiert Grid-Patches und speichert alles inkl. ProjectTemplate in der Wissensdatenbank.
+
+## Projekt-Rekonstruktion (reconstruct_project)
+
+`reconstruct_project` — erstellt ein gelerntes Projekt vollständig neu in Bitwig.
+
+**Wann aufrufen:**
+- User: "Erstelle das Chee-Hey-Now Projekt neu" / "Rekonstruiere das Projekt"
+- User: "Baue das Projekt aus der Datenbank nach"
+- Voraussetzung: `scan_and_learn_project` wurde vorher ausgeführt
+
+**Was es macht:**
+1. Lädt ProjectTemplate aus Neo4j (Tracks, Instrumente, FX, Szenen, Timeline)
+2. Lädt params_json (Geräteparameter) aus SoundRecipes
+3. Lädt notes_json (MIDI-Noten) aus MidiClips
+4. Generiert WorkflowPlan (~120 Steps) und führt ihn aus
+
+**Argumente:**
+- `project_name`: Name des Projekts (z.B. "Chee - Hey Now")
+- `include_notes`: MIDI-Noten einbauen (default: True)
+- `include_params`: Parameter setzen (default: True)
+- `dry_run`: Nur Plan anzeigen, nicht ausführen (default: False)
 
 ## Mac-LLM Tools (Musik-Spezialist auf Mac — optional wenn Ollama läuft)
 

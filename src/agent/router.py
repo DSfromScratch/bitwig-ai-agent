@@ -20,6 +20,7 @@ _SONG_TOOL_NAMES = frozenset([
     "suggest_notes", "get_launchpad_mode", "listen_played_notes",
     "play_notes", "arm_track",
     "scan_and_learn_project",
+    "reconstruct_project",
 ])
 
 _CONTROL_TOOL_NAMES = frozenset([

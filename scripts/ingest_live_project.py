@@ -177,6 +177,10 @@ def _build_recipe(project_name: str, track: dict, params: dict) -> dict:
         f"__track{idx}__{track_name.lower().replace(' ', '_').replace('/', '_')}"
     )
 
+    import json as _json
+    # Strukturierte Parameter als JSON für Rekonstruktion
+    params_json = _json.dumps(pages, ensure_ascii=False) if pages else _json.dumps(all_params, ensure_ascii=False)
+
     return {
         "id":            recipe_id,
         "track_name":    track_name,
@@ -190,6 +194,7 @@ def _build_recipe(project_name: str, track: dict, params: dict) -> dict:
         "pages":         pages,
         "page_count":    len(pages),
         "param_summary": " | ".join(param_parts[:8]),
+        "params_json":   params_json,
         "content":       "\n".join(content_lines),
         "source":        f"SoundRecipe:{recipe_id}",
     }
@@ -221,6 +226,7 @@ def _store_recipes(recipes: list[dict], project_name: str) -> int:
                     n.primary_device= $primary_device,
                     n.device_chain  = $device_chain,
                     n.param_summary = $param_summary,
+                    n.params_json   = $params_json,
                     n.content       = $content,
                     n.source        = $source,
                     n.embedding     = $embedding
@@ -234,6 +240,7 @@ def _store_recipes(recipes: list[dict], project_name: str) -> int:
             primary_device=r["primary_device"],
             device_chain=r["device_chain"],
             param_summary=r["param_summary"],
+            params_json=r["params_json"],
             content=r["content"],
             source=r["source"],
             embedding=vec,

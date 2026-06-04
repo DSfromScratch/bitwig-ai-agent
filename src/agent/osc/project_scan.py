@@ -12,8 +12,15 @@ import time
 from src.agent.osc.track_state import OSC_HOST, OSC_STEP_PORT, OSC_STEP_REPLY_PORT
 
 
-def _osc_str_reply(address: str, timeout: float = 3.0) -> str | None:
-    """Wartet auf eine OSC-Nachricht mit gegebener Adresse, gibt den ersten String-Arg zurück."""
+def _osc_str_reply(address: str, timeout: float = 3.0,
+                   reply_address: str | None = None) -> str | None:
+    """Wartet auf OSC-Nachricht, gibt ersten String-Arg zurück.
+
+    reply_address: zu erwartende Antwort-Adresse (default: address + "/response")
+    """
+    if reply_address is None:
+        reply_address = address if address.endswith("/response") else address + "/response"
+    address = reply_address
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     if hasattr(socket, "SO_REUSEPORT"):
@@ -152,14 +159,22 @@ def query_track_params_all(track_index: int, timeout: float = 20.0) -> dict:
         return {"track": track_index, "device": "", "pages": [], "total_pages": 0, "_raw": raw}
 
 
-def query_track_clip_notes(track_index: int, timeout: float = 5.0) -> dict:
-    """Liest MIDI-Noten aus dem ersten Launcher-Clip eines Tracks.
+def query_track_clip_notes(track_index: int, scene_idx: int = 0,
+                           timeout: float = 5.0) -> dict:
+    """Liest MIDI-Noten aus einem Launcher-Clip eines Tracks.
+
+    Args:
+        track_index: Track-Index (1-basiert)
+        scene_idx:   Szenen-Slot (1-basiert). 0 = erster Slot mit Inhalt (default)
 
     Returns:
-        {"track": 1, "loop_beats": 8.0, "count": 12,
-         "notes": [{"step": 0, "pitch": 60, "vel": 0.8, "dur": 0.25}, ...]}
+        {"track": 1, "loop_beats": 8.0, "count": 12, "scene_slot": 1,
+         "notes": [{"step": 0, "pitch": 60}, ...]}
     """
-    _send("/agent/track/clip/notes", float(track_index))
+    if scene_idx > 0:
+        _send("/agent/track/clip/notes", float(track_index), float(scene_idx))
+    else:
+        _send("/agent/track/clip/notes", float(track_index))
     raw = _osc_str_reply("/agent/track/clip/notes/response", timeout=timeout)
     if not raw:
         return {"track": track_index, "notes": [], "count": 0, "loop_beats": 0}
@@ -194,3 +209,68 @@ def query_track_params(track_index: int, timeout: float = 3.0) -> dict:
         return json.loads(raw)
     except json.JSONDecodeError:
         return {"track": track_index, "device": "", "params": [], "_raw": raw}
+
+
+def new_project(timeout: float = 3.0) -> str:
+    """Erstellt ein neues leeres Bitwig-Projekt. Gibt den Namen zurück."""
+    _send("/agent/project/new", 1)
+    return _osc_str_reply("/agent/project/new",
+                          reply_address="/agent/project/new/response",
+                          timeout=timeout) or "Neues Projekt"
+
+
+def get_project_name(timeout: float = 2.0) -> str:
+    """Gibt den Namen des aktuell geöffneten Bitwig-Projekts zurück."""
+    _send("/agent/project/name", 1)
+    return _osc_str_reply("/agent/project/name",
+                          reply_address="/agent/project/name/response",
+                          timeout=timeout) or ""
+
+
+def save_project(timeout: float = 3.0) -> bool:
+    """Speichert das aktuell geöffnete Bitwig-Projekt. Gibt True bei Erfolg zurück."""
+    _send("/agent/project/save", 1)
+    reply = _osc_str_reply("/agent/project/save",
+                           reply_address="/agent/project/save/response",
+                           timeout=timeout)
+    return reply == "ok"
+
+
+def query_cue_markers(timeout: float = 3.0) -> list[dict]:
+    """Liest Arranger Cue Markers (Sektionsmarker mit Beat-Position).
+
+    Returns:
+        [{"name": "Intro", "beat": 0.0, "bar": 1.0}, ...]
+    """
+    _send("/agent/project/cue-markers", 1)
+    raw = _osc_str_reply("/agent/project/cue-markers",
+                         reply_address="/agent/project/cue-markers/response",
+                         timeout=timeout)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data.get("markers", [])
+    except json.JSONDecodeError:
+        return []
+
+
+def query_project_snapshot(project_name: str, timeout: float = 8.0):
+    """Vollständiger Projekt-Scan in einem OSC-Roundtrip.
+
+    Ruft /agent/project/full-snapshot auf und gibt ein BitwigProjectSnapshot zurück.
+    Beinhaltet: alle Tracks + Geräte, Szenen-Namen, Gruppen-Hierarchie, Tempo.
+
+    Returns:
+        BitwigProjectSnapshot oder raises RuntimeError wenn Bitwig nicht erreichbar.
+    """
+    from src.agent.models.project_snapshot import BitwigProjectSnapshot
+    _send("/agent/project/full-snapshot", 1)
+    raw = _osc_str_reply(
+        "/agent/project/full-snapshot",
+        reply_address="/agent/project/full-snapshot/response",
+        timeout=timeout,
+    )
+    if not raw:
+        raise RuntimeError("Bitwig nicht erreichbar (/agent/project/full-snapshot)")
+    return BitwigProjectSnapshot.from_raw(project_name, raw)

@@ -40,23 +40,35 @@ def scan_and_learn_project(project_name: str = "") -> str:
 
     lines: list[str] = []
 
-    # ── 1. Verbindung prüfen ──────────────────────────────────────────────
-    from src.agent.osc.project_scan import scan_project, query_track_params_all, open_track_device
+    # ── 1. Vollständiger Snapshot via neuem Endpoint ──────────────────────
+    from src.agent.osc.project_scan import query_project_snapshot, query_track_params_all, open_track_device
 
-    project_data = scan_project(timeout=5.0)
-    tracks = project_data.get("tracks", [])
-    if not tracks and not project_data.get("_raw"):
-        return "❌ Bitwig nicht erreichbar. Bitte Bitwig starten und Projekt öffnen."
-
-    tempo = project_data.get("tempo", 0.0)
-    total = project_data.get("total", 0)
-
-    # Projekt-Name ableiten
     if not project_name:
-        from src.agent.osc.track_state import _get_track_names
         project_name = "Aktuelles Projekt"
 
-    lines.append(f"📂 Projekt: **{project_name}** | {total} Tracks | Tempo: {tempo:.0f} BPM")
+    try:
+        snapshot = query_project_snapshot(project_name, timeout=8.0)
+    except RuntimeError:
+        return "❌ Bitwig nicht erreichbar. Bitte Bitwig starten und Projekt öffnen."
+
+    tracks = [{"idx": t.idx, "name": t.name, "devices": t.devices} for t in snapshot.tracks]
+    tempo  = snapshot.tempo
+    total  = len(tracks)
+    scene_names = [s.name for s in snapshot.scenes]
+
+    lines.append(f"📂 Projekt: **{project_name}** | {total} Tracks | {tempo:.0f} BPM")
+    if scene_names:
+        lines.append(f"   Szenen: {', '.join(scene_names)}")
+    if snapshot.timeline:
+        tl = [(s.name, int(s.bar)) for s in snapshot.timeline]
+        lines.append(f"   Timeline: {tl}")
+
+    # Snapshot + Scene-Nodes in Neo4j
+    try:
+        from src.knowledge.repositories import ProjectSnapshotRepository
+        ProjectSnapshotRepository().save(snapshot)
+    except Exception:
+        pass
 
     # ── 2. Tracks + Parameter scannen ────────────────────────────────────
     from scripts.ingest_live_project import _build_recipe, _store_recipes
@@ -93,6 +105,16 @@ def scan_and_learn_project(project_name: str = "") -> str:
         lines.append(f"\n⚠️ Embedding-Server nicht verfügbar: {e}")
         lines.append("   Starte make embed-server und wiederhole den Scan.")
         return "\n".join(lines)
+
+    # ── 3b. ProjectTemplate aus Snapshot + Recipes ───────────────────────
+    try:
+        from src.agent.models.project_template import ProjectTemplate
+        from src.knowledge.repositories import ProjectTemplateRepository
+        tmpl = ProjectTemplate.from_snapshot(snapshot)
+        ProjectTemplateRepository().save(tmpl)
+        lines.append(f"   📋 ProjectTemplate '{project_name}' in Neo4j gespeichert")
+    except Exception:
+        pass
 
     # ── 4. Audio-Samples analysieren (falls vorhanden) ───────────────────
     from pathlib import Path
@@ -166,9 +188,10 @@ def scan_and_learn_project(project_name: str = "") -> str:
 
     # ── 6. Zusammenfassung ────────────────────────────────────────────────
     lines.append(f"\n📚 Wissensdatenbank aktualisiert. query_bitwig_docs kennt jetzt:")
-    lines.append(f"   • {len(recipes)} Sound-Rezepte mit Parameter-Details")
+    lines.append(f"   • {len(recipes)} Sound-Rezepte mit Parameter-Details (params_json)")
     if grid_tracks and anthropic_key:
         lines.append(f"   • {len(grid_tracks)} Grid-Patch-Analysen (Signal-Flow, Module)")
     lines.append(f"   • Alle {total} Track-Konfigurationen aus '{project_name}'")
+    lines.append(f"   • ProjectSnapshot + Template → reconstruct_project kann Projekt neu erstellen")
 
     return "\n".join(lines)
