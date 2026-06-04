@@ -230,19 +230,74 @@ def _store_recipes(recipes: list[dict], project_name: str) -> int:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+_DRY_RUN_DEMO = {
+    "tracks": [
+        {"idx": 1, "name": "Kick",         "devices": ["Poly Grid", "Saturator", "Compressor"]},
+        {"idx": 2, "name": "Snare",        "devices": ["Poly Grid", "Reverb"]},
+        {"idx": 3, "name": "SUBMOTION-Low","devices": ["Poly Grid", "Compressor", "EQ-5"]},
+        {"idx": 4, "name": "Stringer",     "devices": ["Sampler", "Chorus+", "Reverb"]},
+        {"idx": 5, "name": "Sine Pluck 1", "devices": ["Polysynth", "Delay-2"]},
+    ],
+    "tempo": 130.0, "total": 5,
+}
+
+_DRY_RUN_PARAMS = {
+    "device": "Poly Grid",
+    "params": [
+        {"name": "Filter Cutoff", "value": 0.34},
+        {"name": "Resonance",     "value": 0.22},
+        {"name": "Attack",        "value": 0.02},
+        {"name": "Decay",         "value": 0.18},
+        {"name": "Drive",         "value": 0.55},
+    ],
+}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bitwig Live-Projekt → Neo4j SoundRecipes")
     parser.add_argument("--project",   default="", help="Projekt-Name (nur für Metadaten)")
-    parser.add_argument("--dry-run",   action="store_true")
+    parser.add_argument("--dry-run",   action="store_true",
+                        help="Zeigt Beispiel-Output ohne Bitwig-Verbindung")
     parser.add_argument("--reset",     action="store_true", help="Bestehende SoundRecipes löschen")
     parser.add_argument("--no-params", action="store_true", help="Keine Param-Abfrage pro Track")
     parser.add_argument("--timeout",   type=float, default=4.0, help="OSC-Timeout pro Anfrage")
     args = parser.parse_args()
 
-    # Verbindung prüfen
+    project_name = args.project or "Unbekanntes Projekt"
+
+    # Dry-Run: funktioniert ohne Bitwig (Demo-Daten)
+    if args.dry_run:
+        print(f"[dry-run] Simulierter Scan — kein Bitwig nötig")
+        print(f"[dry-run] Projekt: {project_name or 'Demo'} | Tempo: {_DRY_RUN_DEMO['tempo']:.1f} BPM")
+        print(f"[dry-run] {_DRY_RUN_DEMO['total']} Demo-Tracks:\n")
+        recipes = []
+        for track in _DRY_RUN_DEMO["tracks"]:
+            params = {**_DRY_RUN_PARAMS, "track": track["idx"]}
+            recipe = _build_recipe(project_name or "Demo-Projekt", track, params)
+            recipes.append(recipe)
+            print(f"  Track {track['idx']:>2}: {track['name']:<25} [{recipe['role']}]")
+            print(f"           Devices: {', '.join(track['devices'])}")
+        print(f"\n[dry-run] Beispiel-Rezept:\n{'─'*60}")
+        print(recipes[0]["content"])
+        print(f"\n{'─'*60}")
+        print(f"[dry-run] So würden {len(recipes)} SoundRecipe-Nodes in Neo4j geschrieben.")
+        print("\nVoraussetzungen für echten Scan:")
+        print("  1. Bitwig Studio starten")
+        print("  2. 'Chee - Hey Now' öffnen")
+        print("  3. Settings → Controller → BitwigStepPlugin → Reload Extension")
+        print("  4. make embed-server")
+        print(f"  5. make ingest-project PROJECT=\"{project_name or 'Chee - Hey Now'}\"")
+        return
+
+    # Verbindung prüfen (nur für echten Scan)
     from src.agent.osc.track_state import _check_bridge
     if not _check_bridge(timeout=2.0):
-        print("❌  Bitwig nicht erreichbar (Port 8002). Bitte Bitwig starten und Projekt öffnen.")
+        print("❌  Bitwig nicht erreichbar (Port 8002).")
+        print("\nCheckliste:")
+        print("  1. Bitwig Studio starten")
+        print("  2. Projekt öffnen")
+        print("  3. Settings → Controller → BitwigStepPlugin → Reload Extension")
+        print("     (nötig nach dem letzten Update mit /agent/project/scan)")
         sys.exit(1)
     print("✅  Bitwig verbunden")
 
@@ -261,8 +316,6 @@ def main() -> None:
             print(f"   Raw-Response: {project_data['_raw'][:200]}")
         sys.exit(1)
 
-    # Projekt-Name aus Arg oder Track-Daten ableiten
-    project_name = args.project or "Unbekanntes Projekt"
     print(f"[scan] {total} Tracks | Tempo: {tempo:.1f} BPM | Projekt: {project_name}")
     print()
 
