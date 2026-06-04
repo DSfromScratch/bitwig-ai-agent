@@ -413,7 +413,27 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                            'audio' AS kind, score
                 """, emb=emb).data()
 
-            raw_docs = raw_docs + raw_recipes + raw_audio
+            # Grid-Module + Workflow-Patterns
+            gm_count = s.run("MATCH (n:GridModule) RETURN count(n) AS c").single()["c"]
+            raw_grid: list[dict] = []
+            if gm_count > 0:
+                raw_grid = s.run("""
+                    CALL db.index.vector.queryNodes('gridmodule_embedding', 3, $emb)
+                    YIELD node AS n, score
+                    RETURN n.content AS content, n.source AS source,
+                           n.category AS role, null AS doc_type, null AS video_url,
+                           'grid' AS kind, score
+                """, emb=emb).data()
+                gw = s.run("""
+                    CALL db.index.vector.queryNodes('gridworkflow_embedding', 2, $emb)
+                    YIELD node AS n, score
+                    RETURN n.content AS content, n.source AS source,
+                           'workflow' AS role, null AS doc_type, null AS video_url,
+                           'grid' AS kind, score
+                """, emb=emb).data()
+                raw_grid += gw
+
+            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid
 
             # Score-Threshold: YouTube strenger als strukturierte Docs
             docs = [
