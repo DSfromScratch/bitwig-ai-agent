@@ -1,0 +1,44 @@
+# serializer version: 1
+# name: TestSnapshots.test_error_pattern_prompt_snapshot
+  '''
+  ACHTUNG: Dieses Pattern enthält möglicherweise einen Fehler.
+  
+  Du bist ein erfahrener Musik-Produzent. Bewerte dieses 2-Takt MIDI-Pattern objektiv.
+  '''
+# ---
+# name: TestSnapshots.test_jazz_drum_prompt_snapshot
+  '''
+  Du bist ein erfahrener Musik-Produzent. Bewerte dieses 2-Takt MIDI-Pattern objektiv.
+  
+  WICHTIG für die Bewertung:
+  - Jazz: Ride-Cymbal (MIDI51) als Hauptrhythmus mit Swing-Feeling IST korrekt (score >= 0.75)
+  - Jazz: Snare auf Beat 2+4 als Ghost-Note/Brush — kein harter Backbeat nötig
+  - Jazz: HH-Pedal auf 2+4 (MIDI44) ist typisch und erwünscht
+  - Jazz: Wenig Kick ist KEIN Problem — Jazz-Drummer spielen Kick sparsam
+  - Kurze Patterns (1-2 Takte) sind normal für Bitwig Clips — kein Abzug dafür
+  '''
+# ---
+# name: TestSnapshots.test_melody_prompt_no_drum_criteria_snapshot
+  '''
+  Du bist ein erfahrener Musik-Produzent. Bewerte dieses 2-Takt MIDI-Pattern objektiv.
+  
+  WICHTIG für die Bewertung:
+  - Melodie/Harmonie-Pattern: Beachte Intervalle, Phrasierung und Genre-Kontext
+  - Komplexe Rhythmen (Triolen, Quintolen, Septolen) sind bei contemporary normal — kein Abzug
+  - Atonale oder chromatische Passagen können bewusst eingesetzt sein
+  - Kurze Patterns (1-2 Takte) sind normal für Bitwig Clips — kein Abzug dafür
+  - Bewerte ob das Pattern FUNKTIONIERT, nicht ob es perfekt oder komplex ist
+  '''
+# ---
+# name: TestSnapshots.test_rock_drum_prompt_snapshot
+  '''
+  Du bist ein erfahrener Musik-Produzent. Bewerte dieses 2-Takt MIDI-Pattern objektiv.
+  
+  WICHTIG für die Bewertung:
+  - Ein 2-Takt rock-Pattern mit Kick auf Beat 1/3 und Snare auf Beat 2/4 IST rhythmisch korrekt (score >= 0.65)
+  - Kurze Patterns (1-2 Takte) sind normal für Bitwig Clips — kein Abzug dafür
+  - Bewerte ob das Pattern FUNKTIONIERT, nicht ob es perfekt oder komplex ist
+  - score: MUSS zwischen 0.0 und 1.0 liegen (NICHT 0-10!) — 0.8+=sehr gut, 0.65-0.79=gut, 0.4-0.64=verbesserungswürdig
+  - Niedriges BPM (z.B. 60) ist KEIN Problem — es ist das gewählte Tempo
+  '''
+# ---

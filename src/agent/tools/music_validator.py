@@ -246,7 +246,9 @@ def validate_music_pattern(
         # Score-Normalisierung: Modell gibt manchmal 0-10 statt 0-1 zurück
         score = result.get("score", 0)
         if isinstance(score, (int, float)) and score > 1.0:
-            result["score"] = round(score / 10.0, 2)
+            normalized = round(score / 10.0, 2)
+            # Nochmals klemmen falls z.B. 11.0 / 10 = 1.1
+            result["score"] = round(min(normalized, 1.0), 2)
             log.debug("[MusicValidator] Score %s → %s normalisiert (0-10 auf 0-1)",
                       score, result["score"])
         log.info("[MusicValidator][%s] score=%.2f  %s",
