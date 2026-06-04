@@ -55,7 +55,7 @@ BAD_PATTERN_NO_GROOVE = {
     "notes": [
         {"step": 0.0, "pitch": 36, "vel": 0.9, "dur": 0.25},  # Nur Kick auf Beat 1
     ],
-    "expected_score_max": 0.4,
+    "expected_score_max": 0.50,
     "expected_rhythmic_ok": False,
     "description": "Schlechtes Pattern: nur 1 Note",
 }

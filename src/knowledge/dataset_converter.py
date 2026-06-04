@@ -456,6 +456,98 @@ def generate_gold_standard_examples(count_per_genre: int = 30) -> Iterator[dict]
     log.info("Gold-Standard: %d positive Beispiele generiert", count)
 
 
+# ── Konverter: Minimale/Leere Patterns (niedrige Scores) ────────────────────
+
+def convert_minimal_pattern_examples() -> Iterator[dict]:
+    """Minimale Patterns die eindeutig niedrig bewertet werden sollen (score 0.10-0.40).
+
+    Lehrinhalt: Modell lernt klare Grenzen zwischen leer/minimal (< 0.45)
+    und funktional (>= 0.65). Verhindert dass 1-Note = 0.45+ scored wird.
+    """
+    try:
+        from src.agent.tools.music_validator import _build_validation_prompt
+    except ImportError as e:
+        log.warning("music_validator nicht importierbar: %s", e)
+        return
+
+    def _n(step, pitch, vel=0.75, dur=0.25):
+        return {"step": step, "pitch": pitch, "vel": round(vel, 2), "dur": dur}
+
+    # (notes, instrument, genre, key, scale, score, issues)
+    minimal_cases = [
+        # 1 Note — viel zu wenig für jedes Instrument
+        ([_n(0, 36, 0.9)],
+         "VD-HEAVY", "rock", "A", "minor", 0.12,
+         ["Nur 1 Note — kein rhythmisches Pattern erkennbar",
+          "Fehlt: Snare, HiHat, Beat-Struktur"]),
+
+        ([_n(0, 45, 0.8, 0.5)],
+         "VB-ROYAL", "rock", "A", "minor", 0.10,
+         ["Nur 1 Bass-Note — kein Groove oder Bewegung"]),
+
+        ([_n(0, 60, 0.7, 1.0)],
+         "Piano", "pop", "C", "major", 0.10,
+         ["Einzelner Ton — keine Melodie, kein Rhythmus"]),
+
+        # 2 Noten — immer noch zu wenig
+        ([_n(0, 36, 0.85), _n(2, 36, 0.80)],
+         "VD-HEAVY", "rock", "A", "minor", 0.20,
+         ["Nur Kick auf Beat 1+3 — fehlt Snare und HiHat komplett"]),
+
+        ([_n(0, 42, 0.65), _n(1, 42, 0.60)],
+         "VD-HEAVY", "rock", "A", "minor", 0.18,
+         ["Nur 2 HiHat-Noten — kein Kick, keine Snare"]),
+
+        ([_n(0, 60, 0.7, 0.5), _n(2, 64, 0.65, 0.5)],
+         "Piano", "pop", "C", "major", 0.20,
+         ["2 Noten über 4 Beats — zu minimal für ein Loop"]),
+
+        # Nur HiHat (kein Kick, keine Snare)
+        ([_n(i * 0.5, 42, 0.60) for i in range(8)],
+         "VD-HEAVY", "rock", "A", "minor", 0.30,
+         ["Nur HiHat — kein Kick, kein Snare — kein vollständiges Pattern"]),
+
+        # Nur Kick (kein Snare, kein HiHat)
+        ([_n(0, 36, 0.85), _n(2, 36, 0.80), _n(0.5, 36, 0.60), _n(2.5, 36, 0.55)],
+         "VD-HEAVY", "rock", "A", "minor", 0.28,
+         ["Nur Kick-Drum — kein Snare auf Beat 2+4, kein HiHat"]),
+
+        # Gleiche Note wiederholt (Bass Tremolo — kein Groove)
+        ([_n(i * 0.25, 45, 0.7) for i in range(16)],
+         "VB-ROYAL", "rock", "A", "minor", 0.25,
+         ["16 identische Noten ohne Rhythmus-Variation — kein Groove"]),
+
+        # Völlig falsches Tempo-Gefühl (alle Noten auf Beat 1)
+        ([_n(0, 36, 0.9), _n(0, 38, 0.8), _n(0, 42, 0.7), _n(0, 49, 0.75)],
+         "VD-HEAVY", "rock", "A", "minor", 0.22,
+         ["Alle 4 Noten gleichzeitig auf Step 0 — kein rhythmisches Muster über Zeit"]),
+    ]
+
+    count = 0
+    for (notes, instrument, genre, key, scale, score, issues) in minimal_cases:
+        for bpm in (120, 90):
+            try:
+                prompt = _build_validation_prompt(notes, instrument, genre, key, scale, 2, bpm)
+                s = round(score + random.uniform(-0.03, 0.03), 2)
+                s = max(0.05, min(0.44, s))  # Hard cap: minimal patterns max 0.44
+                completion = json.dumps({
+                    "score":       s,
+                    "rhythmic_ok": False,
+                    "harmonic_ok": True,
+                    "genre_fit":   False,
+                    "issues":      issues,
+                    "suggestions": ["Kick auf Beat 1+3 hinzufügen",
+                                    "Snare auf Beat 2+4 hinzufügen"],
+                    "summary":     f"Zu minimales Pattern ({len(notes)} Note(n)), Score {s:.2f}.",
+                }, ensure_ascii=False)
+                yield {"prompt": prompt, "completion": completion}
+                count += 1
+            except Exception as exc:
+                log.debug("Minimal-Pattern Beispiel fehlgeschlagen: %s", exc)
+
+    log.info("Minimal-Patterns: %d Beispiele mit niedrigen Scores generiert", count)
+
+
 # ── Konverter: Black Page Edge-Cases ─────────────────────────────────────────
 
 def convert_black_page_examples() -> Iterator[dict]:
@@ -883,6 +975,7 @@ def prepare_all_datasets(
         ("Black-Page",        convert_black_page_examples,        None),   # Avant-garde Edge-Cases
         ("Multi-Instrument",  convert_multi_instrument_examples,  None),   # Arrangement-Aufgaben
         ("Note-Errors",       convert_note_error_examples,        None),   # Fehler-Erkennung
+        ("Minimal-Patterns",  convert_minimal_pattern_examples,   None),   # Score-Unterkante
         ("Neo4j",             convert_neo4j_patterns,        None),
     ]
 
