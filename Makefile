@@ -40,6 +40,9 @@ screenshot-server: ## Screenshot-Server auf dem Mac starten (dort im Terminal au
 	@echo ">>> Auf dem Mac in einem Terminal ausführen:"
 	@echo "    python3 agent-plugin/screenshot_server.py"
 
+analyze-grid-local: ## Grid lokal analysieren: Surya OCR + OpenCV Kabel + NetworkX Graph (kein API-Key)
+	$(PYTHON) scripts/analyze_grid_local.py --project "$(PROJECT)" $(ARGS)
+
 show-grids: ## Grid-Patches als Mermaid-Workflow + VNC-Screenshots anzeigen
 	$(PYTHON) scripts/show_grid_workflow.py --project "$(PROJECT)" $(ARGS)
 
