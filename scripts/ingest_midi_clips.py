@@ -218,7 +218,7 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
     with neo4j_session() as s:
         # MERGE per Track + Szene (Matrix-Key: ein Node pro Track×Scene)
         cypher = """
-            MERGE (n:MidiClip {track_index: $ti, project: $project, scene_idx: $scene_idx})
+            MERGE (n:MidiClip {track_name: $name, project: $project, scene_name: $scene_name})
             SET n.track_name      = $name,
                 n.scene_name      = $scene_name,
                 n.key             = $key,

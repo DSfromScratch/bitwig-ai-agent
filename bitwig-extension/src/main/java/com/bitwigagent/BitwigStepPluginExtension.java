@@ -21,14 +21,13 @@ public class BitwigStepPluginExtension extends ControllerExtension {
 
     private static final int OSC_IN = 8002;
     private static final int OSC_REPLY = 9002;
-    private static final int TRACK_BANK_SIZE = 16;
+    private static final int TRACK_BANK_SIZE = 64;
     private static final int MAX_SENDS = 8;
     private static final int SLOT_BANK_SIZE = 8;
     private static final int CLIP_STEPS = 512;
     private static final int REMOTE_PARAMS = 8;
     private static final int BROWSER_SCAN = 128;
     private static final int MAX_DEVICES_PER_TRACK = 8;
-
     // ── Bitwig API ────────────────────────────────────────────────────────────
 
     private ControllerHost host;
@@ -86,9 +85,15 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     private final boolean[] slotHasContent = new boolean[SLOT_BANK_SIZE];
     private com.bitwig.extension.controller.api.Clip readCursorClip;
 
+    // ── Arranger Cursor Clip Note Collection ──────────────────────────────────
+
+    private volatile boolean collectingArrangerNotes = false;
+    private final java.util.concurrent.CopyOnWriteArrayList<String> arrangerNoteBuf = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     // ── Device Banks (pro Track, für Project-Scan) ────────────────────────────
 
     private DeviceBank[] trackDeviceBanks;
+    private DeviceBank cursorTrackDeviceBank;
 
     // ── Scene Bank ────────────────────────────────────────────────────────────
 
@@ -154,6 +159,14 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             }
         }
 
+        // Cursor-Track Device-Bank (folgt dem ausgewählten Track)
+        cursorTrackDeviceBank = cursorTrack.createDeviceBank(MAX_DEVICES_PER_TRACK);
+        cursorTrack.isGroup().markInterested();
+        for (int i = 0; i < MAX_DEVICES_PER_TRACK; i++) {
+            cursorTrackDeviceBank.getDevice(i).name().markInterested();
+            cursorTrackDeviceBank.getDevice(i).exists().markInterested();
+        }
+
         // isGroup markieren + Clip-Slot-Content pro Track beobachten
         for (int i = 0; i < TRACK_BANK_SIZE; i++) {
             Track tr = (Track) trackBank.getItemAt(i);
@@ -187,6 +200,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         readCursorClip.addStepDataObserver((step, pitch, state) -> {
             if (collectingClipNotes && state == 1) {
                 clipNoteBuf.add(step + "," + pitch);
+            }
+            if (collectingArrangerNotes && state == 1) {
+                arrangerNoteBuf.add(step + "," + pitch);
             }
         });
         readCursorClip.getLoopLength().markInterested();
@@ -294,6 +310,34 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     sb.append("]");
                     sendReply("/agent/actions/list/response", sb.toString());
                     host.println("[BitwigStep] /agent/actions/list → " + count + " Actions");
+                });
+
+        // ── Launcher-Clip auf Track starten ───────────────────────────────
+        // Parameter: trackIdx [slotIdx]  — startet Clip im Launcher
+        space.registerMethod("/agent/track/clip/launch", "*", "Launch clip on track",
+                (src, msg) -> {
+                    int trackIdx = 1;
+                    int slotIdx  = 0;
+                    try {
+                        String raw0 = JsonStepParser.argStr(msg, 0);
+                        if (raw0 != null) trackIdx = (int) Double.parseDouble(raw0);
+                        String raw1 = JsonStepParser.argStr(msg, 1);
+                        if (raw1 != null) slotIdx  = (int) Double.parseDouble(raw1);
+                    } catch (Exception e) {}
+                    final int ti = Math.max(1, Math.min(TRACK_BANK_SIZE, trackIdx));
+                    Track tr = (Track) trackBank.getItemAt(ti - 1);
+                    if (!tr.exists().get()) {
+                        sendReply("/agent/track/clip/launch/response", "error: track not found");
+                        return;
+                    }
+                    tr.selectInMixer();
+                    final int slot = slotIdx;
+                    host.scheduleTask(() -> {
+                        // launch(index) ist auf dem SlotBank-Objekt, nicht auf dem Slot
+                        clipSlotBank.launch(slot);
+                        sendReply("/agent/track/clip/launch/response", "launched:" + ti + ":" + slot);
+                        host.println("[BitwigStep] Clip launched: Track " + ti + " Slot " + slot);
+                    }, 300);
                 });
 
         // ── Projekt-Name abfragen ──────────────────────────────────────────
@@ -481,31 +525,30 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 });
 
         // ── Project-Scan: alle Tracks + ihre Device-Ketten ───────────────
+        // Group-Tracks werden durch ihre Kinder ersetzt (ein Level tief).
         space.registerMethod("/agent/project/scan", "*", "Scan all tracks and devices",
                 (src, msg) -> {
                     StringBuilder sb = new StringBuilder("{\"tracks\":[");
                     int trackCount = 0;
-                    double tempo = transport.tempo().get();
+                    double tempo = transport.tempo().getRaw();
                     for (int i = 0; i < TRACK_BANK_SIZE; i++) {
-                        Channel t = (Channel) trackBank.getItemAt(i);
-                        if (!t.exists().get())
-                            continue;
-                        if (trackCount > 0)
-                            sb.append(",");
+                        Track tr = (Track) trackBank.getItemAt(i);
+                        if (!tr.exists().get()) continue;
+
+                        if (!tr.exists().get()) continue;
+                        if (trackCount > 0) sb.append(",");
                         sb.append("{\"idx\":").append(i + 1);
-                        sb.append(",\"name\":\"").append(jsonEsc(t.name().get())).append("\"");
+                        sb.append(",\"name\":\"").append(jsonEsc(tr.name().get())).append("\"");
+                        sb.append(",\"is_group\":").append(tr.isGroup().get());
                         sb.append(",\"devices\":[");
                         DeviceBank db = trackDeviceBanks[i];
                         int devCount = 0;
                         for (int j = 0; j < MAX_DEVICES_PER_TRACK; j++) {
                             Device d = db.getDevice(j);
-                            if (!d.exists().get())
-                                break;
+                            if (!d.exists().get()) break;
                             String dn = d.name().get();
-                            if (dn == null || dn.isBlank())
-                                break;
-                            if (devCount > 0)
-                                sb.append(",");
+                            if (dn == null || dn.isBlank()) break;
+                            if (devCount > 0) sb.append(",");
                             sb.append("\"").append(jsonEsc(dn)).append("\"");
                             devCount++;
                         }
@@ -538,6 +581,55 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     sb.append("],\"total_groups\":").append(groupCount).append("}");
                     sendReply("/agent/project/hierarchy/response", sb.toString());
                     host.println("[BitwigStep] /agent/project/hierarchy → " + groupCount + " Groups");
+                });
+
+        // ── Cursor Track Info: Name + Devices des aktuell ausgewählten Tracks ──
+        space.registerMethod("/agent/cursor/track/info", "*", "Get selected track info",
+                (src, msg) -> {
+                    String name = cursorTrack.name().get();
+                    boolean isGroup = cursorTrack.isGroup().get();
+                    StringBuilder sb = new StringBuilder("{\"name\":\"");
+                    sb.append(jsonEsc(name != null ? name : "")).append("\"");
+                    sb.append(",\"is_group\":").append(isGroup);
+                    sb.append(",\"devices\":[");
+                    int devCount = 0;
+                    for (int i = 0; i < MAX_DEVICES_PER_TRACK; i++) {
+                        Device d = cursorTrackDeviceBank.getDevice(i);
+                        if (!d.exists().get()) break;
+                        String dn = d.name().get();
+                        if (dn == null || dn.isBlank()) break;
+                        if (devCount > 0) sb.append(",");
+                        sb.append("\"").append(jsonEsc(dn)).append("\"");
+                        devCount++;
+                    }
+                    sb.append("]}");
+                    sendReply("/agent/cursor/track/info/response", sb.toString());
+                    host.println("[BitwigStep] /cursor/track/info → " + name);
+                });
+
+        // ── Cursor Clip Notes: MIDI-Noten aus dem Arranger Cursor Clip ────────
+        space.registerMethod("/agent/cursor/clip/notes", "*", "Read MIDI notes from Arranger cursor clip",
+                (src, msg) -> {
+                    arrangerNoteBuf.clear();
+                    collectingArrangerNotes = true;
+                    readCursorClip.scrollToStep(0);
+                    host.scheduleTask(() -> {
+                        collectingArrangerNotes = false;
+                        double loopLen = readCursorClip.getLoopLength().get();
+                        StringBuilder sb = new StringBuilder("{");
+                        sb.append("\"loop_beats\":").append(String.format(java.util.Locale.US, "%.2f", loopLen));
+                        sb.append(",\"notes\":[");
+                        java.util.List<String> snap = new java.util.ArrayList<>(arrangerNoteBuf);
+                        for (int i = 0; i < snap.size(); i++) {
+                            if (i > 0) sb.append(",");
+                            String[] p = snap.get(i).split(",");
+                            sb.append("{\"step\":").append(p[0]);
+                            sb.append(",\"pitch\":").append(p[1]).append("}");
+                        }
+                        sb.append("],\"count\":").append(snap.size()).append("}");
+                        sendReply("/agent/cursor/clip/notes/response", sb.toString());
+                        host.println("[BitwigStep] /cursor/clip/notes → " + snap.size() + " Noten");
+                    }, 800);
                 });
 
         // ── Szenen-Slots mit Namen ─────────────────────────────────────────
@@ -590,15 +682,16 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         // ── Full Project Snapshot: tracks + groups + scenes in einem Roundtrip ──
         space.registerMethod("/agent/project/full-snapshot", "*", "Full project snapshot",
                 (src, msg) -> {
-                    double tempo = transport.tempo().get();
+                    double tempo = transport.tempo().getRaw();
                     StringBuilder sb = new StringBuilder("{");
 
-                    // tracks
+                    // tracks (Group-Tracks werden durch ihre Kinder ersetzt)
                     sb.append("\"tracks\":[");
                     int trackCount = 0;
                     for (int i = 0; i < TRACK_BANK_SIZE; i++) {
                         Track tr = (Track) trackBank.getItemAt(i);
                         if (!tr.exists().get()) continue;
+
                         if (trackCount > 0) sb.append(",");
                         sb.append("{\"idx\":").append(i + 1);
                         sb.append(",\"name\":\"").append(jsonEsc(tr.name().get())).append("\"");
@@ -1162,14 +1255,17 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             final String uuidStr = uuid;
             host.scheduleTask(() -> {
                 try {
-                    cursorDevice.afterDeviceInsertionPoint()
+                    // endOfDeviceChainInsertionPoint: immer ans Ende → korrekte Reihenfolge
+                    // unabhängig von aktuellem cursorDevice
+                    Channel ch = channel(track);
+                    ch.endOfDeviceChainInsertionPoint()
                             .insertBitwigDevice(UUID.fromString(uuidStr));
-                    host.println("[BitwigStep] UUID-Append: " + name);
+                    host.println("[BitwigStep] UUID-Append (end): " + name);
                 } catch (Exception e) {
                     host.println("[BitwigStep] UUID-Fehler " + name + ": " + e.getMessage());
                 }
                 stepDone(src, "append_effect");
-            }, 40);
+            }, 80);
         } else {
             host.scheduleTask(() -> {
                 popupBrowser.cancel();
@@ -1237,17 +1333,24 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         int slot = Math.max(0, (int) JsonStepParser.extractNumField(args, "slot", 0));
         int length = Math.max(1, (int) JsonStepParser.extractNumField(args, "length_beats", 8));
         String notes = JsonStepParser.extractArray(args, "notes");
+        // append=true → bestehende Noten behalten (Chunk-Modus)
+        boolean append = JsonStepParser.extractNumField(args, "append", 0) > 0.5;
 
         channel(track).selectInMixer();
         final int fslot = slot;
         final int flen = length;
         final String fn = notes;
+        final boolean fappend = append;
         host.scheduleTask(() -> {
-            clipSlotBank.createEmptyClip(fslot, flen);
+            if (!fappend) {
+                clipSlotBank.createEmptyClip(fslot, flen);
+            }
             clipSlotBank.select(fslot);
             host.scheduleTask(() -> {
                 cursorClip.setStepSize(0.25);
-                cursorClip.clearSteps();
+                if (!fappend) {
+                    cursorClip.clearSteps();
+                }
                 int written = 0;
                 if (fn != null && !fn.isBlank()) {
                     try {
@@ -1259,7 +1362,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 String tn = cursorTrack.name().get();
                 if (tn != null && !tn.isEmpty())
                     noteCountMap.merge(tn, written, Integer::sum);
-                host.println("[BitwigStep] " + written + " Noten → '" + tn + "'");
+                host.println("[BitwigStep] " + written + " Noten → '" + tn + "'" + (fappend ? " [append]" : ""));
                 stepDone(src, "write_notes");
             }, 150);
         }, 40);
@@ -1345,11 +1448,14 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             double stepBeat = f.getOrDefault("step", 0.0);
             int step = (int) Math.round(stepBeat / 0.25);
             int pitch = f.getOrDefault("pitch", 60.0).intValue();
-            float vel = f.getOrDefault("vel", 0.8).floatValue();
-            float dur = f.getOrDefault("dur", 0.25).floatValue();
+            // "velocity" 0-127 (Modell-Format) oder "vel" 0.0-1.0 (Legacy)
+            double velRaw = f.containsKey("velocity") ? f.get("velocity") : f.getOrDefault("vel", 0.8) * 127.0;
+            // "duration" in Beats (Modell-Format) oder "dur" in Beats (Legacy)
+            float dur = f.containsKey("duration") ? f.get("duration").floatValue()
+                                                   : f.getOrDefault("dur", 0.25).floatValue();
             if (step < 0 || step >= CLIP_STEPS || pitch < 0 || pitch > 127 || dur <= 0)
                 continue;
-            int velInt = Math.max(1, Math.min(127, (int) (vel * 127)));
+            int velInt = Math.max(1, Math.min(127, (int) velRaw));
             cursorClip.setStep(0, step, pitch, velInt, (double) dur);
             count++;
         }

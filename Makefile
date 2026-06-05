@@ -12,11 +12,11 @@ FILE ?= song.mp3
 MAC_HOST     ?= 192.168.0.4
 MAC_USER     ?= sija
 MAC_EXT_DIR  := /Users/$(MAC_USER)/Documents/Bitwig Studio/Extensions
-LOCAL_EXT_DIR := $(HOME)/Bitwig\ Studio/Extensions
+LOCAL_EXT_DIR := $(HOME)/Bitwig Studio/Extensions
 LINUX_IP     := $(shell ip route get 1 2>/dev/null | awk '{print $$7; exit}')
 EXT_DIST     := bitwig-extension/dist
 
-.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status mlx-export mlx-setup mlx-sync-data mlx-train mlx-test
+.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status mlx-export mlx-setup mlx-sync-data mlx-train mlx-test mlx-ingest-scales mlx-rl-pairs mlx-rl-eval mlx-rl-train ingest-arranger
 
 help: ## Verfügbare Befehle anzeigen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -60,6 +60,9 @@ ingest-audio-dry: ## Dry-Run: zeigt was ingest-audio analysieren würde
 
 ingest-project: ## Aktuelles Bitwig-Projekt live scannen + Sound-Rezepte in Neo4j (Bitwig + embed-server nötig)
 	$(PYTHON) scripts/ingest_live_project.py --project "$(PROJECT)" $(ARGS)
+
+ingest-arranger: ## Arranger-Tracks interaktiv ingesten — Track anklicken → Enter (Bitwig + embed-server)
+	$(PYTHON) scripts/ingest_arranger_tracks.py --project "$(PROJECT)" $(ARGS)
 
 ingest-project-dry: ## Dry-Run: zeigt was ingest-project tun würde
 	$(PYTHON) scripts/ingest_live_project.py --project "$(PROJECT)" --dry-run
@@ -140,7 +143,7 @@ build-extension: ## Bitwig Extensions bauen (benötigt JDK 25)
 	@echo "✓ Extensions gebaut → $(EXT_DIST)/"
 
 deploy-local: build-extension ## Extensions lokal auf Linux installieren
-	cp $(EXT_DIST)/*.bwextension "$(LOCAL_EXT_DIR)/"
+	cp $(EXT_DIST)/*.bwextension '$(LOCAL_EXT_DIR)/'
 	@echo "✓ Extensions → $(LOCAL_EXT_DIR)/"
 
 deploy-mac: build-extension ## Extensions auf Mac übertragen via SCP (nur StepPlugin + OscBridge)
@@ -294,15 +297,17 @@ mlx-train: ## MLX LoRA Fine-Tuning Anleitung anzeigen (auf Mac Terminal ausführ
 	@echo "  source ~/.venv-mlx/bin/activate"
 	@echo ""
 	@echo "  # LoRA Fine-Tuning (~30–60 min auf M1/M2, ~15 min auf M3/M4)"
-	@echo "  python -m mlx_lm.lora \\"
+	@echo "  python -m mlx_lm lora \\"
 	@echo "    --model $(MLX_OUT)/base \\"
 	@echo "    --train \\"
 	@echo "    --data ~/mlx-training \\"
 	@echo "    --iters 1000 \\"
-	@echo "    --batch-size 4 \\"
-	@echo "    --lora-layers 16 \\"
+	@echo "    --batch-size 1 \\"
+	@echo "    --num-layers 16 \\"
 	@echo "    --learning-rate 1e-5 \\"
 	@echo "    --save-every 200 \\"
+	@echo "    --grad-checkpoint \\"
+	@echo "    --max-seq-length 512 \\"
 	@echo "    --adapter-path $(MLX_OUT)/bitwig-adapter"
 	@echo ""
 	@echo "  # Adapter in fertiges Modell einbauen"
@@ -313,6 +318,26 @@ mlx-train: ## MLX LoRA Fine-Tuning Anleitung anzeigen (auf Mac Terminal ausführ
 	@echo ""
 	@echo "Danach als Ollama-Modell bereitstellen:"
 	@echo "  make mlx-test"
+
+mlx-ingest-scales: ## Alle 24 Tonarten + Akkorde in Neo4j ingesten
+	source .venv/bin/activate && python scripts/ingest_scales.py
+
+mlx-rl-pairs: ## DPO-Paare generieren (Fine-tuned Modell, Port 8080)
+	source .venv/bin/activate && python scripts/generate_dpo_pairs.py \
+		--model-url http://$(MAC_HOST):8080/v1/chat/completions \
+		--data-dir ./training_data \
+		--max-prompts 60
+
+mlx-rl-eval: ## Reward-Score des Fine-tuned Modells messen (Port 8080)
+	source .venv/bin/activate && python3 -c "\
+from scripts.rl_train_loop import evaluate; \
+score = evaluate('http://$(MAC_HOST):8080/v1/chat/completions'); \
+print(f'avg_reward = {score:.3f}')"
+
+mlx-rl-train: ## RL-Trainingsschleife starten (generieren → SFT → evaluieren)
+	source .venv/bin/activate && python scripts/rl_train_loop.py \
+		--reward-threshold 0.90 \
+		--rounds 10
 
 mlx-test: ## Fine-tuned Modell auf Mac testen (Anleitung)
 	@echo ">>> Führe auf dem Mac Terminal aus:"

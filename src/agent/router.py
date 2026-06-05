@@ -21,6 +21,7 @@ _SONG_TOOL_NAMES = frozenset([
     "play_notes", "arm_track",
     "scan_and_learn_project",
     "reconstruct_project",
+    "create_track_from_recipe",
 ])
 
 _CONTROL_TOOL_NAMES = frozenset([

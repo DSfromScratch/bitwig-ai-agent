@@ -216,8 +216,34 @@ class ProjectSnapshotRepository:
                         MERGE (p)-[:HAS_GROUP]->(g)
                     """, proj=snap.project_name, name=t.name, idx=t.idx)
 
-                # SoundRecipe-Nodes mit Scene-Clips verknüpfen
+                # Energie-Level pro Szene berechnen + speichern
+                total_tracks = len(snap.instrument_tracks())
+                if total_tracks > 0:
+                    for sc in snap.scenes:
+                        active = sum(
+                            1 for t in snap.instrument_tracks()
+                            if t.clips.get(sc.idx) and t.clips[sc.idx].has_content
+                        )
+                        s.run("""
+                            MATCH (sc:Scene {idx: $idx, project: $proj})
+                            SET sc.active_tracks  = $active,
+                                sc.total_tracks   = $total,
+                                sc.energy_level   = $energy
+                        """, idx=sc.idx, proj=snap.project_name,
+                             active=active, total=total_tracks,
+                             energy=round(active / total_tracks, 2))
+
+                # SoundRecipe → alle aktiven Szenen verknüpfen
                 for t in snap.instrument_tracks():
+                    for sc_idx, clip in t.clips.items():
+                        if not clip.has_content:
+                            continue
+                        s.run("""
+                            MATCH (sr:SoundRecipe {track_index: $ti, project: $proj})
+                            MATCH (sc:Scene {idx: $scene_idx, project: $proj})
+                            MERGE (sr)-[:HAS_CLIP_IN_SCENE]->(sc)
+                        """, ti=t.idx, proj=snap.project_name, scene_idx=sc_idx)
+                    # Legacy: HAS_CLIP_AT (erste Szene) behalten
                     first_scene = t.first_clip_with_notes()
                     if first_scene is not None:
                         s.run("""

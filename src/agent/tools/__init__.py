@@ -1,6 +1,7 @@
 from src.agent.tools.knowledge_tool import query_bitwig_docs
 from src.agent.tools.project_learning_tool import scan_and_learn_project
 from src.agent.tools.reconstruct_tool import reconstruct_project
+from src.agent.tools.recipe_tool import create_track_from_recipe
 from src.agent.tools.bitwig_tools import control_bitwig
 from src.agent.tools.song_tools import (
     check_bitwig_connection,
@@ -8,6 +9,7 @@ from src.agent.tools.song_tools import (
 )
 from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
 from src.agent.tools.pattern_tools import write_pattern
+from src.agent.tools.context_tool import get_song_context
 from src.agent.tools.music_validator import validate_music
 from src.agent.tools.audio_llm_tool import analyze_song
 from src.agent.tools.music_learning import validate_and_learn
@@ -53,12 +55,14 @@ ALL_TOOLS = [
     query_bitwig_docs,
     scan_and_learn_project,
     reconstruct_project,
+    create_track_from_recipe,
     control_bitwig,
     check_bitwig_connection,
     get_bitwig_track_state,
     _make_tool(execute_setup),
     _make_tool(compose_notes),
     write_pattern,
+    get_song_context,
     validate_music,
     validate_and_learn,
     analyze_song,

@@ -44,7 +44,8 @@ def scan_and_learn_project(project_name: str = "") -> str:
     from src.agent.osc.project_scan import query_project_snapshot, query_track_params_all, open_track_device
 
     if not project_name:
-        project_name = "Aktuelles Projekt"
+        from src.agent.osc.project_scan import get_project_name
+        project_name = get_project_name() or "Aktuelles Projekt"
 
     try:
         snapshot = query_project_snapshot(project_name, timeout=8.0)

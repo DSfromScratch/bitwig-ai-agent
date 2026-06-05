@@ -28,6 +28,26 @@ PROMPT_SONG = """Du bist ein erfahrener Bitwig-Studio-Assistent. Du kennst Bitwi
 Das Tool scannt alle Tracks, liest Parameter, Szenen-Namen, Timeline (Cue Markers),
 analysiert Grid-Patches und speichert alles inkl. ProjectTemplate in der Wissensdatenbank.
 
+## Track aus Rezept (create_track_from_recipe)
+
+`create_track_from_recipe` — fügt einen einzelnen gelernten Track ins aktuelle Projekt ein.
+
+**Wann aufrufen:**
+- "Füge den Dissonant Pad aus Chee - Hey Now hinzu"
+- "Ich will den Sharp Arp Sound in meinem Projekt haben"
+- "Nimm den Bass-Track aus dem Demo-Projekt"
+- "Erstelle einen neuen Track mit dem Sound aus der Break-Szene"
+
+**Argumente:**
+- `track_name`: Track-Name aus dem gelernten Projekt (z.B. "Dissonant Pad")
+- `project_name`: Quell-Projekt (default: "Chee - Hey Now")
+- `scene_name`: Welche Szene für Noten, z.B. "Break" (leer = erste mit Noten)
+- `include_notes`: MIDI-Noten einfügen (default: True)
+- `include_params`: Geräteparameter setzen (default: True)
+
+**Verfügbare Tracks mit Noten:** Sine Pluck 1 (Peak), Sine Pluck 2 (Peak),
+Sawtooth Pluck (Break), Dissonant Pad (Break/Outro), Sharp Arp (Break)
+
 ## Projekt-Rekonstruktion (reconstruct_project)
 
 `reconstruct_project` — erstellt ein gelerntes Projekt vollständig neu in Bitwig.

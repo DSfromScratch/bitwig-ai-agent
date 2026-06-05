@@ -12,6 +12,72 @@ import time
 from src.agent.osc.track_state import OSC_HOST, OSC_STEP_PORT, OSC_STEP_REPLY_PORT
 
 
+def query_osc(send_address: str, reply_contains: str,
+              send_args: tuple = (), timeout: float = 4.0) -> str | None:
+    """Bind zuerst → sende OSC → warte auf Antwort. Löst Race Condition."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, "SO_REUSEPORT"):
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except OSError:
+            pass
+    sock.settimeout(timeout)
+    try:
+        sock.bind(("", OSC_STEP_REPLY_PORT))
+    except OSError:
+        pass
+
+    _send(send_address, *send_args) if send_args else _send(send_address, 1)
+
+    deadline = time.time() + timeout
+    try:
+        while time.time() < deadline:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            sock.settimeout(remaining)
+            try:
+                data, _ = sock.recvfrom(65536)
+            except socket.timeout:
+                break
+            raw = data.decode("latin-1")
+            if reply_contains not in raw:
+                continue
+            addr_end = data.find(b"\x00")
+            if addr_end < 0:
+                continue
+            tt_start = (addr_end + 4) & ~3
+            if tt_start >= len(data) or data[tt_start:tt_start+1] != b",":
+                continue
+            tt_end = data.find(b"\x00", tt_start)
+            if tt_end < 0:
+                continue
+            type_tag = data[tt_start+1:tt_end].decode("ascii", errors="ignore")
+            data_start = (tt_end + 4) & ~3
+            pos = data_start
+            for c in type_tag:
+                if c == "i":
+                    pos += 4
+                elif c == "f":
+                    pos += 4
+                elif c == "s":
+                    s_end = data.find(b"\x00", pos)
+                    if s_end < 0:
+                        s_end = len(data)
+                    result = data[pos:s_end].decode("utf-8", errors="replace")
+                    sock.close()
+                    return result
+    except socket.timeout:
+        pass
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    return None
+
+
 def _osc_str_reply(address: str, timeout: float = 3.0,
                    reply_address: str | None = None) -> str | None:
     """Wartet auf OSC-Nachricht, gibt ersten String-Arg zurück.
@@ -123,8 +189,7 @@ def scan_project(timeout: float = 5.0) -> dict:
         {"tracks": [{"idx": 1, "name": "Kick", "devices": ["Poly Grid"]}, ...],
          "tempo": 130.0, "total": 12}
     """
-    _send("/agent/project/scan", 1)
-    raw = _osc_str_reply("/agent/project/scan/response", timeout=timeout)
+    raw = query_osc("/agent/project/scan", "/agent/project/scan/response", timeout=timeout)
     if not raw:
         return {"tracks": [], "tempo": 0.0, "total": 0}
     try:
@@ -148,8 +213,8 @@ def query_track_params_all(track_index: int, timeout: float = 20.0) -> dict:
         {"track": 1, "device": "Poly Grid", "page_count": 5, "total_pages": 5,
          "pages": [{"page": 0, "name": "Oscillators", "params": [...]}]}
     """
-    _send("/agent/track/params/all", float(track_index))
-    raw = _osc_str_reply("/agent/track/params/all/response", timeout=timeout)
+    raw = query_osc("/agent/track/params/all", "/agent/track/params/all/response",
+                   send_args=(float(track_index),), timeout=timeout)
     if not raw:
         return {"track": track_index, "device": "", "pages": [], "total_pages": 0}
     try:
@@ -171,11 +236,9 @@ def query_track_clip_notes(track_index: int, scene_idx: int = 0,
         {"track": 1, "loop_beats": 8.0, "count": 12, "scene_slot": 1,
          "notes": [{"step": 0, "pitch": 60}, ...]}
     """
-    if scene_idx > 0:
-        _send("/agent/track/clip/notes", float(track_index), float(scene_idx))
-    else:
-        _send("/agent/track/clip/notes", float(track_index))
-    raw = _osc_str_reply("/agent/track/clip/notes/response", timeout=timeout)
+    args = (float(track_index), float(scene_idx)) if scene_idx > 0 else (float(track_index),)
+    raw = query_osc("/agent/track/clip/notes", "/agent/track/clip/notes/response",
+                   send_args=args, timeout=timeout)
     if not raw:
         return {"track": track_index, "notes": [], "count": 0, "loop_beats": 0}
     try:
@@ -189,9 +252,8 @@ def open_track_device(track_index: int, timeout: float = 3.0) -> str:
     """Öffnet das Device-Fenster des ersten Geräts auf einem Track.
     Returns device name oder "" bei Fehler.
     """
-    _send("/agent/track/device/open", float(track_index))
-    raw = _osc_str_reply("/agent/track/device/open/response", timeout=timeout)
-    return raw or ""
+    return query_osc("/agent/track/device/open", "/agent/track/device/open/response",
+                    send_args=(float(track_index),), timeout=timeout) or ""
 
 
 def query_track_params(track_index: int, timeout: float = 3.0) -> dict:
@@ -201,8 +263,8 @@ def query_track_params(track_index: int, timeout: float = 3.0) -> dict:
         {"track": 1, "device": "Poly Grid",
          "params": [{"name": "Filter Cutoff", "value": 0.4321}, ...]}
     """
-    _send("/agent/track/params", float(track_index))
-    raw = _osc_str_reply("/agent/track/params/response", timeout=timeout)
+    raw = query_osc("/agent/track/params", "/agent/track/params/response",
+                   send_args=(float(track_index),), timeout=timeout)
     if not raw:
         return {"track": track_index, "device": "", "params": []}
     try:
@@ -213,27 +275,63 @@ def query_track_params(track_index: int, timeout: float = 3.0) -> dict:
 
 def new_project(timeout: float = 3.0) -> str:
     """Erstellt ein neues leeres Bitwig-Projekt. Gibt den Namen zurück."""
-    _send("/agent/project/new", 1)
-    return _osc_str_reply("/agent/project/new",
-                          reply_address="/agent/project/new/response",
-                          timeout=timeout) or "Neues Projekt"
+    return query_osc("/agent/project/new", "/agent/project/new/response",
+                    timeout=timeout) or "Neues Projekt"
+
+
+def query_cursor_track(timeout: float = 3.0) -> dict:
+    """Gibt Name + Devices des aktuell in Bitwig ausgewählten Tracks zurück.
+
+    Returns:
+        {"name": "Bass", "devices": ["Operator"], "is_group": False}
+    """
+    raw = query_osc("/agent/cursor/track/info", "/agent/cursor/track/info/response",
+                    timeout=timeout)
+    if not raw:
+        return {"name": "", "devices": [], "is_group": False}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"name": "", "devices": [], "is_group": False, "_raw": raw}
+
+
+def query_arranger_clip_notes(timeout: float = 4.0) -> dict:
+    """Liest MIDI-Noten aus dem aktuell ausgewählten Arranger-Clip.
+
+    Voraussetzung: Playhead auf einem MIDI-Clip des ausgewählten Tracks.
+
+    Returns:
+        {"loop_beats": 8.0, "notes": [{"step": 0, "pitch": 60}, ...], "count": 12}
+    """
+    raw = query_osc("/agent/cursor/clip/notes", "/agent/cursor/clip/notes/response",
+                    timeout=timeout)
+    if not raw:
+        return {"loop_beats": 0.0, "notes": [], "count": 0}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"loop_beats": 0.0, "notes": [], "count": 0, "_raw": raw}
 
 
 def get_project_name(timeout: float = 2.0) -> str:
     """Gibt den Namen des aktuell geöffneten Bitwig-Projekts zurück."""
-    _send("/agent/project/name", 1)
-    return _osc_str_reply("/agent/project/name",
-                          reply_address="/agent/project/name/response",
-                          timeout=timeout) or ""
+    return query_osc("/agent/project/name", "/agent/project/name/response",
+                    timeout=timeout) or ""
 
 
-def save_project(timeout: float = 3.0) -> bool:
-    """Speichert das aktuell geöffnete Bitwig-Projekt. Gibt True bei Erfolg zurück."""
-    _send("/agent/project/save", 1)
-    reply = _osc_str_reply("/agent/project/save",
-                           reply_address="/agent/project/save/response",
-                           timeout=timeout)
-    return reply == "ok"
+def save_project(timeout: float = 3.0) -> str:
+    """Speichert das aktuell geöffnete Bitwig-Projekt. Gibt Projektname zurück."""
+    return query_osc("/agent/project/save", "/agent/project/save/response",
+                    timeout=timeout) or ""
+
+
+def launch_clip(track_index: int, slot: int = 0, timeout: float = 2.0) -> bool:
+    """Startet einen Launcher-Clip auf einem Track. Gibt True bei Erfolg zurück."""
+    reply = query_osc("/agent/track/clip/launch",
+                     "/agent/track/clip/launch/response",
+                     send_args=(float(track_index), float(slot)),
+                     timeout=timeout)
+    return bool(reply and reply.startswith("launched"))
 
 
 def query_cue_markers(timeout: float = 3.0) -> list[dict]:
@@ -242,10 +340,8 @@ def query_cue_markers(timeout: float = 3.0) -> list[dict]:
     Returns:
         [{"name": "Intro", "beat": 0.0, "bar": 1.0}, ...]
     """
-    _send("/agent/project/cue-markers", 1)
-    raw = _osc_str_reply("/agent/project/cue-markers",
-                         reply_address="/agent/project/cue-markers/response",
-                         timeout=timeout)
+    raw = query_osc("/agent/project/cue-markers", "/agent/project/cue-markers/response",
+                   timeout=timeout)
     if not raw:
         return []
     try:
@@ -265,12 +361,8 @@ def query_project_snapshot(project_name: str, timeout: float = 8.0):
         BitwigProjectSnapshot oder raises RuntimeError wenn Bitwig nicht erreichbar.
     """
     from src.agent.models.project_snapshot import BitwigProjectSnapshot
-    _send("/agent/project/full-snapshot", 1)
-    raw = _osc_str_reply(
-        "/agent/project/full-snapshot",
-        reply_address="/agent/project/full-snapshot/response",
-        timeout=timeout,
-    )
+    raw = query_osc("/agent/project/full-snapshot",
+                   "/agent/project/full-snapshot/response", timeout=timeout)
     if not raw:
         raise RuntimeError("Bitwig nicht erreichbar (/agent/project/full-snapshot)")
     return BitwigProjectSnapshot.from_raw(project_name, raw)
