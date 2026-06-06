@@ -60,10 +60,35 @@ def close_current_project_on_mac() -> None:
     time.sleep(1.5)
 
 
+def resolve_project_path(project_name: str) -> str | None:
+    """Gibt den vollständigen Pfad zur .bwproject-Datei zurück.
+
+    Bitwig speichert Projekte entweder als:
+      - ProjectName.bwproject  (flache Datei)
+      - ProjectName/ProjectName.bwproject  (Projektordner)
+    """
+    check_cmd = (
+        f"if [ -f '{MAC_PROJECTS_DIR}/{project_name}.bwproject' ]; then "
+        f"echo '{MAC_PROJECTS_DIR}/{project_name}.bwproject'; "
+        f"elif [ -f '{MAC_PROJECTS_DIR}/{project_name}/{project_name}.bwproject' ]; then "
+        f"echo '{MAC_PROJECTS_DIR}/{project_name}/{project_name}.bwproject'; "
+        f"fi"
+    )
+    result = subprocess.run(
+        ["ssh", "-o", "StrictHostKeyChecking=no", MAC_HOST, check_cmd],
+        capture_output=True, text=True, timeout=10,
+    )
+    path = result.stdout.strip()
+    return path if path else None
+
+
 def open_project_on_mac(project_name: str) -> bool:
     """Schließt das aktuelle Projekt, dann öffnet das nächste in Bitwig."""
     close_current_project_on_mac()
-    path = f"{MAC_PROJECTS_DIR}/{project_name}.bwproject"
+    path = resolve_project_path(project_name)
+    if not path:
+        print(f"  ⚠️ Projektdatei nicht gefunden auf Mac: {project_name}")
+        return False
     cmd = f"open -a 'Bitwig Studio' '{path}'"
     result = subprocess.run(
         ["ssh", "-o", "StrictHostKeyChecking=no", MAC_HOST, cmd],

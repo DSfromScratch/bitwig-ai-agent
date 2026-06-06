@@ -1,7 +1,7 @@
 {
-  "total": 3019,
-  "train": 2717,
-  "valid": 302,
-  "jsonl_sources": 2462,
-  "neo4j_sources": 557
+  "total": 3030,
+  "train": 2727,
+  "valid": 303,
+  "jsonl_sources": 2463,
+  "neo4j_sources": 567
 }
