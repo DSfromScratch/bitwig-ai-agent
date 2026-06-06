@@ -28,6 +28,7 @@ public class BitwigStepPluginExtension extends ControllerExtension {
     private static final int REMOTE_PARAMS = 8;
     private static final int BROWSER_SCAN = 128;
     private static final int MAX_DEVICES_PER_TRACK = 8;
+    private static final int DRUM_PAD_COUNT = 16;   // Drum Machine hat 16 Pads
     // ── Bitwig API ────────────────────────────────────────────────────────────
 
     private ControllerHost host;
@@ -94,6 +95,9 @@ public class BitwigStepPluginExtension extends ControllerExtension {
 
     private DeviceBank[] trackDeviceBanks;
     private DeviceBank cursorTrackDeviceBank;
+
+    // ── Drum Pad Bank (vom cursorDevice, für Drum Machine Mapping) ────────────
+    private com.bitwig.extension.controller.api.DrumPadBank drumPadBank;
 
     // ── Scene Bank ────────────────────────────────────────────────────────────
 
@@ -215,6 +219,18 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         cursorDevice.name().markInterested();
         cursorDevice.exists().markInterested();
         cursorDevice.isWindowOpen().markInterested();
+        cursorDevice.hasDrumPads().markInterested();
+
+        // DrumPadBank: Pad-Namen + Note-Zuordnung für Drum Machine
+        // getItemAt() returns ObjectProxy (raw type), cast to Channel for name()/exists()
+        drumPadBank = cursorDevice.createDrumPadBank(DRUM_PAD_COUNT);
+        for (int i = 0; i < DRUM_PAD_COUNT; i++) {
+            com.bitwig.extension.controller.api.Channel pad =
+                (com.bitwig.extension.controller.api.Channel) drumPadBank.getItemAt(i);
+            pad.name().markInterested();
+            pad.exists().markInterested();
+        }
+
         popupBrowser.exists().markInterested();
         popupBrowser.selectedContentTypeIndex().markInterested();
         popupBrowser.contentTypeNames().markInterested();
@@ -338,6 +354,24 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                         sendReply("/agent/track/clip/launch/response", "launched:" + ti + ":" + slot);
                         host.println("[BitwigStep] Clip launched: Track " + ti + " Slot " + slot);
                     }, 300);
+                });
+
+        // ── Beliebige Bitwig-Action via ID ausführen ──────────────────────
+        space.registerMethod("/agent/action/invoke", "*", "Invoke any Bitwig action by ID",
+                (src, msg) -> {
+                    String actionId = JsonStepParser.argStr(msg, 0);
+                    if (actionId != null && !actionId.isEmpty()) {
+                        try {
+                            application.getAction(actionId).invoke();
+                            sendReply("/agent/action/invoke/response", "invoked:" + actionId);
+                            host.println("[BitwigStep] Action invoked: " + actionId);
+                        } catch (Exception e) {
+                            sendReply("/agent/action/invoke/response", "error:" + e.getMessage());
+                            host.println("[BitwigStep] Action error: " + e.getMessage());
+                        }
+                    } else {
+                        sendReply("/agent/action/invoke/response", "error:no action id");
+                    }
                 });
 
         // ── Projekt-Name abfragen ──────────────────────────────────────────
@@ -876,6 +910,59 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                         sb.append("]}");
                         sendReply("/agent/track/params/response", finalTi, sb.toString());
                     }, 450);
+                });
+
+        // ── Drum Machine Pad-Mapping ──────────────────────────────────────
+        // Gibt Pad-Namen + MIDI-Note-Nummern für den ersten Device des Tracks zurück.
+        // MIDI Note für Pad i = 36 + i (Bitwig Drum Machine Standard).
+        // Response: {"track":N,"device":"Drum Machine","pads":[{"pad":0,"note":36,"name":"Kick"},…]}
+        space.registerMethod("/agent/track/drum-pads", "*", "Drum Machine pad mapping",
+                (src, msg) -> {
+                    int trackIdx = 1;
+                    try {
+                        String raw = JsonStepParser.argStr(msg, 0);
+                        if (raw != null)
+                            trackIdx = (int) Double.parseDouble(raw);
+                    } catch (Exception e) {}
+                    final int ti = Math.max(1, Math.min(TRACK_BANK_SIZE, trackIdx));
+                    Track tr = (Track) trackBank.getItemAt(ti - 1);
+                    if (!tr.exists().get()) {
+                        sendReply("/agent/track/drum-pads/response", ti, "{\"pads\":[]}");
+                        return;
+                    }
+                    tr.selectInMixer();
+                    final int finalTi = ti;
+                    // Warte bis cursorDevice auf diesen Track gesetzt ist
+                    host.scheduleTask(() -> {
+                        String devName = cursorDevice.exists().get() ? cursorDevice.name().get() : "";
+                        boolean hasPads = cursorDevice.hasDrumPads().get();
+                        StringBuilder sb = new StringBuilder("{");
+                        sb.append("\"track\":").append(finalTi);
+                        sb.append(",\"device\":\"").append(jsonEsc(devName)).append("\"");
+                        sb.append(",\"has_drum_pads\":").append(hasPads);
+                        sb.append(",\"pads\":[");
+                        if (hasPads) {
+                            int padCount = 0;
+                            for (int i = 0; i < DRUM_PAD_COUNT; i++) {
+                                com.bitwig.extension.controller.api.Channel pad =
+                                    (com.bitwig.extension.controller.api.Channel) drumPadBank.getItemAt(i);
+                                if (!pad.exists().get()) continue;
+                                String padName = pad.name().get();
+                                if (padName == null) padName = "";
+                                int midiNote = 36 + i; // Bitwig Drum Machine: Pad 0 = Note 36 (C2)
+                                if (padCount > 0) sb.append(",");
+                                sb.append("{\"pad\":").append(i);
+                                sb.append(",\"note\":").append(midiNote);
+                                sb.append(",\"name\":\"").append(jsonEsc(padName)).append("\"");
+                                sb.append("}");
+                                padCount++;
+                            }
+                        }
+                        sb.append("]}");
+                        sendReply("/agent/track/drum-pads/response", finalTi, sb.toString());
+                        host.println("[BitwigStep] /agent/track/drum-pads Track " + finalTi
+                                + " device=" + devName + " hasPads=" + hasPads);
+                    }, 500);
                 });
 
         // ── Device-Fenster öffnen (für Grid-Screenshot) ───────────────────

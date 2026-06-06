@@ -1,13 +1,7 @@
 {
-  "exported_at": "2026-06-05T19:39:32.406230",
-  "neo4j_patterns": 0,
-  "theory_examples": 161,
-  "project_examples": 75,
-  "chord_examples": 144,
-  "context_examples": 6,
-  "total_examples": 386,
-  "train_count": 347,
-  "valid_count": 39,
-  "min_score": 0.7,
-  "output_path": "/home/sija/Repro/bitwig-ai-agent/training_data"
+  "total": 3019,
+  "train": 2717,
+  "valid": 302,
+  "jsonl_sources": 2462,
+  "neo4j_sources": 557
 }

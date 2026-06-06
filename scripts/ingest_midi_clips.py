@@ -199,10 +199,19 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
                     raw_notes: list[dict], loop_beats: float,
                     key_info: dict, rhythm: dict, melody: dict,
                     chords: list[str],
-                    scene_idx: int = 0, scene_name: str = "") -> None:
+                    scene_idx: int = 0, scene_name: str = "",
+                    drum_pad_map: dict | None = None) -> None:
+    """drum_pad_map: {midi_note: pad_name} für Drum Machine Tracks."""
     import json as _json
     from src.knowledge.neo4j_graph import session as neo4j_session
     from src.knowledge.store import get_embeddings
+
+    # Drum-Annotierung: jedem Note-Dict den Pad-Namen hinzufügen
+    if drum_pad_map:
+        raw_notes = [
+            {**n, "drum_sound": drum_pad_map.get(n["pitch"], "")}
+            for n in raw_notes
+        ]
 
     # Szenen-Info in Content einbauen
     scene_suffix = f" | Szene: {scene_name}" if scene_name else ""
@@ -234,6 +243,7 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
                 n.pitch_names     = $pitch_names,
                 n.loop_beats      = $loop_beats,
                 n.notes_json      = $notes_json,
+                n.drum_pad_map    = $drum_pad_map,
                 n.content         = $content,
                 n.source          = $source
         """
@@ -248,7 +258,9 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
              quant=rhythm.get("quantization",""),
              density=rhythm.get("density",0), note_count=rhythm.get("note_count",0),
              ambitus=melody.get("ambitus",""), pitch_names=melody.get("pitch_names",[]),
-             loop_beats=loop_beats, notes_json=notes_json, content=content,
+             loop_beats=loop_beats, notes_json=notes_json,
+             drum_pad_map=_json.dumps(drum_pad_map or {}, ensure_ascii=False),
+             content=content,
              source=f"MidiClip:{project}/Track{track_idx}/Scene{scene_idx}",
              emb=emb)
 
@@ -352,7 +364,9 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    from src.agent.osc.project_scan import query_project_snapshot, query_track_clip_notes
+    from src.agent.osc.project_scan import (
+        query_project_snapshot, query_track_clip_notes, query_drum_pads
+    )
 
     print(f"[scan] Lade Projekt-Snapshot für '{args.project}' …")
     try:
@@ -372,6 +386,28 @@ def main() -> None:
             MATCH (sr:SoundRecipe {project: $p})
             RETURN sr.track_index AS idx, sr.role AS role
         """, p=args.project).data()}
+
+    # ── Drum Pad Mapping: track_idx → {midi_note → pad_name} ─────────────────
+    # Für jeden Track mit Drum Machine Gerät die Pad-Namen abfragen.
+    # Erfordert die neue Extension mit /agent/track/drum-pads Endpoint.
+    drum_pad_maps: dict[int, dict[int, str]] = {}
+    print("  Prüfe Drum Machine Pads …")
+    for track in snapshot.instrument_tracks():
+        devices = getattr(track, "devices", []) or []
+        is_drum = any("drum machine" in d.lower() for d in devices)
+        if not is_drum:
+            continue
+        pad_data = query_drum_pads(track.idx, timeout=2.5)
+        pads = pad_data.get("pads", [])
+        if pads:
+            note_map = {p["note"]: p["name"] for p in pads if p.get("name")}
+            drum_pad_maps[track.idx] = note_map
+            pad_str = ", ".join(f"{p['note']}={p['name']}" for p in pads[:6])
+            print(f"    Track {track.idx}: {track.name} → {len(pads)} Pads: {pad_str} …")
+        elif pad_data.get("has_drum_pads") is False:
+            pass  # kein Drum Machine — normal
+    if not drum_pad_maps:
+        print("    (keine Drum Machine Pads gefunden — Extension ggf. noch nicht aktuell)")
 
     results = []
     for track in snapshot.instrument_tracks():
@@ -417,8 +453,9 @@ def main() -> None:
             if chords:
                 print(f"             Akkorde: {', '.join(chords)}")
 
+            pad_map = drum_pad_maps.get(idx, {})
             results.append((idx, name, notes, beats, key_info, rhythm, melody, chords,
-                            scene_idx, scene_name))
+                            scene_idx, scene_name, pad_map))
             time.sleep(0.3)
 
     if args.dry_run:
@@ -430,10 +467,11 @@ def main() -> None:
 
     label = "[embed]" if has_embed else "[store] (kein Embedding-Server — nur Metadaten)"
     print(f"\n{label} Speichere {len(results)} MidiClip-Nodes …")
-    for idx, name, notes, beats, key_info, rhythm, melody, chords, scene_idx, scene_name in results:
+    for idx, name, notes, beats, key_info, rhythm, melody, chords, scene_idx, scene_name, pad_map in results:
         store_midi_clip(idx, name, args.project, notes, beats,
                         key_info, rhythm, melody, chords,
-                        scene_idx=scene_idx, scene_name=scene_name)
+                        scene_idx=scene_idx, scene_name=scene_name,
+                        drum_pad_map=pad_map)
 
     n_tracks = len({r[0] for r in results})
     n_scenes = len({r[8] for r in results})

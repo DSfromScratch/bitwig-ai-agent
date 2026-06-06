@@ -476,6 +476,173 @@ class WorkflowRepository:
             log.warning("WorkflowRepository.mark_completed: %s", exc)
 
 
+# ── GenrePatternRepository ────────────────────────────────────────────────────
+
+@dataclass
+class GenrePatternRecord:
+    name: str            # "Kuduro"
+    bpm_avg: float
+    bpm_range: list[float]   # [min, max]
+    typical_keys: list[str]  # ["A minor", "E minor"]
+    energy: float
+    onset_steps: list[int]   # [0, 3, 7, 12]
+    sources: list[str]       # YouTube-Titel
+    analyzed_at: str         # ISO-Datum
+
+
+class GenrePatternRepository:
+    """Cached GenrePattern-Nodes: BPM, Tonart, Onset-Steps aus Audio-Analyse."""
+
+    _INDEX_CREATED = False
+
+    def save(self, record: GenrePatternRecord) -> None:
+        if not is_available():
+            return
+        try:
+            import json as _json
+            from src.knowledge.store import get_embeddings
+            content = (
+                f"Genre: {record.name} | BPM: {record.bpm_avg} | "
+                f"Keys: {', '.join(record.typical_keys)} | "
+                f"Energy: {record.energy} | "
+                f"Onset-Steps: {record.onset_steps}"
+            )
+            emb = get_embeddings().embed_documents([content])[0]
+            with session() as s:
+                s.run("""
+                    MERGE (g:GenrePattern {name: $name})
+                    SET g.bpm_avg      = $bpm_avg,
+                        g.bpm_min      = $bpm_min,
+                        g.bpm_max      = $bpm_max,
+                        g.typical_keys = $keys,
+                        g.energy       = $energy,
+                        g.onset_steps  = $steps,
+                        g.sources      = $sources,
+                        g.analyzed_at  = $ts,
+                        g.content      = $content,
+                        g.embedding    = $emb
+                """,
+                name=record.name,
+                bpm_avg=record.bpm_avg,
+                bpm_min=record.bpm_range[0] if record.bpm_range else record.bpm_avg,
+                bpm_max=record.bpm_range[1] if len(record.bpm_range) > 1 else record.bpm_avg,
+                keys=record.typical_keys,
+                energy=record.energy,
+                steps=record.onset_steps,
+                sources=record.sources,
+                ts=record.analyzed_at,
+                content=content,
+                emb=emb,
+                )
+                if not GenrePatternRepository._INDEX_CREATED:
+                    try:
+                        s.run("""
+                            CREATE VECTOR INDEX genre_pattern_embedding IF NOT EXISTS
+                            FOR (n:GenrePattern) ON n.embedding
+                            OPTIONS {indexConfig: {`vector.dimensions`: 768,
+                                                   `vector.similarity_function`: 'cosine'}}
+                        """)
+                        GenrePatternRepository._INDEX_CREATED = True
+                    except Exception:
+                        pass
+
+                # ── Relationen zu Scale-Nodes (USES_SCALE) ────────────────────
+                for key_str in record.typical_keys:
+                    parts = key_str.split()
+                    if len(parts) >= 2:
+                        root, scale_type = parts[0], parts[1]
+                        s.run("""
+                            MATCH (sc:Scale {root_en: $root, type: $scale_type})
+                            MATCH (g:GenrePattern {name: $name})
+                            MERGE (g)-[:USES_SCALE]->(sc)
+                        """, root=root, scale_type=scale_type, name=record.name)
+
+                # ── Relationen zu ähnlichen MidiClips (SIMILAR_PATTERN) ───────
+                try:
+                    similar_clips = s.run("""
+                        CALL db.index.vector.queryNodes('midiclip_embedding', 3, $emb)
+                        YIELD node AS mc, score
+                        WHERE score >= 0.75
+                        RETURN mc.source AS mc_source, mc.track_name AS mc_track
+                    """, emb=emb).data()
+                    for row in similar_clips:
+                        src = row.get("mc_source") or ""
+                        if src:
+                            s.run("""
+                                MATCH (mc:MidiClip {source: $src})
+                                MATCH (g:GenrePattern {name: $name})
+                                MERGE (g)-[:SIMILAR_PATTERN]->(mc)
+                            """, src=src, name=record.name)
+                except Exception:
+                    pass
+
+            log.info("GenrePatternRepository.save: %s gespeichert", record.name)
+        except Exception as exc:
+            log.warning("GenrePatternRepository.save fehlgeschlagen: %s", exc)
+
+    def find(self, name: str) -> GenrePatternRecord | None:
+        """Exakte Suche nach Genre-Name (case-insensitive)."""
+        if not is_available():
+            return None
+        try:
+            with session() as s:
+                result = s.run("""
+                    MATCH (g:GenrePattern)
+                    WHERE toLower(g.name) = toLower($name)
+                    RETURN g
+                    LIMIT 1
+                """, name=name).single()
+            if not result:
+                return None
+            g = result["g"]
+            return GenrePatternRecord(
+                name=g["name"],
+                bpm_avg=float(g.get("bpm_avg", 120)),
+                bpm_range=[float(g.get("bpm_min", 0)), float(g.get("bpm_max", 0))],
+                typical_keys=list(g.get("typical_keys", [])),
+                energy=float(g.get("energy", 0.5)),
+                onset_steps=list(g.get("onset_steps", [])),
+                sources=list(g.get("sources", [])),
+                analyzed_at=g.get("analyzed_at", ""),
+            )
+        except Exception as exc:
+            log.warning("GenrePatternRepository.find: %s", exc)
+            return None
+
+    def find_similar(self, query_text: str, limit: int = 3) -> list[GenrePatternRecord]:
+        """HNSW-Vektorsuche: findet ähnlichste Genre-Patterns."""
+        if not is_available():
+            return []
+        try:
+            from src.knowledge.store import get_embeddings
+            emb = get_embeddings().embed_documents([query_text])[0]
+            with session() as s:
+                rows = s.run("""
+                    CALL db.index.vector.queryNodes(
+                        'genre_pattern_embedding', $k, $emb)
+                    YIELD node AS g, score
+                    RETURN g, score
+                    ORDER BY score DESC
+                """, k=limit, emb=emb).data()
+            records = []
+            for row in rows:
+                g = row["g"]
+                records.append(GenrePatternRecord(
+                    name=g["name"],
+                    bpm_avg=float(g.get("bpm_avg", 120)),
+                    bpm_range=[float(g.get("bpm_min", 0)), float(g.get("bpm_max", 0))],
+                    typical_keys=list(g.get("typical_keys", [])),
+                    energy=float(g.get("energy", 0.5)),
+                    onset_steps=list(g.get("onset_steps", [])),
+                    sources=list(g.get("sources", [])),
+                    analyzed_at=g.get("analyzed_at", ""),
+                ))
+            return records
+        except Exception as exc:
+            log.warning("GenrePatternRepository.find_similar: %s", exc)
+            return []
+
+
 # ── TYPE_CHECKING Imports (zirkuläre Importe vermeiden) ───────────────────────
 
 from typing import TYPE_CHECKING  # noqa: E402

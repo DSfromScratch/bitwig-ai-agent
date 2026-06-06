@@ -31,6 +31,134 @@ def _project_match(query: str, candidates: list[str]) -> bool:
     return False
 
 
+# ── Musiktheorie-Hilfsfunktionen ────────────────────────────────────────────
+
+_SCALE_NOTES_CACHE: dict[str, list[int]] | None = None
+
+
+def _load_scale_notes() -> dict[str, list[int]]:
+    """Lädt Scale.notes aus Neo4j (Pitch-Klassen 0–11)."""
+    global _SCALE_NOTES_CACHE
+    if _SCALE_NOTES_CACHE is not None:
+        return _SCALE_NOTES_CACHE
+    try:
+        from src.knowledge.neo4j_graph import is_available, session
+        if not is_available():
+            _SCALE_NOTES_CACHE = {}
+            return {}
+        with session() as s:
+            rows = s.run("MATCH (sc:Scale) RETURN sc.name_en AS name, sc.notes AS notes").data()
+        _SCALE_NOTES_CACHE = {
+            r["name"].lower(): [n % 12 for n in r["notes"]]
+            for r in rows if r["name"] and r["notes"]
+        }
+    except Exception:
+        _SCALE_NOTES_CACHE = {}
+    return _SCALE_NOTES_CACHE
+
+
+def key_conformance(notes: list[dict], key: str) -> float:
+    """
+    Anteil der Noten deren Pitch-Klasse in der Tonart liegt.
+    0.0 = alle Noten außerhalb, 1.0 = alle diatonisch.
+    """
+    if not notes or not key:
+        return 1.0  # kein Kontext → neutral
+
+    scale_map = _load_scale_notes()
+    key_norm = _normalize_key(key)
+
+    # Versuche exakten Match, dann Teilstring-Match
+    scale_pcs: list[int] | None = scale_map.get(key_norm)
+    if scale_pcs is None:
+        for k, v in scale_map.items():
+            if key_norm in k or k in key_norm:
+                scale_pcs = v
+                break
+    if scale_pcs is None:
+        return 1.0  # Tonart nicht gefunden → neutral
+
+    scale_set = set(scale_pcs)
+    in_key = sum(1 for n in notes if n.get("pitch", 0) % 12 in scale_set)
+    return in_key / len(notes)
+
+
+def rhythm_density_match(notes: list[dict], energy: float, total_steps: int = 64) -> float:
+    """
+    Bewertet ob Noten-Dichte zur Szenen-Energie passt.
+    energy 0.0–1.0: niedrig = spärlich, hoch = dicht.
+    score = 1 - |actual_density - expected_density|
+    """
+    if not notes:
+        return 0.5  # keine Noten → neutral
+
+    unique_steps = len({n.get("step", 0) for n in notes})
+    actual_density = unique_steps / max(total_steps, 1)
+
+    # Erwartete Dichte: linear 0.1 (bei energy=0) bis 0.8 (bei energy=1)
+    expected_density = 0.1 + energy * 0.7
+
+    diff = abs(actual_density - expected_density)
+    return max(0.0, 1.0 - diff * 2)  # *2 damit 0.5 Diff = 0 Score
+
+
+def harmonic_complement(new_notes: list[dict], existing_notes: list[list[dict]]) -> float:
+    """
+    Bewertet ob neue Noten harmonisch zu bestehenden MIDI-Clips passen.
+    Misst: Anteil Pitch-Klassen-Überschneidung (Komplementarität, nicht Identität).
+    Ideal: neue Noten füllen Lücken in bestehenden Clips.
+    """
+    if not new_notes or not existing_notes:
+        return 0.8  # kein Kontext → gut (keine Konflikte)
+
+    existing_pcs: set[int] = set()
+    for clip_notes in existing_notes:
+        for n in clip_notes:
+            if isinstance(n, dict):
+                existing_pcs.add(n.get("pitch", 0) % 12)
+
+    if not existing_pcs:
+        return 0.8
+
+    new_pcs = {n.get("pitch", 0) % 12 for n in new_notes}
+
+    # Komplementarität: neue PCs die nicht in existing sind
+    new_only = new_pcs - existing_pcs
+    complement_ratio = len(new_only) / max(len(new_pcs), 1)
+
+    # Vollständige Überschneidung ist okay (Verdopplung) aber weniger wertvoll
+    # Vollständig neu = 1.0, Hälfte neu = 0.75, komplett identisch = 0.5
+    return 0.5 + complement_ratio * 0.5
+
+
+def musical_reward(
+    notes: list[dict],
+    key: str = "",
+    energy: float = 0.5,
+    existing_clips: list[list[dict]] | None = None,
+    total_steps: int = 64,
+) -> tuple[float, dict]:
+    """
+    Kombinierter musikalischer Reward (0.0–1.0).
+
+    key_conformance:      40% — Noten diatonisch zur Tonart?
+    rhythm_density_match: 30% — Dichte passt zu Szenen-Energie?
+    harmonic_complement:  30% — Komplementär zu bestehenden Clips?
+    """
+    kc = key_conformance(notes, key)
+    rd = rhythm_density_match(notes, energy, total_steps)
+    hc = harmonic_complement(notes, existing_clips or [])
+
+    score = kc * 0.4 + rd * 0.3 + hc * 0.3
+    return round(score, 3), {
+        "key_conformance": round(kc, 3),
+        "rhythm_density":  round(rd, 3),
+        "harmonic_compl":  round(hc, 3),
+    }
+
+
+# ── Key-Normalisierung ───────────────────────────────────────────────────────
+
 _KEY_DE_TO_EN: dict[str, str] = {
     "cis": "c#", "des": "c#", "dis": "d#", "es": "eb", "eis": "e#",
     "fis": "f#", "ges": "gb", "gis": "g#", "as": "ab", "ais": "a#",
@@ -165,20 +293,39 @@ def score_completion(prompt: str, completion: str) -> tuple[float, dict]:
         breakdown["project_ok"] = neo4j_ok
 
     elif tool == "write_pattern":
-        notes = args.get("notes")
-        # Notes müssen Liste von Dicts mit 'pitch' sein
+        # notes kann str (JSON) oder Liste sein
+        raw_notes = args.get("notes")
+        if isinstance(raw_notes, str):
+            try:
+                raw_notes = json.loads(raw_notes)
+            except (json.JSONDecodeError, TypeError):
+                raw_notes = None
+
         notes_ok = (
-            isinstance(notes, list)
-            and len(notes) > 0
-            and isinstance(notes[0], dict)
-            and "pitch" in notes[0]
+            isinstance(raw_notes, list)
+            and len(raw_notes) > 0
+            and isinstance(raw_notes[0], dict)
+            and "pitch" in raw_notes[0]
         )
-        # Tonart prüfen wenn vorhanden
-        key = _normalize_key(args.get("key") or "")
-        key_ok = (not key) or any(key in s or s in key for s in ctx.get("scales", []))
-        neo4j_ok = notes_ok and key_ok
         breakdown["notes_ok"] = notes_ok
-        breakdown["key_ok"]   = key_ok
+
+        if notes_ok:
+            # Musikalischer Reward
+            key_raw  = args.get("key") or args.get("description") or ""
+            energy   = float(args.get("scene_energy") or 0.5)
+            mus_score, mus_breakdown = musical_reward(
+                raw_notes, key=key_raw, energy=energy
+            )
+            breakdown.update(mus_breakdown)
+            # neo4j_ok = notes strukturell korrekt + musikalisch > 0.5
+            neo4j_ok = mus_score >= 0.5
+            # Anteiligen Score addieren (ersetzt fixe 0.25)
+            score += 0.25 * mus_score
+            breakdown["musical_score"] = mus_score
+            # früh rückgeben — Score schon inkl. musikalischem Anteil
+            return round(min(1.0, score), 3), breakdown
+        else:
+            neo4j_ok = False
 
     elif tool == "scan_and_learn_project":
         neo4j_ok = True   # Kein Argument nötig

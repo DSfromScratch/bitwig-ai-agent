@@ -457,7 +457,20 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                            'midi' AS kind, score
                 """, emb=emb).data()
 
-            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid + raw_ga + raw_midi
+            # GenrePattern: BPM + Tonart + Onset-Steps aus Audio-Analyse
+            gp_count = s.run("MATCH (g:GenrePattern) RETURN count(g) AS c").single()["c"]
+            raw_genre = []
+            if gp_count > 0:
+                raw_genre = s.run("""
+                    CALL db.index.vector.queryNodes('genre_pattern_embedding', 3, $emb)
+                    YIELD node AS g, score
+                    RETURN g.content AS content,
+                           g.name    AS source,
+                           null AS role, null AS doc_type, null AS video_url,
+                           'genre_pattern' AS kind, score
+                """, emb=emb).data()
+
+            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid + raw_ga + raw_midi + raw_genre
 
             # Score-Threshold: YouTube strenger als strukturierte Docs
             docs = [

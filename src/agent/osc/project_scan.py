@@ -351,6 +351,30 @@ def query_cue_markers(timeout: float = 3.0) -> list[dict]:
         return []
 
 
+def query_drum_pads(track_index: int, timeout: float = 2.5) -> dict:
+    """Liest Drum Machine Pad-Namen + MIDI-Noten für einen Track.
+
+    Returns:
+        {
+          "track": 2, "device": "Drum Machine", "has_drum_pads": True,
+          "pads": [
+            {"pad": 0, "note": 36, "name": "v0 Kick"},
+            {"pad": 1, "note": 37, "name": "v0 Snare"},
+            ...
+          ]
+        }
+    Leere pads-Liste wenn kein Drum Machine auf dem Track.
+    """
+    raw = query_osc("/agent/track/drum-pads", "/agent/track/drum-pads/response",
+                    send_args=(float(track_index),), timeout=timeout)
+    if not raw:
+        return {"track": track_index, "device": "", "has_drum_pads": False, "pads": []}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"track": track_index, "device": "", "has_drum_pads": False, "pads": [], "_raw": raw}
+
+
 def query_project_snapshot(project_name: str, timeout: float = 8.0):
     """Vollständiger Projekt-Scan in einem OSC-Roundtrip.
 

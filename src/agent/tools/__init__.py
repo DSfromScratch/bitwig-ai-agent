@@ -10,6 +10,8 @@ from src.agent.tools.song_tools import (
 from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
 from src.agent.tools.pattern_tools import write_pattern
 from src.agent.tools.context_tool import get_song_context
+from src.agent.tools.web_search_tool import web_search
+from src.agent.tools.freesound_tool import find_audio_example
 from src.agent.tools.music_validator import validate_music
 from src.agent.tools.audio_llm_tool import analyze_song
 from src.agent.tools.music_learning import validate_and_learn
@@ -53,6 +55,8 @@ def scan_vst_plugins() -> str:
 
 ALL_TOOLS = [
     query_bitwig_docs,
+    web_search,
+    find_audio_example,
     scan_and_learn_project,
     reconstruct_project,
     create_track_from_recipe,
