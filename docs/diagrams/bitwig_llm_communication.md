@@ -20,7 +20,7 @@ graph TB
         BW["Bitwig Studio 6+<br/>nativ Apple Silicon"]
         subgraph EXT ["BitwigStepPluginExtension  (.bwextension)"]
             OSC_IN["OSC Server<br/>UDP :8002"]
-            QUEUE["stepQueue<br/>LinkedList<String[]><br/>+ stepExecuting flag"]
+            QUEUE["stepQueue<br/>LinkedList&lt;String[]&gt;<br/>+ stepExecuting flag"]
             DISP["executeStep<br/>JSON-Dispatcher"]
             SCHED["host.scheduleTask<br/>Bitwig Task Scheduler"]
             HANDLERS["Step-Handler:<br/>execAddTrack<br/>execLoadInstrument<br/>execAppendEffect<br/>execWriteNotes<br/>execSetParam(_Named)<br/>execClearTracks<br/>…"]
