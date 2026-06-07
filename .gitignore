@@ -84,6 +84,10 @@ agent-plugin/clap/
 # Raw Training-Daten (extern geklonte Repos, nicht committed)
 training_data/raw/drums-with-llm/
 
+# Trainings-Run-Artefakte (reproduzierbar via generate_dpo_pairs / train_agent_driven)
+training_data/dpo_run_hybrid/
+training_data/agent_session_*.jsonl
+
 #claude memory
 .claude/
 

@@ -180,6 +180,7 @@ VALID_TOOLS = {
     "create_track_from_recipe",
     "reconstruct_project",
     "write_pattern",
+    "write_pattern_raw",
     "scan_and_learn_project",
     "get_song_context",
 }
@@ -188,6 +189,7 @@ REQUIRED_PARAMS: dict[str, list[str]] = {
     "create_track_from_recipe": ["track_name", "project_name"],
     "reconstruct_project":      ["project_name"],
     "write_pattern":            ["track_name", "notes", "length_beats"],
+    "write_pattern_raw":        ["track_index", "notes", "length_beats"],
     "scan_and_learn_project":   [],
     "get_song_context":         ["project_name"],
 }
@@ -292,7 +294,7 @@ def score_completion(prompt: str, completion: str) -> tuple[float, dict]:
         neo4j_ok = _project_match(project, ctx.get("projects", []))
         breakdown["project_ok"] = neo4j_ok
 
-    elif tool == "write_pattern":
+    elif tool in ("write_pattern", "write_pattern_raw"):
         # notes kann str (JSON) oder Liste sein
         raw_notes = args.get("notes")
         if isinstance(raw_notes, str):

@@ -43,16 +43,90 @@ def _format_prompt(song: str | None, genre: str, bars: int = 4,
             f"Wähle den passenden Track und das beste Tool.")
 
 
+def _read_policy_feedback_since(offset: int) -> tuple[list[dict], int]:
+    """Liest neue policy_feedback-Einträge ab Byte-offset. Gibt
+    (final_tool_calls-Liste, neuer_offset) zurück. Robuste Tool-Call-Quelle,
+    weil core.py sie nach dem XML-Recovery-Parser schreibt."""
+    from src.agent.core import POLICY_LOG_FILE
+    import os as _os
+
+    if not _os.path.exists(POLICY_LOG_FILE):
+        return [], offset
+    calls: list[dict] = []
+    with open(POLICY_LOG_FILE) as f:
+        f.seek(offset)
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            for tc in (entry.get("final_tool_calls") or []):
+                name = tc.get("name") or tc.get("tool") or ""
+                args = tc.get("args") or {}
+                if name:
+                    calls.append({"tool": name, "args": args})
+        new_offset = f.tell()
+    return calls, new_offset
+
+
 def _ask_agent(prompt: str) -> tuple[str, dict]:
-    """Ruft den echten Agenten auf und gibt (antwort, metadata) zurück."""
-    from src.agent.core import chat
+    """Ruft den echten Agenten auf. Gibt (best_tool_call_json, metadata) zurück.
+
+    Statt der finalen Prosa-Antwort extrahieren wir die ECHTEN Tool-Calls aus
+    dem policy_feedback-Log (das core.py nach dem XML-Recovery schreibt) — nur
+    die sind via score_completion bewertbar. Wir geben den am höchsten gescorten
+    Pattern-Tool-Call zurück (write_pattern[_raw]), fallback letzter Tool-Call,
+    fallback Prosa.
+    """
+    import json as _json
+    import os as _os
+    from langchain_core.messages import HumanMessage
+
+    from src.agent.core import get_graph, _default_state, POLICY_LOG_FILE
+    from src.agent.tools.reward import score_completion
 
     print(f"\n  → Agent-Anfrage: {prompt[:80]}…")
+
+    offset = _os.path.getsize(POLICY_LOG_FILE) if _os.path.exists(POLICY_LOG_FILE) else 0
     try:
-        answer = chat(prompt)
+        graph = get_graph()
+        state = _default_state()
+        state["messages"] = [HumanMessage(content=prompt)]
+        result = graph.invoke(state)
     except Exception as e:
         return "", {"error": str(e), "exception": type(e).__name__}
-    return answer or "", {"length": len(answer or "")}
+
+    messages = result.get("messages", [])
+    final_text = messages[-1].content if messages else ""
+
+    tool_calls, _ = _read_policy_feedback_since(offset)
+
+    if not tool_calls:
+        return final_text or "", {"length": len(final_text or ""),
+                                  "n_tool_calls": 0, "captured": "prose"}
+
+    pattern_calls = [tc for tc in tool_calls
+                     if tc["tool"] in ("write_pattern", "write_pattern_raw")]
+    candidates = pattern_calls or tool_calls
+    scored = []
+    for tc in candidates:
+        js = _json.dumps(tc, ensure_ascii=False)
+        s, _ = score_completion(prompt, js)
+        scored.append((s, js, tc["tool"]))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best_score, best_json, best_tool = scored[0]
+
+    return best_json, {
+        "length":        len(best_json),
+        "n_tool_calls":  len(tool_calls),
+        "captured":      "tool_call",
+        "best_tool":     best_tool,
+        "all_tools":     [tc["tool"] for tc in tool_calls],
+        "final_text":    final_text[:200],
+    }
 
 
 def _score_answer(prompt: str, answer: str) -> tuple[float, dict]:
