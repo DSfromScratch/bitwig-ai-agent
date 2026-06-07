@@ -85,14 +85,29 @@ EVAL_PROMPTS = [
 ]
 
 
+def _eval_prompts_with_neo4j(extra_anchors: int = 8,
+                              per_anchor: int = 1) -> list[str]:
+    """Kombiniert die statischen EVAL_PROMPTS mit dynamischen Stil-Prompts
+    aus den (:Song)-Knoten in Neo4j. Wenn Neo4j down ist, fällt es leise
+    auf die statische Liste zurück."""
+    try:
+        from scripts._neo4j_song_prompts import load_prompts
+        extras = load_prompts(limit=extra_anchors, n_per_song=per_anchor, seed=0)
+    except Exception:
+        extras = []
+    return list(EVAL_PROMPTS) + extras
+
+
 # ── Evaluierung ───────────────────────────────────────────────────────────────
 
-def evaluate(model_url: str, temperature: float = 0.0) -> float:
+def evaluate(model_url: str, temperature: float = 0.0,
+             prompts: list[str] | None = None) -> float:
     """Berechnet avg_reward auf den Eval-Prompts."""
     from src.agent.tools.reward import score_completion
 
+    eval_set = prompts if prompts is not None else _eval_prompts_with_neo4j()
     scores = []
-    for prompt in EVAL_PROMPTS:
+    for prompt in eval_set:
         try:
             r = requests.post(model_url, json={
                 "model":       MODEL_ID,

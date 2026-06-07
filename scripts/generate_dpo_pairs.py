@@ -313,6 +313,8 @@ def generate_pairs(
     data_dir: str = "./training_data",
     out_dir: str | None = None,
     max_prompts: int = 50,
+    song_anchors: int = 20,
+    song_prompts_per_anchor: int = 2,
 ) -> dict:
     out_dir = out_dir or data_dir
     os.makedirs(out_dir, exist_ok=True)
@@ -320,7 +322,19 @@ def generate_pairs(
     train_pairs = _load_prompt_answer_pairs(data_dir)[:max_prompts]
     hard         = _hard_prompts()
 
-    print(f"📋 {len(train_pairs)} Trainings-Prompts + {len(hard)} Hard-Prompts")
+    # Neo4j-Anker: echte (:Song)-Knoten als stilistische Constraint-Quelle
+    try:
+        from scripts._neo4j_song_prompts import load_prompts as _load_song_prompts
+        neo_prompts = _load_song_prompts(
+            limit=song_anchors,
+            n_per_song=song_prompts_per_anchor,
+        )
+    except Exception as exc:
+        print(f"⚠ Neo4j-Anker übersprungen: {exc}")
+        neo_prompts = []
+
+    print(f"📋 {len(train_pairs)} Trainings-Prompts + {len(hard)} Hard-Prompts "
+          f"+ {len(neo_prompts)} Neo4j-Song-Prompts")
 
     examples: list[dict] = []
 
@@ -330,10 +344,11 @@ def generate_pairs(
     n_ah = _strategy_A_ground_truth(model_url, hard, examples)
     print(f"   {n_a + n_ah} Paare (Train: {n_a}, Hard: {n_ah})")
 
-    # Strategie B: Kontrast-Paare (Hard-Prompts bei hoher Temperatur)
+    # Strategie B: Kontrast-Paare (Hard-Prompts + Neo4j-Song-Prompts)
     print(f"\n── Strategie B: Kontrast-Paare ──────────────────────────────")
-    n_b = _strategy_B_contrast(model_url, [p for p, _ in hard], examples)
-    print(f"   {n_b} Paare")
+    n_b   = _strategy_B_contrast(model_url, [p for p, _ in hard], examples)
+    n_b_n = _strategy_B_contrast(model_url, neo_prompts, examples)
+    print(f"   {n_b + n_b_n} Paare (Hard: {n_b}, Neo4j-Songs: {n_b_n})")
 
     if not examples:
         print("\n⚠ Keine Paare generiert — Modell ist bereits sehr gut oder Server nicht erreichbar")
@@ -361,7 +376,7 @@ def generate_pairs(
         "valid_pairs":     len(valid_ex),
     }
     print(f"\n✅ {len(examples)} DPO-Paare gespeichert "
-          f"(A={n_a + n_ah}, B={n_b}) → {out_dir}/dpo_train.jsonl")
+          f"(A={n_a + n_ah}, B={n_b + n_b_n}) → {out_dir}/dpo_train.jsonl")
     return stats
 
 
@@ -371,10 +386,16 @@ if __name__ == "__main__":
     parser.add_argument("--data-dir",    default="./training_data")
     parser.add_argument("--out-dir",     default=None)
     parser.add_argument("--max-prompts", type=int, default=50)
+    parser.add_argument("--song-anchors", type=int, default=20,
+                        help="Wie viele (:Song)-Knoten aus Neo4j als Stil-Anker ziehen")
+    parser.add_argument("--song-prompts-per-anchor", type=int, default=2,
+                        help="Prompt-Varianten pro Song-Anker")
     args = parser.parse_args()
     generate_pairs(
         model_url=args.model_url,
         data_dir=args.data_dir,
         out_dir=args.out_dir,
         max_prompts=args.max_prompts,
+        song_anchors=args.song_anchors,
+        song_prompts_per_anchor=args.song_prompts_per_anchor,
     )
