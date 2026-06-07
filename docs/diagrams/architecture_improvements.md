@@ -3,14 +3,29 @@
 Jedes Finding aus der Architektur-Beurteilung mit konkretem Pattern und Code-Skizze.
 
 > **Implementierungs-Status (Juni 2026):**
-> - ✅ **Finding 1 (Command Queue + Scheduling)** ist in `BitwigStepPluginExtension.java`
->   bereits umgesetzt (`stepQueue` + `host.scheduleTask()`). Siehe
->   [`bitwig_llm_communication.md`](bitwig_llm_communication.md).
-> - ✅ **Event-Pattern** für Pipeline-Feedback ist in `src/agent/events.py` als
->   `EventBus` (Observer) live. Siehe [`agent_flow.md`](agent_flow.md).
-> - ✅ **Circuit Breaker** (Finding 5) ist in `src/agent/osc/circuit_breaker.py` aktiv.
-> - ✅ **OSC-Client-Abstraktion** in `src/agent/osc/client.py` (eliminiert Code-Duplikation).
-> - ⏳ Findings 2, 3, 4, 6–12 sind weiterhin offen bzw. teilweise umgesetzt.
+>
+> | # | Finding | Status | Implementierung |
+> |---|---------|--------|-----------------|
+> | 1 | OSC ohne Transaktionsgarantie | ✅ | `src/agent/osc/saga.py` + Java `stepQueue` + `host.scheduleTask()` in `BitwigStepPluginExtension.java` |
+> | 2 | `song_tools.py` Monolith | 🟡 teilweise | `song_tools.py` jetzt nur 157 Zeilen; `tools/knowledge/{rhythm_tool,instrument_tool}.py` existiert; Tool-Registry/`tools/bitwig/`-Split steht noch aus |
+> | 3 | Qualitätsscore misst das Falsche | 🟡 teilweise | `src/agent/quality/specs.py` als Spec-basierter Validator vorhanden |
+> | 4 | `is_concrete_track_task()` SPOF | ✅ | Ersetzt durch `src/agent/policy.py` (TaskPolicy) |
+> | 5 | Kein Circuit Breaker | ✅ | `src/agent/osc/circuit_breaker.py` aktiv |
+> | 6 | `note_slave` Pseudo-Parallelisierung | ✅ | Dualer Graph entfernt; nur noch `note_retry`-Phase im 2-Node-LangGraph (`src/agent/state.py`) |
+> | 7 | XML-Recovery Workaround | ✅ | `src/agent/recovery.py` kapselt Recovery-Logik |
+> | 8 | Shared State zwischen zwei Graphen | ✅ | Hinfällig — nur noch ein einziger LangGraph (siehe [`agent_flow.md`](agent_flow.md)) |
+> | 9 | LLM als Dispatcher statt Reasoning | 🟡 teilweise | `DRUM_PROFILES` entfernt; `rhythm_tool`/`instrument_tool` KB-gestützt; vollständige Strategy-Migration noch offen |
+> | 10 | Instrument-Auswahl hardcoded | 🟡 teilweise | `tools/knowledge/instrument_tool.py` LLM-getrieben, aber Fallback-Pfade existieren noch |
+> | 11 | Fehlende OSC-ACKs | ✅ | Step-Protocol mit `/step/done`-ACK pro Step (siehe [`bitwig_llm_communication.md`](bitwig_llm_communication.md)) |
+> | 12 | Dropdown-UI | ✅ | Dashboard nutzt Freitext-Eingabe (kein Dropdown mehr) |
+>
+> **Querschnitts-Verbesserungen:**
+> - ✅ EventBus (`src/agent/events.py`) für Observer-Pattern (Pipeline-Feedback)
+> - ✅ OSC-Client-Abstraktion (`src/agent/osc/client.py`) — eliminiert ~8x Code-Duplikation
+>
+> Die Code-Skizzen in den einzelnen Findings unten zeigen die ursprünglich vorgeschlagene
+> Form. Die tatsächliche Implementierung kann abweichen — siehe jeweils die referenzierte
+> Quelldatei für den aktuellen Stand.
 
 ---
 
