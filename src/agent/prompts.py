@@ -284,6 +284,7 @@ execute_setup(result={
 | `set_param` | `{track_index, index, value}` | Parameter per Index (1–8) |
 | `set_param_named` | `{track_index, param_name, value}` | Parameter per Name |
 | `set_send` | `{track_index, send_index, level}` | Send zu Return-Track |
+| `setup_drum_machine` | `{track_index, pads:[{pad, name}]}` | Drum Machine + Pads belegen |
 | `select_track` | `{track_index}` | Track auswählen |
 
 ---

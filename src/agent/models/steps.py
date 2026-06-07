@@ -70,6 +70,18 @@ class SetSendStep(_BaseStep):
     level: float = Field(ge=0.0, le=1.0)
 
 
+class SetupDrumMachineStep(_BaseStep):
+    """Lädt eine Drum Machine auf den Track und belegt Pads mit Built-in-Devices.
+
+    pads: Liste von {pad|note, name, uuid?}. `pad` = Index 0..15 (alternativ
+    `note` = 36+pad). `name`/`uuid` identifiziert das Built-in-Instrument je Pad;
+    Pads ohne UUID-Treffer werden Bitwig-seitig übersprungen.
+    """
+    type: Literal["setup_drum_machine"] = "setup_drum_machine"
+    track_index: int
+    pads: list[dict] = Field(default_factory=list)
+
+
 class WriteNotesStep(_BaseStep):
     type: Literal["write_notes"] = "write_notes"
     track_index: int
@@ -109,6 +121,7 @@ BitwigStep = Union[
     SetParamStep,
     SetParamNamedStep,
     SetSendStep,
+    SetupDrumMachineStep,
     WriteNotesStep,
     WriteDrumPatternStep,
     PlayStep,

@@ -43,6 +43,7 @@ class BitwigTrack(TypedDict):
 #   set_param        args: {track_index, index, value}
 #   set_param_named  args: {track_index, param_name, value}
 #   set_send         args: {track_index, send_index, level}
+#   setup_drum_machine args: {track_index, pads:[{pad|note, name, uuid?}]}
 #   set_tempo        args: {bpm}
 #   add_track        args: {track_type}   (instrument/audio/return)
 #   select_track     args: {track_index}

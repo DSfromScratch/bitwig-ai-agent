@@ -99,4 +99,30 @@ final class JsonStepParser {
         }
         return result;
     }
+
+    /**
+     * Zerlegt ein JSON-Array von Objekten in die einzelnen Objekt-Strings.
+     * Eingabe z. B. {@code [{"pad":0,"name":"Kick"},{"pad":1,"name":"Snare"}]}
+     * → {@code ["{\"pad\":0,\"name\":\"Kick\"}", "{\"pad\":1,...}"]}.
+     * Tiefen-bewusst (verschachtelte Objekte/Arrays werden korrekt behandelt).
+     */
+    static java.util.List<String> splitObjects(String arrayJson) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (arrayJson == null) return out;
+        int depth = 0, objStart = -1;
+        for (int i = 0; i < arrayJson.length(); i++) {
+            char c = arrayJson.charAt(i);
+            if (c == '{') {
+                if (depth == 0) objStart = i;
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0 && objStart >= 0) {
+                    out.add(arrayJson.substring(objStart, i + 1));
+                    objStart = -1;
+                }
+            }
+        }
+        return out;
+    }
 }

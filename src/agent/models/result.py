@@ -23,6 +23,7 @@ from .steps import (
     SetParamStep,
     SetSendStep,
     SetTempoStep,
+    SetupDrumMachineStep,
     StopStep,
     WriteDrumPatternStep,
     WriteNotesStep,
@@ -125,6 +126,12 @@ class BitwigResultBuilder:
     def set_send(self, track_index: int, send_index: int, level: float) -> "BitwigResultBuilder":
         self._steps.append(SetSendStep(track_index=track_index,
                                         send_index=send_index, level=level))
+        return self
+
+    def setup_drum_machine(self, track_index: int,
+                           pads: list[dict] | None = None) -> "BitwigResultBuilder":
+        self._steps.append(SetupDrumMachineStep(track_index=track_index,
+                                                pads=pads or []))
         return self
 
     def write_notes(self, track_index: int, notes: list[dict],

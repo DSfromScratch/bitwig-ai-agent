@@ -154,6 +154,14 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             Channel t = (Channel) trackBank.getItemAt(i);
             t.name().markInterested();
             t.exists().markInterested();
+            // Sends (für set_send → Return-/Effect-Track-Routing, C.1)
+            SendBank sb = t.sendBank();
+            for (int sIdx = 0; sIdx < MAX_SENDS; sIdx++) {
+                Send send = (Send) sb.getItemAt(sIdx);
+                send.exists().markInterested();
+                send.value().markInterested();
+                send.name().markInterested();
+            }
             Track tr = (Track) trackBank.getItemAt(i);
             DeviceBank db = tr.createDeviceBank(MAX_DEVICES_PER_TRACK);
             trackDeviceBanks[i] = db;
@@ -1076,6 +1084,8 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             case "append_effect":
             case "write_notes":
             case "set_param":
+            case "set_send":
+            case "setup_drum_machine":
             case "set_param_named": {
                 int track = (int) JsonStepParser.extractNumField(args, "track_index", 0);
                 if (track > 0 && !trackBank.getItemAt(
@@ -1096,6 +1106,8 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             case "append_effect" -> execAppendEffect(src, args);
             case "set_param" -> execSetParam(src, args);
             case "set_param_named" -> execSetParamNamed(src, args);
+            case "set_send" -> execSetSend(src, args);
+            case "setup_drum_machine" -> execSetupDrumMachine(src, args);
             case "write_notes" -> execWriteNotes(src, args);
             case "clear_tracks" -> execClearTracks(src);
             case "play" -> {
@@ -1413,6 +1425,108 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             }
             stepDone(src, "set_param_named");
         }, delay);
+    }
+
+    // ── set_send: Send-Pegel eines Tracks zu einem Return-/Effect-Track (C.1) ──
+    private void execSetSend(OscConnection src, String args) {
+        int track = Math.max(1, (int) JsonStepParser.extractNumField(args, "track_index", 1));
+        int sendIdx = Math.max(0, (int) JsonStepParser.extractNumField(args, "send_index", 0));
+        double level = JsonStepParser.extractNumField(args, "level", 0.0);
+        if (sendIdx >= MAX_SENDS) {
+            stepDone(src, "error:set_send:send_index_out_of_range:" + sendIdx);
+            return;
+        }
+        final double clamped = Math.max(0.0, Math.min(1.0, level));
+        channel(track).selectInMixer();
+        host.scheduleTask(() -> {
+            try {
+                Send send = (Send) channel(track).sendBank().getItemAt(sendIdx);
+                if (!send.exists().get()) {
+                    host.println("[BitwigStep] set_send: Send " + sendIdx
+                            + " existiert nicht (Track " + track + ") — kein Return-Track?");
+                    stepDone(src, "error:set_send:send_not_found:" + sendIdx);
+                    return;
+                }
+                send.value().set(clamped);
+                host.println("[BitwigStep] set_send Track " + track
+                        + " Send " + sendIdx + " → " + clamped);
+                stepDone(src, "set_send");
+            } catch (Exception e) {
+                host.println("[BitwigStep] set_send Fehler: " + e.getMessage());
+                stepDone(src, "error:set_send:" + e.getMessage());
+            }
+        }, 60);
+    }
+
+    // ── setup_drum_machine: Drum Machine laden + Pads mit Devices belegen (C.3) ─
+    // args: {track_index, pads:[{pad|note, name, uuid?}, …]}
+    //   pad  = Pad-Index 0..15 (alternativ note = 36+pad)
+    //   name = Built-in-Instrument-Name (UUID-Auflösung via BUILTIN_UUIDS) oder
+    //          explizite uuid. Sample-/VST-Pads (kein UUID-Treffer) werden geloggt
+    //          und übersprungen (kein flakiger Multi-Browser-Flow).
+    private void execSetupDrumMachine(OscConnection src, String args) {
+        int track = Math.max(1, (int) JsonStepParser.extractNumField(args, "track_index", 1));
+        String padsArr = JsonStepParser.extractArray(args, "pads");
+        List<String> padSpecs = padsArr != null
+                ? JsonStepParser.splitObjects(padsArr) : new ArrayList<>();
+
+        String dmUuid = BUILTIN_UUIDS.get("drum machine");
+        if (dmUuid == null) {
+            stepDone(src, "error:setup_drum_machine:no_drum_machine_uuid");
+            return;
+        }
+
+        channel(track).selectInMixer();
+        // T+80ms: Drum Machine in die Geräte-Kette des Tracks einfügen
+        host.scheduleTask(() -> {
+            try {
+                channel(track).endOfDeviceChainInsertionPoint()
+                        .insertBitwigDevice(UUID.fromString(dmUuid));
+                host.println("[BitwigStep] Drum Machine geladen (Track " + track + ")");
+            } catch (Exception e) {
+                host.println("[BitwigStep] Drum-Machine-Fehler: " + e.getMessage());
+                stepDone(src, "error:setup_drum_machine:" + e.getMessage());
+                return;
+            }
+            // T+600ms: Pads sequenziell belegen (cursorDevice = Drum Machine → drumPadBank folgt)
+            host.scheduleTask(() -> fillDrumPads(src, track, padSpecs, 0, 0), 600);
+        }, 80);
+    }
+
+    // Belegt rekursiv Pad nach Pad (gestaffelt), damit Insertions nicht kollidieren.
+    private void fillDrumPads(OscConnection src, int track, List<String> padSpecs,
+                              int i, int loaded) {
+        if (i >= padSpecs.size()) {
+            host.println("[BitwigStep] setup_drum_machine fertig: " + loaded
+                    + "/" + padSpecs.size() + " Pads belegt (Track " + track + ")");
+            stepDone(src, "setup_drum_machine");
+            return;
+        }
+        String spec = padSpecs.get(i);
+        String name = JsonStepParser.extractStringField(spec, "name");
+        int note = (int) JsonStepParser.extractNumField(spec, "note", -1);
+        int padIdx = note >= 36 ? note - 36
+                : (int) JsonStepParser.extractNumField(spec, "pad", i);
+        String uuidArg = JsonStepParser.extractStringField(spec, "uuid");
+        String uuid = (uuidArg != null && !uuidArg.isBlank())
+                ? uuidArg
+                : (name != null ? BUILTIN_UUIDS.get(name.toLowerCase().trim()) : null);
+
+        if (padIdx < 0 || padIdx >= DRUM_PAD_COUNT || uuid == null) {
+            host.println("[BitwigStep] Pad " + padIdx + " übersprungen (name="
+                    + name + ", kein UUID-Treffer)");
+            fillDrumPads(src, track, padSpecs, i + 1, loaded);
+            return;
+        }
+        try {
+            Channel pad = (Channel) drumPadBank.getItemAt(padIdx);
+            pad.endOfDeviceChainInsertionPoint().insertBitwigDevice(UUID.fromString(uuid));
+            host.println("[BitwigStep] Pad " + padIdx + " ← " + name);
+        } catch (Exception e) {
+            host.println("[BitwigStep] Pad " + padIdx + " Fehler: " + e.getMessage());
+        }
+        final int nextLoaded = loaded + 1;
+        host.scheduleTask(() -> fillDrumPads(src, track, padSpecs, i + 1, nextLoaded), 250);
     }
 
     private void execWriteNotes(OscConnection src, String args) {
