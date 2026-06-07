@@ -31,6 +31,13 @@ Jedes Finding aus der Architektur-Beurteilung mit konkretem Pattern und Code-Ski
 
 ## Finding 1 — OSC/UDP ohne Transaktionsgarantie
 
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt
+> - **Python-Saga:** [`src/agent/osc/saga.py`](../../src/agent/osc/saga.py) — `BitwigSaga`, `OscCommand`, `SagaStepError` (85 Zeilen)
+> - **Java-Queue:** `BitwigStepPluginExtension.java` mit `stepQueue` (LinkedList) + `host.scheduleTask()` für sequentielle, getaktete Ausführung
+> - **Step-Protokoll:** Jeder Step liefert `/step/done`-ACK über Port 9002 — siehe [`bitwig_llm_communication.md`](bitwig_llm_communication.md)
+>
+> Die Code-Skizze unten zeigt das ursprüngliche Design. Die finale Implementierung ist verteilt über Python (Saga) + Java (StepQueue).
+
 **Pattern: Saga + Command Queue**
 
 Eine Song-Erstellung ist eine verteilte Transaktion über ~50 Schritte. Das Saga-Pattern
@@ -98,6 +105,12 @@ def _build_track_saga(saga: BitwigSaga, track_idx: int, instrument: str) -> bool
 
 ## Finding 2 — `song_tools.py` Monolith
 
+> 🟡 **Ist-Stand (Juni 2026):** Teilweise umgesetzt
+> - ✅ `song_tools.py` ist von >800 auf **157 Zeilen** geschrumpft
+> - ✅ Tool-Verzeichnis aufgesplittet: 22+ Tool-Dateien in `src/agent/tools/` (`bitwig_tools.py`, `pattern_tools.py`, `pattern_generators.py`, `recipe_tool.py`, `freesound_tool.py`, …)
+> - ✅ Knowledge-Sub-Package: [`src/agent/tools/knowledge/{rhythm_tool,instrument_tool}.py`](../../src/agent/tools/knowledge/) (KB-gestützte Tools — siehe Finding 9/10)
+> - ⏳ Noch offen: zentrale `tools/registry.py` und der ursprünglich vorgesehene `tools/bitwig/` + `tools/music/`-Split. Stattdessen flache Struktur in `tools/`.
+
 **Pattern: Strategy + Tool Registry**
 
 > **Hinweis:** Strategy allein löst nur die Strukturfrage — die Implementierungen
@@ -162,6 +175,13 @@ wenn die KB noch nicht befüllt ist.
 ---
 
 ## Finding 3 — Qualitätsscore misst das Falsche
+
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt
+> - [`src/agent/quality/specs.py`](../../src/agent/quality/specs.py) — alle Specs aus dem Entwurf existieren: `TrackCountSpec`, `NoteCountSpec`, `ScaleConformanceSpec`, `VelocityDistributionSpec`, `DurationVarietySpec`
+> - `CompositeQualitySpec` + `DEFAULT_QUALITY_SPEC`-Singleton mit Gewichten 0.20/0.25/0.30/0.15/0.10
+> - Zusätzliche Helfer: `scale_pcs_from_hint()` für die ScaleConformanceSpec-Pitch-Class-Berechnung
+>
+> Code-Skizze unten und tatsächliche Implementierung sind quasi identisch.
 
 **Pattern: Specification (Composite)**
 
@@ -252,6 +272,11 @@ DEFAULT_QUALITY_SPEC = CompositeQualitySpec([
 
 ## Finding 4 — `is_concrete_track_task()` als Single Point of Failure
 
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt — abweichend vom Original-Entwurf
+> - **Routing:** [`src/agent/router.py`](../../src/agent/router.py) — `_route_request()` klassifiziert in `song` vs. `control` mittels Tool-Name-Sets + Confirmation-Heuristik (kein LLM-Fallback nötig)
+> - **Policy-Enforcement:** [`src/agent/policy.py`](../../src/agent/policy.py) — `enforce_policy_on_response()` filtert tote Tool-Calls heraus, extrahiert FX-Hints, klassifiziert Strict-FX und übergibt Kontext an den Agent. `is_concrete_track_task()` ist nicht mehr Single Source — nur eines von mehreren Signalen.
+> - Das Chain-of-Responsibility-Pattern aus dem Entwurf wurde nicht 1:1 umgesetzt; statt drei Klassifizierern gibt es zwei Module (Router → Policy), die kombiniert dieselbe Robustheit liefern.
+
 **Pattern: Chain of Responsibility**
 
 Die Routing-Entscheidung läuft durch eine Kette von Klassifizierern.
@@ -325,6 +350,12 @@ class RouterChain:
 ---
 
 ## Finding 5 — Kein Circuit Breaker für Bitwig
+
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt — Code praktisch identisch zum Entwurf
+> - [`src/agent/osc/circuit_breaker.py`](../../src/agent/osc/circuit_breaker.py) — `CircuitBreaker`-Dataclass mit `CLOSED`/`OPEN`/`HALF_OPEN`, `failure_threshold=3`, `recovery_timeout=30.0`
+> - Globaler Singleton `get_circuit()` + `send_osc_guarded()`-Helper als Drop-in-Ersatz
+> - HALF_OPEN-Übergang nach Recovery-Timeout für Probe-Calls
+> - Manuelles `reset()` möglich
 
 **Pattern: Circuit Breaker (Fowler)**
 
@@ -405,6 +436,14 @@ ins Leere geschickt. Automatische Erholung nach 30 s.
 
 ## Finding 6 — `note_slave` ist keine echte Parallelisierung
 
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt — komplett anderer Lösungsweg
+> - **Der duale Master-Graph wurde entfernt.** Es gibt nur noch *einen* schlanken LangGraph mit zwei Nodes (`agent` + `tools`) — siehe [`agent_flow.md`](agent_flow.md).
+> - Das ursprüngliche Slave-Modell (instrument_slave/harmony_slave/note_slave) existiert nicht mehr.
+> - Statt Pipeline-Parallelisierung steuert das LLM ReAct-style den Ablauf; lange Operationen werden auf Java-Seite per `stepQueue` getaktet — das eliminiert das Latenzproblem an der Wurzel.
+> - Phase-Tracking via `generation_phase` in [`src/agent/state.py`](../../src/agent/state.py) (z.B. `note_retry`).
+>
+> Die Pipeline-Skizze unten ist **historisch** und beschreibt eine Architektur, die heute nicht mehr existiert.
+
 **Pattern: Pipeline mit Partial-Fan-Out**
 
 Drum-Pattern sind harmonisch unabhängig — sie können *parallel* zu `harmony_slave` starten.
@@ -460,6 +499,15 @@ Requests um ~40 % (ein LLM-Call entfällt aus dem kritischen Pfad).
 ---
 
 ## Finding 7 — Qwen3 XML-Recovery als Workaround
+
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt
+> - [`src/agent/parsing/tool_call_parsers.py`](../../src/agent/parsing/tool_call_parsers.py) — `CompositeToolCallParser` mit:
+>   - `OpenAIFormatParser` (Standard-Tool-Calls)
+>   - `QwenXMLParser` (vollständiges `<tool_call>...</tool_call>`)
+>   - `TruncatedXMLParser` (NEU — repariert abgeschnittene XML-Fragmente, im Original-Entwurf nicht vorgesehen)
+>   - `MarkdownCodeBlockParser` (\`\`\`json-Blöcke)
+> - Globale Instanz `TOOL_CALL_PARSER` + `patch_message()` werden von [`src/agent/recovery.py`](../../src/agent/recovery.py) genutzt
+> - `recovery.py` enthält zusätzlich Klassifikation (`_classify_invalid_output`) und einen LLM-Re-Prompt-Fallback (`_recover_xml_fragment_once`)
 
 **Pattern: Adapter + Strategy (Parser-Chain)**
 
@@ -544,6 +592,13 @@ Ein neues Modell erfordert nur einen neuen Parser, keine Änderung am Graphen.
 
 ## Finding 8 — Shared State zwischen zwei Graphen
 
+> ✅ **Ist-Stand (Juni 2026):** Hinfällig durch Architektur-Vereinfachung
+> - **Es gibt nur noch einen Graphen** → das geteilte State-Problem existiert nicht mehr.
+> - [`src/agent/state.py`](../../src/agent/state.py) hat eine *einzige* `AgentState`-TypedDict mit klar dokumentierten Feldern (`messages`, `generation_phase`, `retry_count`, `ui_song_config`, `last_blueprint`, …).
+> - Der vorgeschlagene `StateBuilder` mit zwei Subklassen wurde nicht benötigt — ein Graph braucht keine Trennung.
+>
+> Die Lösung unten beschreibt einen Zustand, den die Codebase nicht mehr hat.
+
 **Pattern: State Object mit Typed Subclasses + Builder**
 
 Felder für Standard Agent und Master Graph werden in separate TypedDicts getrennt.
@@ -612,6 +667,14 @@ auf `ui_song_config` zugreift oder ein Standard-Agent-Node `slave_plan` liest.
 ---
 
 ## Finding 9 — LLM als Dispatcher statt Reasoning-Engine
+
+> 🟡 **Ist-Stand (Juni 2026):** Größtenteils umgesetzt
+> - ✅ **Repositories:** [`src/knowledge/repositories.py`](../../src/knowledge/repositories.py) — `DrumPatternRepository`, `DrumSoundRepository`, `GenrePatternRepository` (sowie `ProjectSnapshotRepository`, `ProjectTemplateRepository`, `WorkflowRepository`)
+> - ✅ **LLM-Tool:** [`src/agent/tools/knowledge/rhythm_tool.py`](../../src/agent/tools/knowledge/rhythm_tool.py) — `get_rhythm_pattern(genre, section, energy, mood)`
+> - ✅ **KB befüllt:** Neo4j enthält 4722 Nodes, davon 168 `DIATONIC_CHORD`-Beziehungen und Genre/Pattern-Daten (siehe [`project_overview.md`](project_overview.md))
+> - ✅ **`DRUM_PROFILES`-Dict entfernt** aus dem Produktivpfad
+> - ⏳ **Noch offen:** Vollständige Strategy-Klasse (`KBDrumPatternStrategy` in `tools/music/patterns/`) — die `pattern_generators.py` enthält noch Hardcoded-Fallbacks für den KB-Lückenfall.
+> - ⏳ **Retrieve-Then-Reason im System-Prompt:** Teilweise umgesetzt in [`src/agent/prompts.py`](../../src/agent/prompts.py); explizite `<think>`-Beispiele wie im Entwurf fehlen aber.
 
 **Pattern: Repository + Retrieve-Then-Reason**
 
@@ -879,6 +942,13 @@ halbe Noten statt Achtel, das erzeugt den gewünschten Atem-Raum.
 ---
 
 ## Finding 10 — Instrument-Auswahl hardcodiert statt LLM-gesteuert
+
+> 🟡 **Ist-Stand (Juni 2026):** Größtenteils umgesetzt
+> - ✅ **Repository:** `InstrumentRepository` + `InstrumentRecord` in [`src/knowledge/repositories.py`](../../src/knowledge/repositories.py) mit `find()` + `find_best()`
+> - ✅ **LLM-Tool:** [`src/agent/tools/knowledge/instrument_tool.py`](../../src/agent/tools/knowledge/instrument_tool.py) — `get_instruments_for_song(genre, roles, mood, energy)`
+> - ✅ **KB-Schema:** `InstrumentTemplate`-Nodes in Neo4j mit `role`, `device_name`, `uuid`, `genres`, `not_for`, `moods`, `description` (389 Devices gescannt)
+> - ✅ **VST-Scanner:** [`src/knowledge/vst_scanner.py`](../../src/knowledge/vst_scanner.py) erweitert die KB um VST3-Devices
+> - ⏳ **Noch offen:** Restliche `INSTRUMENT_MAP`-Fallbacks im Code; vollständiger LLM-`<think>`-Begründungs-Prompt im System-Prompt.
 
 **Pattern: Repository + Retrieve-Then-Reason (Instrument-Ebene)**
 
@@ -1218,6 +1288,14 @@ SONDERN: Phase-4, weil KB "rock + aggressive" bestätigt und Distortion empfiehl
 
 ## Finding 11 — OSC-Protokoll: Fehlende ACKs und Browser-Polling
 
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt — durch das neue Step-Protokoll
+> - **Step-Protokoll** ersetzt einzelne ACK-Endpoints: jeder Step in der `BitwigStepPluginExtension`-Queue meldet `/step/done` an Python (Port 9002) zurück. Siehe [`bitwig_llm_communication.md`](bitwig_llm_communication.md) für Sequenz und Step-Typen-Tabelle.
+> - **Browser-Observer:** Statt Countdown wird auf Bitwig-Browser-Status gewartet, bevor der nächste Step ausgeführt wird (`host.scheduleTask` mit Polling-Pause).
+> - **Batch-Notes:** Steps vom Typ `note`/`pattern` werden vom Java-Code in einem Durchgang in den Clip geschrieben — kein 50-fach-OSC mehr.
+> - **Status-Check:** Step-Typ `status_check` liefert `trackCount`, `tempo`, `playing` zurück — Python kann am Anfang von `build_song` querien.
+>
+> Die Code-Skizzen unten beschreiben einen früheren OSC-Reply-basierten Ansatz; die Endlösung ist abstrakter (jeder Step liefert ACK, kein endpoint-spezifisches Reply-Schema).
+
 **Pattern: Observer + ACK-Reply + Batch-Command**
 
 ### Revidierte Bewertung
@@ -1396,6 +1474,12 @@ F11 stellt sicher dass Fehler überhaupt gemeldet werden.
 ---
 
 ## Finding 12 — Dropdown-UI entfernen, Freitext als primärer Eingang
+
+> ✅ **Ist-Stand (Juni 2026):** Umgesetzt
+> - **Bitwig-Extension:** Die 9 `SettableEnumValue`-Dropdowns (Genre/Key/Technique/Rhythm/StringRegister/FX/Tracks/Length/Dynamics) wurden entfernt. Übrig bleiben Freitext-Prompt + BPM-Slider + Send/Play/Stop/Status — wie im Entwurf vorgeschlagen.
+> - **Dashboard:** Das separate Streamlit-Dashboard (`dashboard/`) bietet ebenfalls Freitext-Eingabe.
+> - **Python:** `_prompt_from_config()` und die 10-Felder-Rekonstruktion in `core.py` sind weg; der `/agent/ui/config`-Handler nimmt das schlanke `{prompt, bpm}`-JSON entgegen.
+> - **State:** [`src/agent/state.py`](../../src/agent/state.py) — `ui_song_config` ist jetzt ein optionales Dict mit `prompt` + `bpm` statt 10 Pflichtfeldern.
 
 **Pattern: Thin Client / Natural Language Interface**
 
@@ -1616,24 +1700,26 @@ User tippt "düsterer Progressive-Metal, Drop-D, Tool-artig, 5/4 Takt"
 
 ---
 
-## Umsetzungsreihenfolge (Empfehlung)
+## Umsetzungsreihenfolge — Status (Juni 2026)
 
-| Priorität | Finding | Aufwand | Risiko ohne Fix |
-|-----------|---------|---------|-----------------|
-| 1 | Extension: Observer + ACK (F11) | Klein (Java) | Hoch — blinde Operationen |
-| 2 | Extension: Batch-Note-Endpoint (F11) | Klein (Java) | Hoch — 50 Einzelpakete |
-| 3 | Circuit Breaker Python-Seite (F5) | Klein (Python) | Hoch — Retry-Lawine |
-| 4 | Saga + Command Queue (F1) | Mittel | Hoch — kein Rollback |
-| 5 | KB-Schema: DrumPattern + DrumSound (F9) | Mittel | Hoch — LLM denkt nicht |
-| 6 | KB-Schema: InstrumentTemplate (F10) | Mittel | Hoch — falsche Instrumente |
-| 7 | Tools: `get_rhythm_pattern` (F9) | Klein | Hoch — Patterns hardcodiert |
-| 8 | Tools: `get_instruments_for_song` (F10) | Klein | Hoch — Auswahl hardcodiert |
-| 9 | Prompt: Retrieve-Then-Reason (F9+F10) | Klein | Hoch — Thinking ungenutzt |
-| 10 | `scan_bitwig_devices.py` ausführen (F10) | Klein | Mittel — KB unvollständig |
-| 11 | Composite Quality Spec (F3) | Mittel | Mittel — falsches Retry-Signal |
-| 12 | Parser-Chain / Adapter (F7) | Klein | Mittel — fragile Recovery |
-| 13 | Router Chain (F4) | Klein | Mittel — Fehlrouting |
-| 14 | Strategy → KB-backed (F2+F9) | Mittel | Mittel — Patterns hardcodiert |
-| 15 | State Subclasses (F8) | Klein | Niedrig — Typ-Sicherheit |
-| 16 | Pipeline Fan-Out (F6) | Mittel | Niedrig — Latenz |
-| 17 | Tool-Registry Refactor (F2) | Groß | Niedrig — Wartbarkeit |
+| # | Finding | Status | Quelle |
+|---|---------|:------:|--------|
+| 1 | Extension: Step-ACK-Protokoll (F11) | ✅ | `BitwigStepPluginExtension.java` |
+| 2 | Extension: Batch-Note-Steps (F11) | ✅ | Step-Typen `pattern`/`note` |
+| 3 | Circuit Breaker Python-Seite (F5) | ✅ | `src/agent/osc/circuit_breaker.py` |
+| 4 | Saga + Command Queue (F1) | ✅ | `src/agent/osc/saga.py` + `stepQueue` |
+| 5 | KB-Schema: DrumPattern + DrumSound (F9) | ✅ | Neo4j; `DrumPatternRepository` |
+| 6 | KB-Schema: InstrumentTemplate (F10) | ✅ | Neo4j; `InstrumentRepository` |
+| 7 | Tools: `get_rhythm_pattern` (F9) | ✅ | `tools/knowledge/rhythm_tool.py` |
+| 8 | Tools: `get_instruments_for_song` (F10) | ✅ | `tools/knowledge/instrument_tool.py` |
+| 9 | Prompt: Retrieve-Then-Reason (F9+F10) | 🟡 | `src/agent/prompts.py` (Beispiele fehlen) |
+| 10 | `scan_bitwig_devices.py` ausgeführt (F10) | ✅ | 389 Devices in KB |
+| 11 | Composite Quality Spec (F3) | ✅ | `src/agent/quality/specs.py` |
+| 12 | Parser-Chain / Adapter (F7) | ✅ | `src/agent/parsing/tool_call_parsers.py` |
+| 13 | Router/Policy (F4) | ✅ | `src/agent/router.py` + `policy.py` |
+| 14 | Strategy → KB-backed (F2+F9) | 🟡 | KB ja, dedizierte Strategy-Klasse fehlt |
+| 15 | Single-Graph statt Subclasses (F8) | ✅ | nur ein `AgentState` |
+| 16 | Latenzreduktion (F6) | ✅ | dualer Graph entfernt; Java-StepQueue taktet |
+| 17 | Tool-Registry Refactor (F2) | ⏳ | flache `tools/`-Struktur statt Registry |
+
+**Bilanz:** 14 ✅ / 2 🟡 / 1 ⏳ — die Architektur-Beurteilung von 2024/25 ist im Wesentlichen umgesetzt.
