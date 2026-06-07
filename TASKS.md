@@ -189,7 +189,7 @@ wird jetzt über `registry.register(tool, domain=...)` mit Domänen-Tags
 | 7 | ✅ **MidiClip → Scene** als echte Neo4j-Relation (statt String-Feld) — Fix in `scripts/ingest_midi_clips.py` (persistiert `track_index`/`scene_idx`), Backfill-Migration `src/knowledge/migrations/link_midiclips_to_scenes.cypher` (37/37 MidiClips verknüpft) | KB-Migration + Ingest | M |
 | 8 | **AudioSample → SoundRecipe** verknüpfen | KB-Migration + `repositories.py` | M |
 | 9 | **Artist-Node** + `get_artist_context()` Tool | `tools/knowledge/`, KB-Migration | M |
-| 10 | SIMILAR_TO-Kanten zwischen Projekt-Embeddings (Vektor-Ähnlichkeit) | KB-Migration | L |
+| 10 | ✅ SIMILAR_TO-Kanten zwischen Song-Embeddings (Vektor-Ähnlichkeit) — Migration `src/knowledge/migrations/link_similar_songs.cypher` (top-3 NN je Song über `song_embedding`-Index, 21 Kanten), Runner `scripts/link_similar_songs.py` | KB-Migration | L |
 
 ---
 
