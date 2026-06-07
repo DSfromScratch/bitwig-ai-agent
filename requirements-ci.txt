@@ -13,6 +13,9 @@ python-dotenv>=1.0
 # OSC
 python-osc>=1.8
 
+# Bitwig OSC-Bridge (eigenes Paket, via GitHub-Release gepinnt)
+bitwigbridge @ git+https://github.com/sijadev/bitwig-osc-bridge.git@v0.1.0
+
 # MIDI
 mido>=1.3
 

@@ -18,6 +18,8 @@ import time
 import socket
 import pytest
 
+pytest.importorskip("bitwigbridge", reason="bitwigbridge-Repo nicht installiert (CI)")
+
 from src.bitwig_executor import execute_setup, compose_notes
 from src.agent.tools.suggest_tools import get_launchpad_mode, set_launchpad_mode, play_notes, arm_track
 from src.agent.tools.bitwig_tools import control_bitwig as _control_bitwig_fn

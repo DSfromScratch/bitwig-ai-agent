@@ -13,7 +13,6 @@ import tempfile
 from typing import Any
 
 import httpx
-import librosa
 import numpy as np
 from langchain_core.tools import tool
 
@@ -152,6 +151,8 @@ def _download_snippet(url: str, duration: int = 30) -> str | None:
 
 def _analyze_file(path: str, max_duration: float = 30.0) -> dict[str, Any]:
     """Analysiert Audio-Datei: BPM, Tonart, Energie, Onset-Steps."""
+    import librosa  # lazy: schwere Dependency nur bei tatsächlicher Analyse
+
     y, sr = librosa.load(path, duration=max_duration, mono=True)
 
     # BPM — librosa gibt je nach Version Scalar oder 0-d/1-d Array zurück
