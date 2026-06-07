@@ -63,6 +63,13 @@ def score_and_learn(
     }
 
 
+def _context_signature(instrument: str, genre: str, key: str, scale: str,
+                       bpm: int | None, bars: int | None) -> str:
+    """Stabiler Fingerprint pro Validierungs-Kontext — Attempts mit gleicher
+    Signature konkurrieren um denselben (prompt, chosen, rejected)-Slot."""
+    return f"{instrument}|{genre}|{key}|{scale}|bpm={bpm or '?'}|bars={bars or '?'}"
+
+
 def _store_learning_feedback(
     instrument: str,
     genre: str,
@@ -75,9 +82,24 @@ def _store_learning_feedback(
     bpm: int | None = None,
     bars: int | None = None,
 ) -> None:
-    """Speichert Validierungs-Feedback in Neo4j ProductionPattern-Knoten."""
+    """Speichert Validierungs-Feedback in Neo4j.
+
+    Schreibt:
+    1. ProductionPattern (aggregiert: last_score, avg_score, beste notes_json)
+    2. PatternAttempt (jeder Try einzeln — Quelle für DPO-Pair-Extraktion)
+    """
     import json as _json
+    from datetime import datetime, timezone
+    import hashlib
+
     notes_json = _json.dumps(notes, ensure_ascii=False) if notes else None
+    ctx_sig = _context_signature(instrument, genre, key, scale, bpm, bars)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Attempt-ID = stabiler Hash über (Kontext + Noten) → idempotent bei Wiederholungen
+    attempt_id = hashlib.sha256(
+        f"{ctx_sig}|{notes_json or ''}".encode("utf-8")
+    ).hexdigest()[:16]
+
     try:
         from neo4j import GraphDatabase
         driver = GraphDatabase.driver(
@@ -103,9 +125,40 @@ def _store_learning_feedback(
                 score=score, issues=issues, suggestions=suggestions,
                 notes_json=notes_json, bpm=bpm, bars=bars,
             )
+            # Jeder Attempt einzeln — auch failed-Versionen bleiben für DPO erhalten
+            if notes_json is not None:
+                s.run(
+                    """
+                    MATCH (p:ProductionPattern {instrument: $inst, genre: $genre, key: $key, scale: $scale})
+                    MERGE (a:PatternAttempt {attempt_id: $attempt_id})
+                      ON CREATE SET a.created_at = $now,
+                                    a.context_signature = $ctx_sig,
+                                    a.instrument = $inst,
+                                    a.genre = $genre,
+                                    a.key = $key,
+                                    a.scale = $scale,
+                                    a.bpm = $bpm,
+                                    a.bars = $bars,
+                                    a.notes_json = $notes_json,
+                                    a.score = $score,
+                                    a.issues = $issues,
+                                    a.suggestions = $suggestions,
+                                    a.exported_to_dpo = false
+                      ON MATCH SET  a.score = $score,
+                                    a.issues = $issues,
+                                    a.suggestions = $suggestions,
+                                    a.last_seen_at = $now
+                    MERGE (p)-[:HAS_ATTEMPT]->(a)
+                    """,
+                    inst=instrument, genre=genre, key=key, scale=scale,
+                    bpm=bpm, bars=bars, notes_json=notes_json, score=score,
+                    issues=issues, suggestions=suggestions,
+                    attempt_id=attempt_id, ctx_sig=ctx_sig, now=now_iso,
+                )
         driver.close()
     except Exception as exc:
         log.debug("Neo4j-Feedback-Speicherung fehlgeschlagen: %s", exc)
+
 
 
 def get_rag_examples(

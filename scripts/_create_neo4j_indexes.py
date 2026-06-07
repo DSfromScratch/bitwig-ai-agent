@@ -8,6 +8,16 @@ from src.knowledge.neo4j_graph import session
 
 INDEXES = [
     (
+        "pattern_attempt_id (Unique-Constraint)",
+        "CREATE CONSTRAINT pattern_attempt_id IF NOT EXISTS "
+        "FOR (a:PatternAttempt) REQUIRE a.attempt_id IS UNIQUE"
+    ),
+    (
+        "pattern_attempt_context (B-Tree für DPO-Extraktion)",
+        "CREATE INDEX pattern_attempt_context IF NOT EXISTS "
+        "FOR (a:PatternAttempt) ON (a.context_signature)"
+    ),
+    (
         "document_embedding (Vektor 768d)",
         "CREATE VECTOR INDEX document_embedding IF NOT EXISTS "
         "FOR (d:Document) ON d.embedding "
