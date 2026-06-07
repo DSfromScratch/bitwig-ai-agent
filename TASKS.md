@@ -132,9 +132,9 @@ enthält noch keine konkreten `<think>`-Beispiele, die das LLM zur Begründung a
 
 | Aufgabe | Datei | Aufwand |
 |---------|-------|---------|
-| `RHYTHM_REASONING_INSTRUCTION` mit `<think>`-Beispielen in den System-Prompt einbauen | `src/agent/prompts.py` | S |
-| `INSTRUMENT_REASONING_INSTRUCTION` analog ergänzen | `src/agent/prompts.py` | S |
-| Trainingsdaten-Pair für Drum/Instrument-Reasoning im Mac-Native LoRA-Datensatz | `~/mlx-training/train.jsonl` | M |
+| ✅ `RHYTHM_REASONING_INSTRUCTION` mit `<think>`-Beispielen in den System-Prompt einbauen | `src/agent/prompts.py` | S |
+| ✅ `INSTRUMENT_REASONING_INSTRUCTION` analog ergänzen | `src/agent/prompts.py` | S |
+| ✅ **Trainingsdaten-Pairs für Drum/Instrument-Reasoning** — idempotenter Generator `scripts/generate_reasoning_pairs.py` (12 Rhythm- + 8 Instrument-Pairs an `training_data/train.jsonl`, 2900→2920). Jedes Pair injiziert das echte KB-Tool-Result (`get_rhythm_pattern`/`get_instruments_for_song`) in den User-Kontext; Assistant begründet im **immer geschlossenen** `<think>` (adressiert Qwen3-`</think>`-Problem statt es zu verstärken) und ruft `write_pattern` (**finite** 1-Takt-Drums, Steps 0..15, Hats gecappt → kein Runaway) bzw. `load_instrument` (Top-Ranked-Device). 8 Unit-Tests `tests/test_generate_reasoning_pairs.py` | `training_data/train.jsonl` | M |
 
 ### B.2 — F2 + F9 KB-backed Strategy-Klasse ✅
 
