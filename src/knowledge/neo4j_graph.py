@@ -29,8 +29,12 @@ from src.knowledge.bitwig_catalog import (  # noqa: F401  (re-export für extern
 
 NEO4J_URI      = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
 NEO4J_USER     = os.getenv("NEO4J_USER",     "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "neo4jllm")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD") or "neo4jllm"
 NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
+
+if not os.getenv("NEO4J_PASSWORD"):
+    import logging
+    logging.warning("⚠️  NEO4J_PASSWORD nicht gesetzt; verwende Default. Für Production: env-Variable setzen.")
 
 _driver = None
 _neo4j_available: bool | None = None  # None = ungeprüft

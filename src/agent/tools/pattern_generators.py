@@ -149,6 +149,9 @@ def _melody(genre: str, bars: int, root: int, scale_name: str, style: str) -> li
     scale_notes = [root + i + oct * 12 for oct in range(2) for i in scale
                    if 40 <= root + i + oct * 12 <= 84]
 
+    if not scale_notes:
+        scale_notes = [60]
+
     def idx(n): return scale_notes[n % len(scale_notes)]
 
     for bar in range(bars):

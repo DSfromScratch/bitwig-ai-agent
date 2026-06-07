@@ -73,7 +73,8 @@ def _get_note_counts() -> dict[str, int]:
         return {}
     finally:
         try: sock.close()
-        except Exception: pass
+        except (OSError, ValueError, socket.timeout):
+            pass
 
 
 def _reset_note_counts() -> None:
@@ -81,11 +82,16 @@ def _reset_note_counts() -> None:
     client = _udp.SimpleUDPClient(OSC_HOST, OSC_STEP_PORT)
     try:
         client.send_message("/clip/note/count/reset", 1)
-    except Exception:
-        pass
+    except OSError as e:
+        log_debug = os.environ.get("DEBUG_OSC")
+        if log_debug:
+            import logging
+            logging.debug("OSC reset failed: %s", e)
     finally:
-        try: client._sock.close()
-        except Exception: pass
+        try:
+            client._sock.close()
+        except OSError:
+            pass
 
 
 def _get_current_track_count() -> int:
@@ -107,7 +113,8 @@ def _get_current_track_count() -> int:
         pass
     finally:
         try: client._sock.close()
-        except Exception: pass
+        except (OSError, ValueError, socket.timeout):
+            pass
     return 0
 
 
@@ -129,7 +136,8 @@ def _get_track_names() -> list[str]:
         pass
     finally:
         try: client._sock.close()
-        except Exception: pass
+        except (OSError, ValueError, socket.timeout):
+            pass
     return []
 
 
@@ -150,10 +158,10 @@ def _clear_all_tracks(timeout: float = 5.0) -> int:
     except (socket.timeout, OSError):
         pass
     finally:
-        try: client._sock.close()
-        except Exception: pass
-
-    time.sleep(0.3)
+        try:
+            client._sock.close()
+        except OSError:
+            pass
     remaining = _get_current_track_count()
     if remaining > 0:
         from pythonosc import udp_client as _udp
@@ -184,4 +192,5 @@ def _check_bridge(timeout: float = 1.5) -> bool:
         return False
     finally:
         try: sock.close()
-        except Exception: pass
+        except (OSError, ValueError, socket.timeout):
+            pass

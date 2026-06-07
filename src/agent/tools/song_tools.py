@@ -64,7 +64,8 @@ def check_bitwig_connection() -> dict:
         pass
     finally:
         try: sock.close()
-        except Exception: pass
+        except (OSError, ValueError, socket.timeout):
+            pass
 
     # Fallback: BitwigAgentBridge Port 8001
     ok = _check_bridge()
@@ -128,7 +129,8 @@ def get_bitwig_track_state() -> str:
         pass
     finally:
         try: step_sock.close()
-        except Exception: pass
+        except (OSError, ValueError, socket.timeout):
+            pass
 
     if "count" in result_holder:
         count      = result_holder["count"]
