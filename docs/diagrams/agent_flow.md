@@ -62,7 +62,7 @@ sequenceDiagram
     participant U   as User / Bitwig UI
     participant OSC as osc_listener<br/>UDP :9003
     participant CORE as core.call_llm
-    participant LLM as vLLM<br/>(Qwen3-14B-AWQ)
+    participant LLM as MLX LLM Server :8080<br/>Qwen3-8B-4bit + Bitwig-LoRA
     participant POL as policy.py
     participant TN  as ToolNode<br/>(song_tools)
     participant BUS as EventBus
