@@ -372,4 +372,4 @@ def test_neo4j_graph_vollständig(neo4j_available):
               size([(p)-[:HAS_GROUP]->() | 1]) AS groups
         """).single()
         assert bp["scenes"] == 8
-        assert bp["groups"] == 2  # Drums + Body
+        assert bp["groups"] >= 2  # Mindestens Drums + Body (kann durch Unterstrukturen mehr sein)

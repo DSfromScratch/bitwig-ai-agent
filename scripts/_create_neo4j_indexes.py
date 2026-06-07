@@ -20,6 +20,66 @@ INDEXES = [
         "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
     ),
     (
+        "sound_recipe_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX sound_recipe_embedding IF NOT EXISTS "
+        "FOR (n:SoundRecipe) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "audio_sample_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX audio_sample_embedding IF NOT EXISTS "
+        "FOR (n:AudioSample) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "gridmodule_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX gridmodule_embedding IF NOT EXISTS "
+        "FOR (n:GridModule) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "gridanalysis_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX gridanalysis_embedding IF NOT EXISTS "
+        "FOR (n:GridAnalysis) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "gridworkflow_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX gridworkflow_embedding IF NOT EXISTS "
+        "FOR (n:GridWorkflow) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "midiclip_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX midiclip_embedding IF NOT EXISTS "
+        "FOR (n:MidiClip) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "genre_pattern_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX genre_pattern_embedding IF NOT EXISTS "
+        "FOR (n:GenrePattern) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "artist_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX artist_embedding IF NOT EXISTS "
+        "FOR (n:Artist) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "song_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX song_embedding IF NOT EXISTS "
+        "FOR (n:Song) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
+        "project_template_embedding (Vektor 768d)",
+        "CREATE VECTOR INDEX project_template_embedding IF NOT EXISTS "
+        "FOR (n:ProjectTemplate) ON n.embedding "
+        "OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}"
+    ),
+    (
         "device_search (Volltext)",
         "CREATE FULLTEXT INDEX device_search IF NOT EXISTS "
         "FOR (d:Device) ON EACH [d.name, d.description, d.category]"
