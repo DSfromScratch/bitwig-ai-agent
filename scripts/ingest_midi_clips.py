@@ -229,6 +229,8 @@ def store_midi_clip(track_idx: int, track_name: str, project: str,
         cypher = """
             MERGE (n:MidiClip {track_name: $name, project: $project, scene_name: $scene_name})
             SET n.track_name      = $name,
+                n.track_index     = $ti,
+                n.scene_idx       = $scene_idx,
                 n.scene_name      = $scene_name,
                 n.key             = $key,
                 n.mode            = $mode,
