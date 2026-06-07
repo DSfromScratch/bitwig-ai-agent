@@ -1,0 +1,5 @@
+trial_id,iteration,genre,with_kb,ref_type,score,best_score,latency_s,finish_ok,musical_score
+1,1,Funk,True,GenrePattern,0.92,0.92,24.24,True,0.679
+2,1,Deep House,True,GenrePattern,0.92,0.92,22.15,True,0.679
+3,1,Techno,True,GenrePattern,0.92,0.92,32.65,True,0.679
+4,1,House,True,GenrePattern,0.92,0.92,19.26,True,0.679

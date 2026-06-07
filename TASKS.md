@@ -21,6 +21,22 @@ Implementiert in dieser Phase, um echte Beispiel-Songs als Trainingsmaterial zu 
 
 Smoke-Test ✅: Kevin MacLeod "Brittle Rille" → BPM 89.1 / Key E / 230s in 26s persistiert.
 
+### 0.2 · RL-/DPO-Trainings-Pipeline ✅ (Woche 3)
+Geschlossener Lern-Loop, der den fine-getunten Composer gegen den deterministischen
+Validator (`score_completion`) laufen lässt und schwache Antworten als DPO-Paare zurückspielt.
+
+| Schritt | Script | Zweck |
+|---------|--------|-------|
+| 1. Genre-Daten harvesten | `scripts/harvest_freesound.py` | Freesound-Loops → BPM/Key/Energy/Onset-Skelett → `GenrePattern` in Neo4j + `training_data/freesound_genres.json` |
+| 2. DPO-Paare bauen | `scripts/generate_dpo_pairs.py` | Genre-Ground-Truth (finite `write_pattern_raw`-Drums) + note_plan-Paare → `training_data/dpo_*.jsonl` |
+| 3. LoRA-Retrain | `scripts/rl_train_loop.py` | LaunchAgent unload → `mlx_lm lora` (resume) → reload (Kernel-Panic-Schutz) |
+| 4. Trial-Loop | `scripts/trial_compose_validate.py` | Composer↔Validator Closed-Loop, iteratives Self-Refine, Neo4j-Referenzen (`--with-kb`/`--no-kb`) |
+| 5. Auswertung | `scripts/analyze_trials.py` | Solve-Rate, mean best-score, Konvergenz-Kurve, KB-Effekt, PNG-Plot |
+
+**Ergebnis:** Drum-Runaway-Problem gelöst (Trap/Techno/House 0.00 → 0.88–0.95, alle `finish=stop`).
+Trial-Läufe: with-kb & no-kb je 4/4 gelöst, mean best-score 0.92.
+Doku zum Ausführen: [`README.md` §11 · RL-/DPO-Training](README.md#11--rl-dpo-training-genre-loop).
+
 ### Vorgehen (Live-Härtung)
 1. **Bitwig neu starten** → neue Extensions laden.
 2. Pro Session `./scripts/live_capture.sh "<kurztitel>"` ausführen — Snapshot landet in `BitwigTracks/sessions/`.

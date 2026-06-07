@@ -1,0 +1,5 @@
+trial_id,iteration,genre,with_kb,ref_type,score,best_score,latency_s,finish_ok,musical_score
+1,1,Techno,False,,0.92,0.92,9.01,True,0.679
+2,1,House,False,,0.92,0.92,9.83,True,0.679
+3,1,Hip Hop,False,,0.92,0.92,7.75,True,0.679
+4,1,Funk,False,,0.92,0.92,8.69,True,0.679

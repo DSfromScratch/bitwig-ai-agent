@@ -549,3 +549,65 @@ bitwig-extension/src/main/java/.../
 3. **Tools lesen Kontext** aus Bitwig (Snapshot) und Neo4j (Theorie/KB) und produzieren entweder direkten Text oder einen **`BitwigResult`-Plan** mit `ResultStep`-Liste.
 4. **Jeder Step wird einzeln** als OSC `/step/exec` an die Java-Extension geschickt, dort streng sequenziell durch `stepQueue` + `host.scheduleTask` gegen die Bitwig-API ausgeführt und mit `/step/done` bestätigt.
 5. **Der EventBus** sammelt 14 strukturierte Events während des ganzen Vorgangs (für JSONL-Audit-Log und Dashboard); am Ende geht eine Bestätigung über `/agent/ui/response` zurück ans Bitwig-UI.
+
+---
+
+## 11 · RL-/DPO-Training (Genre-Loop)
+
+> Geschlossener Lern-Loop, der den fine-getunten Composer (MLX :8080) gegen den
+> deterministischen Validator `score_completion` laufen lässt. Motivation: Drum-Prompts
+> erzeugten zuvor **Runaway-Pattern** (endlose Kick-Steps, JSON terminiert nie → Score 0.00).
+> Lösung: **finite** Genre-Drum-Ground-Truth aus Freesound-Timing + musikalischen
+> Instrumentenregeln antrainieren.
+
+### 11.1 · Pipeline
+
+```
+harvest_freesound.py   →  GenrePattern-Nodes (Neo4j) + freesound_genres.json
+        │  BPM / Key / Energy / Onset-Skelett (16tel-Grid)
+        ▼
+generate_dpo_pairs.py  →  training_data/dpo_train.jsonl / dpo_valid.jsonl
+        │  finite write_pattern_raw-Drum-GT (Score ~0.92) + note_plan-Paare
+        ▼
+rl_train_loop.py       →  LoRA-Adapter (MLX, resume)
+        │  LaunchAgent unload → mlx_lm lora → reload  (Kernel-Panic-Schutz)
+        ▼
+trial_compose_validate.py  →  trials_{with,no}_kb.{jsonl,csv}
+        │  Composer↔Validator Closed-Loop, iteratives Self-Refine
+        ▼
+analyze_trials.py      →  Solve-Rate · Konvergenz · KB-Effekt · convergence.png
+```
+
+### 11.2 · Ausführen
+
+```bash
+# 0) Backends: MLX-Composer :8080 (LaunchAgent) + Neo4j up; .env gesetzt
+#    (PYTHONPATH=. wichtig, sonst ModuleNotFoundError: scripts)
+
+# 1) Genre-Daten von Freesound harvesten → Neo4j (braucht FREESOUND_API_KEY)
+PYTHONPATH=. python -m scripts.harvest_freesound
+
+# 2) DPO-Paare inkl. Genre-Ground-Truth erzeugen
+PYTHONPATH=. python -m scripts.generate_dpo_pairs        # --no-genre-patterns zum Abschalten
+
+# 3) LoRA-Retrain (entlädt automatisch den MLX-LaunchAgent während des Trainings)
+PYTHONPATH=. python -m scripts.rl_train_loop
+
+# 4) Trial-Loop fahren (Composer↔Validator); je einmal mit/ohne Knowledge-Base
+PYTHONPATH=. python -u -m scripts.trial_compose_validate --trials 4 --with-kb
+PYTHONPATH=. python -u -m scripts.trial_compose_validate --trials 4 --no-kb
+
+# 5) Auswerten + Plot
+PYTHONPATH=. python -m scripts.analyze_trials --plot
+```
+
+> **Gotchas:** Immer `python -u` für Live-Output (sonst buffert nohup/Pipe).
+> Der MLX-LaunchAgent (`com.bitwigagent.mlxserver.plist`, KeepAlive) **muss** vor dem
+> LoRA-Training entladen werden — `rl_train_loop.py` macht das automatisch.
+
+### 11.3 · Stand der Ergebnisse
+
+- **Drum-Runaway gelöst:** Trap/Techno/House `0.00 → 0.88–0.95`, alle `finish_reason=stop`.
+- **Trial-Läufe:** with-kb & no-kb je **4/4 gelöst**, mean best-score **0.92**, gelöst in 1 Iteration.
+- Offen: exakte Song-Part-Reproduktion (z. B. "Da Funk Drums") bleibt schwierig —
+  Hebel ist mehr song-spezifische `note_plan`-Daten, nicht mehr Trainings-Iterationen.
