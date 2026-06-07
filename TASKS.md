@@ -7,10 +7,21 @@
 
 ## 0 · Aktuelle Phase — Woche 2: Live-Härtung
 
-> **Woche 1 ✅ abgeschlossen** — Unit 250/250, Bridge 7/7, Neo4j 16/16 (Commits `20f32ec`, `3f398bb`).
+> **Woche 1 ✅ abgeschlossen** — Unit 257/257, Bridge 7/7, Neo4j 16/16 (Commits `20f32ec`, `3f398bb`, `d3a80d7`).
 > Java-Extensions neu deployed: `BitwigStepPlugin.bwextension`, `LaunchpadController.bwextension`.
 
-### Vorgehen
+### 0.1 · Song-Lern-Pipeline ✅ (neu)
+Implementiert in dieser Phase, um echte Beispiel-Songs als Trainingsmaterial zu sammeln:
+
+| Tool | Zweck | Lizenz-Anforderung |
+|------|-------|--------------------|
+| `search_artist_song(artist, title)` | MusicBrainz + AcousticBrainz + Last.fm Metadaten (BPM, Key, Genre, Mood) | öffentlich, kein Audio |
+| `learn_song_from_youtube(artist, title, url, transcribe_midi=False)` | yt-dlp Download → librosa-Features → Neo4j Persist; Audio-Datei wird nach Analyse gelöscht | **nur privat** |
+| `scripts/learn_songs_batch.py list.txt` | Batch-Lerner für `artist\|title\|url`-Listen | wie oben |
+
+Smoke-Test ✅: Kevin MacLeod "Brittle Rille" → BPM 89.1 / Key E / 230s in 26s persistiert.
+
+### Vorgehen (Live-Härtung)
 1. **Bitwig neu starten** → neue Extensions laden.
 2. Pro Session `./scripts/live_capture.sh "<kurztitel>"` ausführen — Snapshot landet in `BitwigTracks/sessions/`.
 3. Findings strukturiert in [`LIVE_LOG.md`](./LIVE_LOG.md) eintragen (Vorlage dort).
@@ -23,6 +34,7 @@
 - [ ] Elektronik (Kick-Pattern + Bass-Sequence + Pad), Grid-Modulation
 - [ ] Korrektur-Loop: bewusst kaputten Prompt → prüfen, ob Agent sich erholt
 - [ ] Lange Session (>10 Tool-Calls) → Context-Limit-Verhalten beobachten
+- [ ] **Song-Lern-Run** (10-20 Referenz-Songs aus eigener Library) → KB-Boost
 
 ### Watchpoints (basierend auf Woche-1-Bugs)
 - Launchpad-Stabilität (war: `IOException → Crash`)

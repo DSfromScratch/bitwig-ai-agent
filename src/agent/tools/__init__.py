@@ -15,6 +15,8 @@ from src.agent.tools.web_search_tool import web_search
 from src.agent.tools.freesound_tool import find_audio_example
 from src.agent.tools.music_validator import validate_music
 from src.agent.tools.audio_llm_tool import analyze_song
+from src.agent.tools.song_metadata_tool import search_artist_song
+from src.agent.tools.song_learn_tool import learn_song_from_youtube
 from src.agent.tools.music_learning import validate_and_learn
 from src.agent.tools.mlx_export import export_mlx_training_data
 from src.bitwig_executor import execute_setup, compose_notes
@@ -72,6 +74,8 @@ ALL_TOOLS = [
     validate_music,
     validate_and_learn,
     analyze_song,
+    search_artist_song,
+    learn_song_from_youtube,
     export_mlx_training_data,
     scan_vst_plugins,
     StructuredTool.from_function(suggest_notes),
