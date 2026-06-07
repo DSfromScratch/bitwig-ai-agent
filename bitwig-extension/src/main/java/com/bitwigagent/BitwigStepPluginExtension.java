@@ -1423,36 +1423,56 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         // append=true → bestehende Noten behalten (Chunk-Modus)
         boolean append = JsonStepParser.extractNumField(args, "append", 0) > 0.5;
 
-        channel(track).selectInMixer();
+        // Track explizit selektieren — cursorTrack folgt selectInMixer(), aber die
+        // Bitwig-Cursor-Sync braucht mehrere UI-Frames. Wir geben ihr genug Zeit
+        // BEVOR wir auf cursorClip schreiben (sonst landen die Noten im Clip von
+        // Track 1, weil cursorTrack noch dort steht).
+        Channel selected = channel(track);
+        selected.selectInMixer();
+
         final int fslot = slot;
         final int flen = length;
         final String fn = notes;
         final boolean fappend = append;
+        final int ftrack = track;
         host.scheduleTask(() -> {
-            if (!fappend) {
-                clipSlotBank.createEmptyClip(fslot, flen);
+            // Verifizieren: ist cursorTrack jetzt wirklich auf dem Ziel-Track?
+            // Falls Name leer/anders → nochmal selektieren und länger warten.
+            String currentName = cursorTrack.name().get();
+            String targetName = selected.name().get();
+            if (currentName == null || targetName == null || !currentName.equals(targetName)) {
+                selected.selectInMixer();
+                host.scheduleTask(() -> writeNotesNow(src, fslot, flen, fn, fappend), 200);
+            } else {
+                writeNotesNow(src, fslot, flen, fn, fappend);
             }
-            clipSlotBank.select(fslot);
-            host.scheduleTask(() -> {
-                cursorClip.setStepSize(0.25);
-                if (!fappend) {
-                    cursorClip.clearSteps();
+        }, 250);
+    }
+
+    private void writeNotesNow(OscConnection src, int slot, int length, String notesJson, boolean append) {
+        if (!append) {
+            clipSlotBank.createEmptyClip(slot, length);
+        }
+        clipSlotBank.select(slot);
+        host.scheduleTask(() -> {
+            cursorClip.setStepSize(0.25);
+            if (!append) {
+                cursorClip.clearSteps();
+            }
+            int written = 0;
+            if (notesJson != null && !notesJson.isBlank()) {
+                try {
+                    written = parseAndWriteNoteBatch(notesJson);
+                } catch (Exception e) {
+                    host.println("[BitwigStep] Batch-Fehler: " + e.getMessage());
                 }
-                int written = 0;
-                if (fn != null && !fn.isBlank()) {
-                    try {
-                        written = parseAndWriteNoteBatch(fn);
-                    } catch (Exception e) {
-                        host.println("[BitwigStep] Batch-Fehler: " + e.getMessage());
-                    }
-                }
-                String tn = cursorTrack.name().get();
-                if (tn != null && !tn.isEmpty())
-                    noteCountMap.merge(tn, written, Integer::sum);
-                host.println("[BitwigStep] " + written + " Noten → '" + tn + "'" + (fappend ? " [append]" : ""));
-                stepDone(src, "write_notes");
-            }, 150);
-        }, 40);
+            }
+            String tn = cursorTrack.name().get();
+            if (tn != null && !tn.isEmpty())
+                noteCountMap.merge(tn, written, Integer::sum);
+            host.println("[BitwigStep] " + written + " Noten → '" + tn + "'" + (append ? " [append]" : ""));
+            stepDone(src, "write_notes");
+        }, 200);
     }
 
     // ── Hilfe ────────────────────────────────────────────────────────────────

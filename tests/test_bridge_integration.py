@@ -110,6 +110,21 @@ class TestBridgeConnection:
 class TestExecuteResultBridge:
     """execute_result end-to-end via echter Bridge."""
 
+    @pytest.fixture(autouse=True)
+    def _clean_project(self, bridge_available):
+        """Vor jedem Test: alle Tracks löschen, bis Projekt leer ist."""
+        if not bridge_available:
+            return
+        try:
+            from src.agent.osc.track_state import _clear_all_tracks, _get_current_track_count
+            _clear_all_tracks()
+            # Sicherstellen, dass Bitwig wirklich auf 0 Tracks ist
+            deadline = time.time() + 3.0
+            while _get_current_track_count() > 0 and time.time() < deadline:
+                time.sleep(0.2)
+        except Exception:
+            pass
+
     @pytest.mark.bridge
     def test_set_tempo(self, bridge_available):
         """set_tempo Step setzt BPM ohne Fehler."""
@@ -153,12 +168,29 @@ class TestExecuteResultBridge:
             pytest.skip("BitwigAgentBridge nicht erreichbar")
 
         from bitwig_mcp_server import execute_result
+        from src.agent.osc.track_state import _get_current_track_count
+
+        # 1) Track anlegen — separater Call, danach auf State warten
+        execute_result({
+            "context_type": "song",
+            "target": {},
+            "summary": "Track anlegen",
+            "steps": [
+                {"type": "add_track", "args": {"track_type": "instrument"}, "status": "pending", "note": ""},
+            ]
+        })
+        deadline = time.time() + 3.0
+        while _get_current_track_count() < 1 and time.time() < deadline:
+            time.sleep(0.15)
+        assert _get_current_track_count() >= 1, "add_track wurde nicht synchronisiert"
+
+        # 2) Instrument laden auf nun existierendem Track 1
         result = execute_result({
             "context_type": "track",
             "target": {"track_index": 1},
             "summary": "Phase-4 laden",
             "steps": [
-                {"type": "select_track", "args": {"track_index": 1}, "status": "pending", "note": ""},
+                {"type": "select_track",    "args": {"track_index": 1},                    "status": "pending", "note": ""},
                 {"type": "load_instrument", "args": {"track_index": 1, "name": "Phase-4"}, "status": "pending", "note": ""},
             ]
         })
@@ -175,15 +207,32 @@ class TestExecuteResultBridge:
             pytest.skip("BitwigAgentBridge nicht erreichbar")
 
         from bitwig_mcp_server import execute_result
+        from src.agent.osc.track_state import _get_current_track_count
+
+        # 1) Track anlegen (separat — verhindert Race mit Folge-Steps)
+        execute_result({
+            "context_type": "song",
+            "target": {},
+            "summary": "Track anlegen",
+            "steps": [
+                {"type": "add_track", "args": {"track_type": "instrument"}, "status": "pending", "note": ""},
+            ]
+        })
+        deadline = time.time() + 3.0
+        while _get_current_track_count() < 1 and time.time() < deadline:
+            time.sleep(0.15)
+        assert _get_current_track_count() >= 1, "add_track wurde nicht synchronisiert"
+
+        # 2) Setup auf existierendem Track 1
         result = execute_result({
             "context_type": "track",
             "target": {"track_index": 1},
             "summary": "Smoke-Test: Phase-4 + Param + Reverb",
             "steps": [
-                {"type": "select_track",    "args": {"track_index": 1},                     "status": "pending", "note": ""},
-                {"type": "load_instrument", "args": {"track_index": 1, "name": "Phase-4"},  "status": "pending", "note": ""},
+                {"type": "select_track",    "args": {"track_index": 1},                            "status": "pending", "note": ""},
+                {"type": "load_instrument", "args": {"track_index": 1, "name": "Phase-4"},         "status": "pending", "note": ""},
                 {"type": "set_param",       "args": {"track_index": 1, "index": 3, "value": 0.35}, "status": "pending", "note": "Cutoff"},
-                {"type": "append_effect",   "args": {"track_index": 1, "name": "Reverb"},   "status": "pending", "note": ""},
+                {"type": "append_effect",   "args": {"track_index": 1, "name": "Reverb"},          "status": "pending", "note": ""},
             ]
         })
 

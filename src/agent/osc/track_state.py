@@ -142,6 +142,13 @@ def _get_track_names() -> list[str]:
 
 
 def _clear_all_tracks(timeout: float = 5.0) -> int:
+    """Löscht alle Tracks und wartet bis Bitwig den State synchronisiert hat.
+
+    Bitwig verarbeitet `/agent/tracks/clear` asynchron — der Reply kommt sofort,
+    aber der Project-State wird erst über mehrere Event-Loops aktualisiert.
+    Wir pollen bis `track_count == 0` oder Timeout, damit Folge-Tests auf einem
+    deterministisch leeren Projekt starten.
+    """
     import socket
     import struct
     client   = _bound_osc_client(timeout=timeout)
@@ -162,7 +169,15 @@ def _clear_all_tracks(timeout: float = 5.0) -> int:
             client._sock.close()
         except OSError:
             pass
+
+    # Polling: auf tatsächlich leeren Projekt-State warten (max. 3 s)
+    deadline  = time.monotonic() + 3.0
     remaining = _get_current_track_count()
+    while remaining > 0 and time.monotonic() < deadline:
+        time.sleep(0.15)
+        remaining = _get_current_track_count()
+
+    # Fallback: per Einzel-Delete nachräumen wenn Bulk-Clear nicht alles erwischt hat
     if remaining > 0:
         from pythonosc import udp_client as _udp
         fb = _udp.SimpleUDPClient(OSC_HOST, OSC_PORT)
@@ -171,6 +186,10 @@ def _clear_all_tracks(timeout: float = 5.0) -> int:
             time.sleep(0.15)
             fb.send_message("/track/delete/last", 1)
             time.sleep(0.25)
+        # nach Einzel-Delete erneut warten bis State leer ist
+        deadline = time.monotonic() + 2.0
+        while _get_current_track_count() > 0 and time.monotonic() < deadline:
+            time.sleep(0.15)
         _reset_note_counts()
         return reported + remaining
     return reported

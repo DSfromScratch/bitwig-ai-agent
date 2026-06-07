@@ -290,8 +290,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         // LED-Feedback — MIDI-Routing übernimmt drumNoteInput (setShouldConsumeEvents=true in DRUM-Modus)
         if (pressed) {
             setLed(note, DRUM_COLOR_HIT[0], DRUM_COLOR_HIT[1], DRUM_COLOR_HIT[2]);
-            if (modeReplyConn != null)
-                modeReplyConn.sendMessage("/launchpad/note/played", drumNote, velocity);
+            safeSendReply("/launchpad/note/played", drumNote, velocity);
         } else {
             int[] col = drumColor(drumIdx);
             setLed(note, col[0], col[1], col[2]);
@@ -336,8 +335,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
             int vel = Math.max(1, Math.min(127, velocity));
             instNoteInput.sendRawMidiEvent(0x90, midiNote, vel);
             setLed(note, INST_COLOR_HIT[0], INST_COLOR_HIT[1], INST_COLOR_HIT[2]);
-            if (modeReplyConn != null)
-                modeReplyConn.sendMessage("/launchpad/note/played", midiNote, vel);
+            safeSendReply("/launchpad/note/played", midiNote, vel);
         } else {
             instNoteInput.sendRawMidiEvent(0x80, midiNote, 0);
             int[] col = instPadColor(midiNote);
@@ -432,9 +430,20 @@ public class LaunchpadControllerExtension extends ControllerExtension {
             case DRUM:       paintDrumMode();       break;
             case INSTRUMENT: paintInstrumentMode(); break;
         }
-        if (modeReplyConn != null)
-            modeReplyConn.sendMessage("/launchpad/mode/changed", mode.name());
+        safeSendReply("/launchpad/mode/changed", mode.name());
         host.println("[Launchpad] Modus: " + mode);
+    }
+
+    /** Sendet OSC-Reply ohne die Extension bei Netzwerk-Fehlern zu killen. */
+    private void safeSendReply(String address, Object... args) {
+        if (modeReplyConn == null) return;
+        try {
+            modeReplyConn.sendMessage(address, args);
+        } catch (Throwable t) {
+            // Host down / no route — Agent ist nicht erreichbar. Nicht fatal.
+            host.println("[Launchpad] Reply ignoriert (" + address + "): "
+                + t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
     }
 
     private void paintModeButtons() {
@@ -477,10 +486,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
             // /launchpad/mode/get  — aktuellen Modus zurückschicken
             space.registerMethod("/launchpad/mode/get", "*", "Get current mode",
-                (src, msg) -> {
-                    if (modeReplyConn != null)
-                        modeReplyConn.sendMessage("/launchpad/mode/response", currentMode.name());
-                });
+                (src, msg) -> safeSendReply("/launchpad/mode/response", currentMode.name()));
 
             // /launchpad/drum/profile <plugin_name>  — Drum-Note-Mapping wechseln
             space.registerMethod("/launchpad/drum/profile", "*", "Set drum note profile",
