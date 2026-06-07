@@ -157,17 +157,20 @@ referenzieren noch `INSTRUMENT_MAP`.
 | Verbliebene `INSTRUMENT_MAP`-Lookups durch `InstrumentRepository.find_best()` ersetzen | suchen mit `grep -r INSTRUMENT_MAP src/` | M |
 | `_infer_role()`-Heuristik überprüfen — ggf. KB-Query statt String-Matching | `scripts/scan_bitwig_devices.py` | S |
 
-### B.4 — F2 Tool-Registry-Refactor ⏳
+### B.4 — F2 Tool-Registry-Refactor 🟡
 
-**Status:** Aktuell flache `src/agent/tools/`-Struktur mit 22+ Modulen. Original-Entwurf
-sah eine zentrale Registry + `tools/bitwig/` + `tools/music/`-Splits vor.
+**Status:** Zentrale `registry.py` ✅ eingeführt — die manuell gepflegte `ALL_TOOLS`-Liste
+wird jetzt über `registry.register(tool, domain=...)` mit Domänen-Tags
+(`bitwig`/`music`/`knowledge`/`meta`) gespeist. Der **Verzeichnis-Split**
+(`tools/bitwig/`, `tools/music/`) ist bewusst aufgeschoben (hoher Import-Churn, niedriger Nutzen).
 
-| Aufgabe | Datei | Aufwand | Priorität |
-|---------|-------|---------|-----------|
-| **Entscheidung treffen:** Registry-Pattern einführen oder flache Struktur akzeptieren? | — | XS | Diskussion |
-| Falls Registry: `src/agent/tools/registry.py` mit `register()` + `get_all()` | neu | M | niedrig |
-| Falls Registry: Tools nach `bitwig/`, `music/`, `knowledge/` umziehen | mehrere | L | niedrig |
-| Falls Akzeptanz: `architecture_improvements.md` F17 als „bewusst nicht umgesetzt" markieren | `docs/diagrams/architecture_improvements.md` | XS | niedrig |
+| Aufgabe | Datei | Aufwand | Status |
+|---------|-------|---------|--------|
+| Zentrale `ToolRegistry` mit `register()`/`by_domain()`/`domain_of()` | `src/agent/tools/registry.py` (neu) | M | ✅ |
+| `ALL_TOOLS` über Registry mit Domänen-Tags speisen | `src/agent/tools/__init__.py` | S | ✅ |
+| Unit-Tests für Registry + Domänen-Integrität | `tests/test_tool_registry.py` (neu) | S | ✅ |
+| **Entscheidung Verzeichnis-Split:** `bitwig/`+`music/`-Umzug oder flache Struktur akzeptieren? | — | XS | ⏳ Diskussion |
+| Falls Split: Tools nach `bitwig/`, `music/`, `knowledge/` umziehen (~30 Import-Pfade) | mehrere | L | ⏳ |
 
 ---
 

@@ -24,6 +24,7 @@ from src.bitwig_executor import execute_setup, compose_notes
 from langchain_core.tools import StructuredTool, tool as _tool
 from pydantic import BaseModel, model_validator
 from src.knowledge.vst_scanner import scan_and_store as _scan_fn
+from src.agent.tools.registry import registry
 
 
 class _BitwigResultInput(BaseModel):
@@ -58,31 +59,31 @@ def scan_vst_plugins() -> str:
 
 
 ALL_TOOLS = [
-    query_bitwig_docs,
-    store_result_in_kb,
-    web_search,
-    find_audio_example,
-    scan_and_learn_project,
-    reconstruct_project,
-    create_track_from_recipe,
-    control_bitwig,
-    check_bitwig_connection,
-    get_bitwig_track_state,
-    _make_tool(execute_setup),
-    _make_tool(compose_notes),
-    write_pattern,
-    write_pattern_raw,
-    get_song_context,
-    validate_music,
-    validate_and_learn,
-    analyze_song,
-    search_artist_song,
-    learn_song_from_youtube,
-    export_mlx_training_data,
-    scan_vst_plugins,
-    StructuredTool.from_function(suggest_notes),
-    StructuredTool.from_function(get_launchpad_mode),
-    StructuredTool.from_function(listen_played_notes),
-    StructuredTool.from_function(play_notes),
-    StructuredTool.from_function(arm_track),
+    registry.register(query_bitwig_docs, domain="knowledge"),
+    registry.register(store_result_in_kb, domain="knowledge"),
+    registry.register(web_search, domain="knowledge"),
+    registry.register(find_audio_example, domain="knowledge"),
+    registry.register(scan_and_learn_project, domain="knowledge"),
+    registry.register(reconstruct_project, domain="knowledge"),
+    registry.register(create_track_from_recipe, domain="bitwig"),
+    registry.register(control_bitwig, domain="bitwig"),
+    registry.register(check_bitwig_connection, domain="bitwig"),
+    registry.register(get_bitwig_track_state, domain="bitwig"),
+    registry.register(_make_tool(execute_setup), domain="bitwig"),
+    registry.register(_make_tool(compose_notes), domain="music"),
+    registry.register(write_pattern, domain="music"),
+    registry.register(write_pattern_raw, domain="music"),
+    registry.register(get_song_context, domain="music"),
+    registry.register(validate_music, domain="music"),
+    registry.register(validate_and_learn, domain="knowledge"),
+    registry.register(analyze_song, domain="music"),
+    registry.register(search_artist_song, domain="knowledge"),
+    registry.register(learn_song_from_youtube, domain="knowledge"),
+    registry.register(export_mlx_training_data, domain="meta"),
+    registry.register(scan_vst_plugins, domain="bitwig"),
+    registry.register(StructuredTool.from_function(suggest_notes), domain="music"),
+    registry.register(StructuredTool.from_function(get_launchpad_mode), domain="bitwig"),
+    registry.register(StructuredTool.from_function(listen_played_notes), domain="bitwig"),
+    registry.register(StructuredTool.from_function(play_notes), domain="bitwig"),
+    registry.register(StructuredTool.from_function(arm_track), domain="bitwig"),
 ]

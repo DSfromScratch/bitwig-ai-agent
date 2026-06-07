@@ -509,6 +509,7 @@ src/agent/
 │   ├── track_plugins.py     ← Plugin-Pattern für Track-Generierung
 │   └── result.py            ← BitwigResult-Konstruktor-Helfer
 └── tools/
+    ├── registry.py          ← ToolRegistry (ALL_TOOLS + Domänen-Tags: bitwig/music/knowledge/meta)
     ├── song_tools.py        ← build_song, write_pattern, verify_song
     ├── context_tool.py      ← get_song_context (Tempo, Key, Energie)
     ├── pattern_tools.py     ← compose_notes, suggest_notes
