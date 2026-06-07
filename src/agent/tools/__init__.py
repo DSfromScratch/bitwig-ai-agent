@@ -1,4 +1,5 @@
 from src.agent.tools.knowledge_tool import query_bitwig_docs
+from src.agent.tools.kb_store_tool import store_result_in_kb
 from src.agent.tools.project_learning_tool import scan_and_learn_project
 from src.agent.tools.reconstruct_tool import reconstruct_project
 from src.agent.tools.recipe_tool import create_track_from_recipe
@@ -55,6 +56,7 @@ def scan_vst_plugins() -> str:
 
 ALL_TOOLS = [
     query_bitwig_docs,
+    store_result_in_kb,
     web_search,
     find_audio_example,
     scan_and_learn_project,

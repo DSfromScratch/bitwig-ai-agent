@@ -264,15 +264,128 @@ def generate_pairs_for_project(project: str, key: str, scenes: list[dict],
     return pairs
 
 
+def load_artists(s) -> list[dict]:
+    return s.run("""
+        MATCH (a:Artist)
+        WHERE a.quality_score >= 0.7 AND a.note_plan IS NOT NULL AND a.note_plan <> ''
+        RETURN a.name AS name, a.genre AS genre, a.bpm AS bpm,
+               a.key AS key, a.style AS style,
+               a.devices_json AS devices_json, a.note_plan AS note_plan,
+               a.quality_score AS score
+        ORDER BY a.quality_score DESC
+    """).data()
+
+
+def load_songs(s) -> list[dict]:
+    return s.run("""
+        MATCH (s:Song)
+        WHERE s.quality_score >= 0.7 AND s.note_plan IS NOT NULL AND s.note_plan <> ''
+        RETURN s.name AS name, s.artist AS artist, s.bpm AS bpm,
+               s.key AS key, s.chord_progression AS chords,
+               s.note_plan AS note_plan, s.quality_score AS score
+        ORDER BY s.quality_score DESC
+    """).data()
+
+
+def generate_artist_context_pairs(artists: list[dict]) -> list[dict]:
+    """Aus gespeicherten Artist-Profilen kontext-bewusste write_pattern-Paare."""
+    pairs = []
+    questions = [
+        "Mach etwas wie {name}",
+        "Ich will im Stil von {name} produzieren",
+        "Erstelle einen {name}-inspirierten Beat in Bitwig",
+        "Zeig mir wie {name} klingt — baue das in Bitwig nach",
+    ]
+    for a in artists:
+        try:
+            devices = json.loads(a.get("devices_json") or "[]")
+        except Exception:
+            devices = []
+
+        ctx = (
+            f"KB-Eintrag Artist: {a['name']}\n"
+            f"Genre: {a.get('genre','')} | BPM: {a.get('bpm','')} | "
+            f"Tonart: {a.get('key','')}\n"
+            f"Stil: {a.get('style','')[:200]}\n"
+            f"Devices: {', '.join(devices[:5])}"
+        )
+
+        for q_tmpl in random.sample(questions, min(2, len(questions))):
+            pairs.append({
+                "prompt": q_tmpl.format(name=a["name"]),
+                "context": ctx,
+                "chain_of_thought": (
+                    f"[Artist '{a['name']}' in KB gefunden (Score: {a.get('score',0):.2f})] "
+                    f"[Genre: {a.get('genre','')} | BPM: {a.get('bpm','')} | Tonart: {a.get('key','')}] "
+                    f"[Notenplan aus KB verwenden — kein Web-Aufruf nötig] "
+                    f"[Devices: {', '.join(devices[:3])}]"
+                ),
+                "completion": (
+                    f"Ich habe '{a['name']}' in meiner Wissensdatenbank gefunden "
+                    f"(Score: {a.get('score',0):.2f}).\n\n"
+                    f"**{a['name']}-Stil** ({a.get('genre','')}): {a.get('style','')[:200]}\n\n"
+                    f"**Notenplan:**\n{a.get('note_plan','')}\n\n"
+                    f"Soll ich das Setup in Bitwig anlegen?"
+                ),
+                "source": "artist_kb_context",
+            })
+
+    return pairs
+
+
+def generate_song_context_pairs(songs: list[dict]) -> list[dict]:
+    """Aus gespeicherten Song-Analysen kontext-bewusste write_pattern-Paare."""
+    pairs = []
+    questions = [
+        "Kannst du {name} von {artist} in Bitwig nachbauen?",
+        "Ich möchte {name} ({artist}) nachproduzieren",
+        "Wie baue ich die Bassline von {name} nach?",
+        "Baue mir {name} von {artist} in Bitwig",
+    ]
+    for sg in songs:
+        ctx = (
+            f"KB-Eintrag Song: {sg['name']} von {sg.get('artist','')}\n"
+            f"BPM: {sg.get('bpm','')} | Tonart: {sg.get('key','')}\n"
+            f"Akkordfolge: {sg.get('chords','')}"
+        )
+
+        for q_tmpl in random.sample(questions, min(2, len(questions))):
+            pairs.append({
+                "prompt": q_tmpl.format(name=sg["name"], artist=sg.get("artist","")),
+                "context": ctx,
+                "chain_of_thought": (
+                    f"[Song '{sg['name']}' in KB gefunden (Score: {sg.get('score',0):.2f})] "
+                    f"[{sg.get('bpm','')} BPM | {sg.get('key','')} | "
+                    f"Akkorde: {sg.get('chords','')}] "
+                    f"[Notenplan direkt verwenden — kein web_search nötig]"
+                ),
+                "completion": (
+                    f"'{sg['name']}' von {sg.get('artist','')} ist in meiner KB "
+                    f"(Score: {sg.get('score',0):.2f}).\n\n"
+                    f"**{sg.get('bpm','')} BPM | {sg.get('key','')}**"
+                    + (f"\nAkkordfolge: {sg['chords']}" if sg.get("chords") else "")
+                    + f"\n\n**Notenplan:**\n{sg.get('note_plan','')}\n\n"
+                    f"Soll ich das in Bitwig anlegen?"
+                ),
+                "source": "song_kb_context",
+            })
+
+    return pairs
+
+
 def main():
     print("=== Kontext-Paare generieren (Ebene 3) ===\n")
 
     with session() as s:
         projects = load_projects(s)
-        print(f"  Gefundene Projekte: {projects}")
+        artists  = load_artists(s)
+        songs    = load_songs(s)
+
+        print(f"  Projekte: {len(projects)} | Artists in KB: {len(artists)} | Songs in KB: {len(songs)}")
 
         all_pairs = []
 
+        # ── Projekt-basierte Paare (bestehende Logik) ─────────────────────
         for project in projects:
             clips  = load_clips_for_project(s, project)
             scenes = load_scenes_for_project(s, project)
@@ -284,9 +397,24 @@ def main():
                 continue
 
             pairs = generate_pairs_for_project(project, key, scenes, tracks, clips)
-            print(f"  '{project}': {len(clips)} Clips, {len(scenes)} Szenen, "
-                  f"{len(tracks)} Tracks → {len(pairs)} Paare")
+            print(f"  '{project}': {len(clips)} Clips → {len(pairs)} Paare")
             all_pairs.extend(pairs)
+
+        # ── Artist-basierte Paare (aus Neo4j Artist-Nodes) ────────────────
+        if artists:
+            artist_pairs = generate_artist_context_pairs(artists)
+            print(f"  Artists: {len(artists)} Einträge → {len(artist_pairs)} Paare")
+            all_pairs.extend(artist_pairs)
+        else:
+            print("  Keine Artist-Nodes in KB — übersprungen (wächst mit store_result_in_kb)")
+
+        # ── Song-basierte Paare (aus Neo4j Song-Nodes) ────────────────────
+        if songs:
+            song_pairs = generate_song_context_pairs(songs)
+            print(f"  Songs: {len(songs)} Einträge → {len(song_pairs)} Paare")
+            all_pairs.extend(song_pairs)
+        else:
+            print("  Keine Song-Nodes in KB — übersprungen (wächst mit store_result_in_kb)")
 
     random.seed(42)
     random.shuffle(all_pairs)
@@ -296,15 +424,9 @@ def main():
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
 
     print(f"\n✅ {len(all_pairs)} Paare → {OUTPUT}")
-
     if all_pairs:
-        print("\n  Beispiel:")
         ex = all_pairs[0]
-        print(f"  Prompt:    {ex['prompt'][:100]}")
-        print(f"  Kontext:   {ex.get('context', '')[:150]}")
-        print(f"  CoT:       {ex.get('chain_of_thought', '')[:150]}")
-        compl = ex['completion']
-        print(f"  Completion:{compl[:140]}...")
+        print(f"  Beispiel [{ex.get('source','')}]: {ex['prompt'][:80]}")
 
 
 if __name__ == "__main__":

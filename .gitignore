@@ -83,3 +83,6 @@ agent-plugin/clap/
 
 # Raw Training-Daten (extern geklonte Repos, nicht committed)
 training_data/raw/drums-with-llm/
+
+#claude memory
+.claude/

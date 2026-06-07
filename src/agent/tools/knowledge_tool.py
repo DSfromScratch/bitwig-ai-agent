@@ -275,6 +275,64 @@ def _query_neo4j(query: str) -> str:
                         sim_strs.append(s_str)
                     parts.append(f"**Ähnlich wie {src}:**\n" + "\n".join(f"  • {s}" for s in sim_strs))
 
+            # ── 7a. Artist-Nodes (gespeicherte Künstler-Profile) ─────────
+            artists = s.run("""
+                MATCH (a:Artist)
+                WHERE any(w IN $words WHERE toLower(a.name) CONTAINS w
+                       OR toLower(coalesce(a.genre,'')) CONTAINS w
+                       OR toLower(coalesce(a.style,'')) CONTAINS w)
+                RETURN a.name AS name, a.genre AS genre, a.bpm AS bpm,
+                       a.key AS key, a.style AS style,
+                       a.devices_json AS devices_json,
+                       a.note_plan AS note_plan,
+                       a.quality_score AS score
+                ORDER BY a.quality_score DESC
+                LIMIT 3
+            """, words=words).data()
+
+            for a in artists:
+                try:
+                    devices = json.loads(a["devices_json"] or "[]")
+                    dev_str = ", ".join(devices[:6]) if devices else ""
+                except Exception:
+                    dev_str = ""
+                artist_text = (
+                    f"**Künstler: {a['name']}** [{a.get('genre','')}] "
+                    f"(KB-Score: {a.get('score',0):.2f})\n"
+                    f"  BPM: {a.get('bpm','')} | Tonart: {a.get('key','')}\n"
+                    f"  Stil: {a.get('style','')[:200]}"
+                )
+                if dev_str:
+                    artist_text += f"\n  Devices: {dev_str}"
+                if a.get("note_plan"):
+                    artist_text += f"\n  Notenplan:\n    {a['note_plan'][:400]}"
+                parts.append(artist_text)
+
+            # ── 7b. Song-Nodes (gespeicherte Song-Analysen) ───────────────
+            songs = s.run("""
+                MATCH (s:Song)
+                WHERE any(w IN $words WHERE toLower(s.name) CONTAINS w
+                       OR toLower(coalesce(s.artist,'')) CONTAINS w)
+                RETURN s.name AS name, s.artist AS artist, s.bpm AS bpm,
+                       s.key AS key, s.chord_progression AS chords,
+                       s.note_plan AS note_plan,
+                       s.quality_score AS score
+                ORDER BY s.quality_score DESC
+                LIMIT 3
+            """, words=words).data()
+
+            for sg in songs:
+                song_text = (
+                    f"**Song: {sg['name']}** von {sg.get('artist','')} "
+                    f"(KB-Score: {sg.get('score',0):.2f})\n"
+                    f"  BPM: {sg.get('bpm','')} | Tonart: {sg.get('key','')}"
+                )
+                if sg.get("chords"):
+                    song_text += f"\n  Akkordfolge: {sg['chords']}"
+                if sg.get("note_plan"):
+                    song_text += f"\n  Notenplan:\n    {sg['note_plan'][:400]}"
+                parts.append(song_text)
+
             # ── 7. ProductionPatterns ─────────────────────────────────────
             patterns = s.run("""
                 MATCH (p:ProductionPattern)
@@ -457,6 +515,30 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                            'midi' AS kind, score
                 """, emb=emb).data()
 
+            # Artist-Nodes (Vektorsuche)
+            ar_count = s.run("MATCH (n:Artist) RETURN count(n) AS c").single()["c"]
+            raw_artists: list[dict] = []
+            if ar_count > 0:
+                raw_artists = s.run("""
+                    CALL db.index.vector.queryNodes('artist_embedding', 3, $emb)
+                    YIELD node AS n, score
+                    RETURN n.content AS content, n.name AS source,
+                           'artist' AS role, null AS doc_type, null AS video_url,
+                           'artist' AS kind, score
+                """, emb=emb).data()
+
+            # Song-Nodes (Vektorsuche)
+            so_count = s.run("MATCH (n:Song) RETURN count(n) AS c").single()["c"]
+            raw_songs: list[dict] = []
+            if so_count > 0:
+                raw_songs = s.run("""
+                    CALL db.index.vector.queryNodes('song_embedding', 3, $emb)
+                    YIELD node AS n, score
+                    RETURN n.content AS content, n.name AS source,
+                           'song' AS role, null AS doc_type, null AS video_url,
+                           'song' AS kind, score
+                """, emb=emb).data()
+
             # GenrePattern: BPM + Tonart + Onset-Steps aus Audio-Analyse
             gp_count = s.run("MATCH (g:GenrePattern) RETURN count(g) AS c").single()["c"]
             raw_genre = []
@@ -470,7 +552,7 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                            'genre_pattern' AS kind, score
                 """, emb=emb).data()
 
-            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid + raw_ga + raw_midi + raw_genre
+            raw_docs = raw_docs + raw_recipes + raw_audio + raw_grid + raw_ga + raw_midi + raw_genre + raw_artists + raw_songs
 
             # Score-Threshold: YouTube strenger als strukturierte Docs
             docs = [
