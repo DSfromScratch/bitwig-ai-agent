@@ -12,6 +12,7 @@ from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, lis
 from src.agent.tools.pattern_tools import write_pattern
 from src.agent.tools.pattern_raw_tool import write_pattern_raw
 from src.agent.tools.context_tool import get_song_context
+from src.agent.tools.artist_tool import get_artist_context
 from src.agent.tools.web_search_tool import web_search
 from src.agent.tools.freesound_tool import find_audio_example
 from src.agent.tools.music_validator import validate_music
@@ -74,6 +75,7 @@ ALL_TOOLS = [
     registry.register(write_pattern, domain="music"),
     registry.register(write_pattern_raw, domain="music"),
     registry.register(get_song_context, domain="music"),
+    registry.register(get_artist_context, domain="knowledge"),
     registry.register(validate_music, domain="music"),
     registry.register(validate_and_learn, domain="knowledge"),
     registry.register(analyze_song, domain="music"),
