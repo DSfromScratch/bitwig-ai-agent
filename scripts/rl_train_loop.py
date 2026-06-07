@@ -22,12 +22,10 @@ import requests
 # ── Konfiguration ─────────────────────────────────────────────────────────────
 MAC_HOST          = "192.168.0.4"
 MAC_USER          = "sija"
-MAC_DATA_DIR      = "/Users/sija/mlx-dpo-data"
-MAC_ADAPTER_DIR   = "/Users/sija/.ollama/models/mlx-models/bitwig-adapter"
-MODEL_PATH        = ("/Users/sija/.cache/huggingface/hub/"
-                     "models--mlx-community--Qwen3-8B-4bit/snapshots/"
-                     "545dc4251c05440727734bcd94334791f6ab0192")
-MLX_PYTHON        = "/Users/sija/.venv-mlx/bin/python"
+MAC_DATA_DIR      = os.getenv("MLX_DATA_DIR", "/Users/sija/mlx-dpo-data")
+MAC_ADAPTER_DIR   = os.getenv("MLX_ADAPTER_DIR", "/Users/sija/mlx-server/models/adapter")
+MODEL_PATH        = os.getenv("MLX_BASE_MODEL", "/Users/sija/mlx-server/models/base")
+MLX_PYTHON        = os.getenv("MLX_PYTHON", "/Users/sija/.venv-mlx/bin/python")
 
 LOCAL_DATA_DIR    = "./training_data"
 MLX_URL           = f"http://{MAC_HOST}:8080/v1/chat/completions"  # immer Fine-tuned (LaunchAgent)
@@ -134,7 +132,25 @@ def evaluate(model_url: str, temperature: float = 0.0,
 
 # ── SSH-Helfer ────────────────────────────────────────────────────────────────
 
+def _local_ips() -> set[str]:
+    ips = {"127.0.0.1", "localhost"}
+    try:
+        out = subprocess.run(["ifconfig"], capture_output=True, text=True, check=False).stdout
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("inet ") and "127.0.0.1" not in line:
+                ips.add(line.split()[1])
+    except Exception:
+        pass
+    return ips
+
+
+_LOCAL_MODE = MAC_HOST in _local_ips() or os.getenv("RL_LOCAL_MODE") == "1"
+
+
 def _ssh(cmd: str) -> int:
+    if _LOCAL_MODE:
+        return subprocess.run(["bash", "-lc", cmd], check=False).returncode
     result = subprocess.run(
         ["ssh", f"{MAC_USER}@{MAC_HOST}", cmd],
         check=False,
@@ -143,6 +159,13 @@ def _ssh(cmd: str) -> int:
 
 
 def _rsync_to_mac(local: str, remote: str) -> None:
+    if _LOCAL_MODE:
+        import shutil
+        if os.path.abspath(local) == os.path.abspath(remote):
+            return
+        os.makedirs(os.path.dirname(remote) or ".", exist_ok=True)
+        shutil.copy(local, remote)
+        return
     subprocess.run([
         "rsync", "-az", "--progress",
         local,
@@ -176,7 +199,12 @@ print(f"✅ Konvertiert: {n_train} Train + {n_valid} Valid Beispiele (chosen-onl
 
 
 def _deploy_converter() -> None:
-    """Schreibt das DPO→SFT Konvertierungs-Skript auf den Mac."""
+    """Schreibt das DPO→SFT Konvertierungs-Skript auf den Mac (oder lokal)."""
+    if _LOCAL_MODE:
+        os.makedirs(MAC_DATA_DIR, exist_ok=True)
+        with open(os.path.join(MAC_DATA_DIR, "dpo_to_sft.py"), "w") as f:
+            f.write(_CONVERTER_SCRIPT)
+        return
     import tempfile
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
         tmp.write(_CONVERTER_SCRIPT)
@@ -186,6 +214,39 @@ def _deploy_converter() -> None:
         f"{MAC_USER}@{MAC_HOST}:{MAC_DATA_DIR}/dpo_to_sft.py",
     ], check=True, capture_output=True)
     os.unlink(tmp_path)
+
+
+_LAUNCH_AGENT = os.path.expanduser(
+    "~/Library/LaunchAgents/com.bitwigagent.mlxserver.plist")
+
+
+def _stop_mlx_server() -> None:
+    """Stoppt den MLX-Server. Im lokalen Modus wird der KeepAlive-LaunchAgent
+    entladen, sonst startet er den Server mitten im Training neu (Kernel-Panic)."""
+    if _LOCAL_MODE and os.path.exists(_LAUNCH_AGENT):
+        print("🛑 LaunchAgent entladen (verhindert Auto-Restart während Training)…")
+        subprocess.run(["launchctl", "unload", _LAUNCH_AGENT], check=False)
+    _ssh("kill $(lsof -ti:8080) 2>/dev/null; sleep 3; echo 'Server gestoppt'")
+
+
+def _start_mlx_server_local() -> bool:
+    """Lädt den LaunchAgent wieder (serviert den frisch trainierten Adapter,
+    da er auf denselben adapter-path zeigt)."""
+    if _LOCAL_MODE and os.path.exists(_LAUNCH_AGENT):
+        print("🔄 LaunchAgent laden (serviert neuen Adapter)…")
+        subprocess.run(["launchctl", "load", _LAUNCH_AGENT], check=False)
+        for _ in range(30):
+            try:
+                r = requests.get(f"http://{MAC_HOST}:8080/v1/models", timeout=3)
+                if r.status_code == 200:
+                    print("  ✅ Server bereit")
+                    return True
+            except Exception:
+                pass
+            time.sleep(2)
+        print("⚠ Server nicht erreichbar nach 60s")
+        return False
+    return False
 
 
 def train_dpo_on_mac(round_num: int) -> bool:
@@ -202,19 +263,28 @@ def train_dpo_on_mac(round_num: int) -> bool:
 
     # ── GPU-RAM freigeben: MLX-Server stoppen ────────────────────────────────
     print("🛑 MLX-Server stoppen (GPU-RAM freigeben)…")
-    _ssh("kill $(lsof -ti:8080) 2>/dev/null; sleep 3; echo 'Server gestoppt'")
+    _stop_mlx_server()
 
     # Konvertierungs-Skript auf Mac ablegen und ausführen
     _deploy_converter()
     rc = _ssh(f"{MLX_PYTHON} {MAC_DATA_DIR}/dpo_to_sft.py {MAC_DATA_DIR}")
     if rc != 0:
         print("⚠ Konvertierung fehlgeschlagen")
+        _start_mlx_server_local()
         return False
+
+    # Bestehenden Adapter fortsetzen, falls vorhanden (Live-Adapter weitertrainieren)
+    resume = ""
+    existing = os.path.join(MAC_ADAPTER_DIR, "adapters.safetensors")
+    if _LOCAL_MODE and os.path.exists(existing):
+        resume = f"--resume-adapter-file {existing} "
+        print(f"↩ Setze bestehenden Adapter fort: {existing}")
 
     train_cmd = (
         f"{MLX_PYTHON} -m mlx_lm lora "
         f"--model {MODEL_PATH} "
         f"--adapter-path {MAC_ADAPTER_DIR} "
+        f"{resume}"
         f"--train "
         f"--fine-tune-type lora "
         f"--data {MAC_DATA_DIR} "
@@ -233,10 +303,14 @@ def train_dpo_on_mac(round_num: int) -> bool:
     if rc != 0:
         print(f"⚠ Training fehlgeschlagen (exit {rc}) — Log:")
         _ssh(f"tail -30 /tmp/mlx_dpo_round_{round_num}.log")
+        _start_mlx_server_local()
         return False
 
     # ── Fine-tuned Server neu starten (Port 8080, mit neuem Adapter) ─────────
     print("🔄 Fine-tuned Server (8080) neu starten…")
+    if _LOCAL_MODE and os.path.exists(_LAUNCH_AGENT):
+        # LaunchAgent serviert denselben adapter-path → lädt frischen Adapter
+        return _start_mlx_server_local()
     _ssh(f"nohup {MLX_PYTHON} -m mlx_lm.server "
          f"--model {MODEL_PATH} "
          f"--adapter-path {MAC_ADAPTER_DIR} "
