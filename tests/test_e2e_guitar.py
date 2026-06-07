@@ -307,11 +307,13 @@ class TestE2EGuitarLoop:
         """Rock-Band mit Gitarre: Agent für Tracks/Instrumente, OOP für Gitarren-Noten."""
         if not osc_available:
             pytest.skip("Bitwig nicht erreichbar (Port 8002/8001) — Integration-Test übersprungen")
+        import os
         import urllib.request
+        _llm_base = os.getenv("VLLM_BASE_URL", "http://localhost:8100").rstrip("/")
         try:
-            urllib.request.urlopen("http://localhost:8100/health", timeout=2)
+            urllib.request.urlopen(f"{_llm_base}/v1/models", timeout=3)
         except Exception:
-            pytest.skip("vLLM nicht erreichbar (Port 8100) — LLM-Test übersprungen")
+            pytest.skip(f"Agent-LLM nicht erreichbar ({_llm_base}) — LLM-Test übersprungen")
 
         scores:    list[float] = []
         db_prompt = DRUMS_BASS_PROMPT
