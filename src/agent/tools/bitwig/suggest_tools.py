@@ -49,8 +49,8 @@ def listen_played_notes(duration: float = 3.0) -> str:
         duration: Lausch-Dauer in Sekunden (Standard 3.0, max 10.0)
     """
     duration = min(max(duration, 0.5), 10.0)
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    from src.agent.osc.client import configure_dgram_socket
+    sock = configure_dgram_socket(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
     try:
         sock.bind(("", MODE_REPLY_PORT))
     except OSError as e:
@@ -97,8 +97,8 @@ def get_launchpad_mode() -> str:
     Fragt die LaunchpadControllerExtension via OSC ab (Port 8003 → Reply auf 9005).
     """
     global _current_mode
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    from src.agent.osc.client import configure_dgram_socket
+    sock = configure_dgram_socket(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
     try:
         sock.bind(("", MODE_REPLY_PORT))
         sock.settimeout(2.0)

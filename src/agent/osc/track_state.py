@@ -20,14 +20,19 @@ def _osc_client():
     return udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT)
 
 
-def _bound_osc_client(timeout: float | None = None):
+def _bound_osc_client(
+    timeout: float | None = None,
+    port: int = OSC_PORT,
+    reply_port: int = OSC_REPLY_PORT,
+    reuse_port: bool = False,
+):
     from pythonosc import udp_client
-    client = udp_client.SimpleUDPClient(OSC_HOST, OSC_PORT, allow_broadcast=False)
+    from src.agent.osc.client import configure_dgram_socket
+    client = udp_client.SimpleUDPClient(OSC_HOST, port, allow_broadcast=False)
     sock = client._sock
-    if timeout is not None:
-        sock.settimeout(timeout)
+    configure_dgram_socket(sock, timeout=timeout, reuse_port=reuse_port)
     try:
-        sock.bind(("", OSC_REPLY_PORT))
+        sock.bind(("", reply_port))
     except OSError:
         pass
     return client
@@ -36,14 +41,10 @@ def _bound_osc_client(timeout: float | None = None):
 def _get_note_counts() -> dict[str, int]:
     import socket
     import struct
-    from pythonosc import udp_client as _udp
-    client = _udp.SimpleUDPClient(OSC_HOST, OSC_STEP_PORT, allow_broadcast=False)
-    sock   = client._sock
-    sock.settimeout(2.0)
-    try:
-        sock.bind(("", OSC_STEP_REPLY_PORT))
-    except OSError:
-        pass
+    client = _bound_osc_client(
+        timeout=2.0, port=OSC_STEP_PORT, reply_port=OSC_STEP_REPLY_PORT,
+    )
+    sock = client._sock
     try:
         client.send_message("/clip/note/count/all", 1)
         data, _ = sock.recvfrom(4096)

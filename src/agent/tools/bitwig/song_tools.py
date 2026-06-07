@@ -44,12 +44,11 @@ def check_bitwig_connection() -> dict:
     # Primär: BitwigStepPlugin Port 8002 (läuft auf Mac + Linux)
     import socket
     from pythonosc import udp_client as _udp
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    if hasattr(socket, "SO_REUSEPORT"):
-        try: sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except OSError: pass
-    sock.settimeout(2.0)
+    from src.agent.osc.client import configure_dgram_socket
+    sock = configure_dgram_socket(
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM),
+        timeout=2.0, reuse_port=True,
+    )
     try:
         sock.bind(("", OSC_STEP_REPLY_PORT))
     except OSError:
@@ -90,12 +89,11 @@ def get_bitwig_track_state() -> str:
     # Direkt BitwigStepPlugin Port 8002 verwenden (funktioniert auf Mac + Linux)
     import socket as _socket
     from pythonosc import udp_client as _udp2
-    step_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-    step_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-    if hasattr(_socket, "SO_REUSEPORT"):
-        try: step_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
-        except OSError: pass
-    step_sock.settimeout(2.0)
+    from src.agent.osc.client import configure_dgram_socket
+    step_sock = configure_dgram_socket(
+        _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM),
+        timeout=2.0, reuse_port=True,
+    )
     try: step_sock.bind(("", OSC_STEP_REPLY_PORT))
     except OSError: pass
 

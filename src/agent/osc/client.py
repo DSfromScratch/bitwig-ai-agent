@@ -14,6 +14,30 @@ OSC_STEP_PORT       = int(os.getenv("BITWIG_STEP_PORT",  "8002"))
 OSC_STEP_REPLY_PORT = int(os.getenv("BITWIG_STEP_REPLY_PORT", "9002"))
 
 
+def configure_dgram_socket(
+    sock: socket.socket,
+    *,
+    timeout: float | None = None,
+    reuse_port: bool = False,
+) -> socket.socket:
+    """Setzt die wiederkehrenden UDP-Socket-Optionen und gibt den Socket zurück.
+
+    Zentralisiert den an ~8 Stellen duplizierten Boilerplate
+    (``SO_REUSEADDR``, optional ``SO_REUSEPORT``, ``settimeout``). Bindet
+    bewusst NICHT — das `bind()` bleibt beim Aufrufer, da die Call-Sites
+    unterschiedliche Bind-Fehlerbehandlung haben (schlucken vs. Fehler melden).
+    """
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if reuse_port and hasattr(socket, "SO_REUSEPORT"):
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except OSError:
+            pass
+    if timeout is not None:
+        sock.settimeout(timeout)
+    return sock
+
+
 class OscClient:
     """Wrapper around pythonosc SimpleUDPClient with socket binding and error handling."""
 
@@ -27,8 +51,7 @@ class OscClient:
         """
         self.client = udp_client.SimpleUDPClient(host, port, allow_broadcast=False)
         self.sock = self.client._sock
-        if timeout is not None:
-            self.sock.settimeout(timeout)
+        configure_dgram_socket(self.sock, timeout=timeout, reuse_port=True)
         if bind_port is not None:
             try:
                 self.sock.bind(("", bind_port))
