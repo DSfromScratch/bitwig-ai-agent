@@ -140,7 +140,7 @@ def wait_for_bitwig(expected_project: str, timeout: float = 40.0) -> bool:
 def scan_project(project_name: str, do_midi: bool) -> dict:
     """Führt den vollständigen Scan-Pipeline durch."""
     from src.agent.osc.project_scan import get_project_name, scan_project as osc_scan
-    from src.agent.tools.project_learning_tool import scan_and_learn_project
+    from src.agent.tools.knowledge.project_learning_tool import scan_and_learn_project
 
     result = {"project": project_name, "midi": False, "learned": False, "error": None}
 

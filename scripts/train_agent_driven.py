@@ -86,7 +86,7 @@ def _ask_agent(prompt: str) -> tuple[str, dict]:
     from langchain_core.messages import HumanMessage
 
     from src.agent.core import get_graph, _default_state, POLICY_LOG_FILE
-    from src.agent.tools.reward import score_completion
+    from src.agent.tools.music.reward import score_completion
 
     print(f"\n  → Agent-Anfrage: {prompt[:80]}…")
 
@@ -131,7 +131,7 @@ def _ask_agent(prompt: str) -> tuple[str, dict]:
 
 def _score_answer(prompt: str, answer: str) -> tuple[float, dict]:
     try:
-        from src.agent.tools.reward import score_completion
+        from src.agent.tools.music.reward import score_completion
         return score_completion(prompt, answer)
     except Exception as e:
         return 0.0, {"error": str(e)}

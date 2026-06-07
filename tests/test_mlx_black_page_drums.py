@@ -228,7 +228,7 @@ class TestBlackPageDrums:
     @pytest.mark.unit
     def test_validator_context_hint_drum(self):
         """Validator erkennt vollständiges Drum-Kit (Kick+Snare+HH)."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         prompt = _build_validation_prompt(
             BLACK_PAGE_DRUMS, "VD-HEAVY", "contemporary", "C", "minor", 4, 60
         )
@@ -240,9 +240,9 @@ class TestBlackPageDrums:
     @pytest.mark.unit
     def test_black_page_drums_score_not_penalized(self):
         """The Black Page Drums soll nicht wegen Komplexität bestraft werden."""
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=_ok(0.78)):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=_ok(0.78)):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 BLACK_PAGE_DRUMS, "VD-HEAVY", "contemporary", "C", "minor", 4, 60
             )
@@ -254,10 +254,10 @@ class TestBlackPageDrums:
     def test_validate_and_learn_full_drums(self):
         """validate_and_learn überlebt The Black Page Drums komplett."""
         driver, session = _neo4j()
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=_ok(0.82)), \
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=_ok(0.82)), \
              patch("neo4j.GraphDatabase.driver", return_value=driver):
-            from src.agent.tools.music_learning import validate_and_learn
+            from src.agent.tools.knowledge.music_learning import validate_and_learn
             result = validate_and_learn.invoke({
                 "notes":      BLACK_PAGE_DRUMS,
                 "instrument": "VD-HEAVY",
@@ -273,7 +273,7 @@ class TestBlackPageDrums:
     @pytest.mark.unit
     def test_drums_score_higher_than_empty_pattern(self):
         """The Black Page Drums (Kick+Snare) soll höher scoren als leeres Pattern."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         prompt_full  = _build_validation_prompt(
             BLACK_PAGE_DRUMS, "VD-HEAVY", "rock", "A", "minor", 2, 60
         )

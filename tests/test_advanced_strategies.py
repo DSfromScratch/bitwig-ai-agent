@@ -52,7 +52,7 @@ class TestPropertyBased:
     @hyp_settings(max_examples=80, deadline=2000)
     def test_build_prompt_never_crashes(self, notes, instrument, genre, key, scale):
         """_build_validation_prompt überlebt beliebige MIDI-Inputs ohne Exception."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         result = _build_validation_prompt(notes, instrument, genre, key, scale, 2, 120)
         assert isinstance(result, str)
         assert len(result) > 50
@@ -62,7 +62,7 @@ class TestPropertyBased:
     @hyp_settings(max_examples=60, deadline=2000)
     def test_prompt_always_contains_instrument_and_genre(self, notes, instrument, genre):
         """Prompt enthält immer Instrument und Genre — unabhängig von den Noten."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         prompt = _build_validation_prompt(notes, instrument, genre, "C", "minor", 2, 120)
         assert instrument in prompt
         assert genre in prompt
@@ -75,7 +75,7 @@ class TestPropertyBased:
     @hyp_settings(max_examples=100, deadline=1000)
     def test_single_note_prompt_survives(self, pitch, vel, step, dur):
         """Auch ein einzelner Ton erzeugt einen gültigen Prompt."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         note = [{"step": step, "pitch": pitch, "vel": vel, "dur": dur}]
         result = _build_validation_prompt(note, "Piano", "pop", "C", "major", 1, 120)
         assert "Piano" in result
@@ -85,7 +85,7 @@ class TestPropertyBased:
     @hyp_settings(max_examples=60, deadline=2000)
     def test_drum_generators_produce_valid_range(self, notes):
         """Drum-Generator gibt immer MIDI 35-81 zurück (Standard Drum-Kit)."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         for genre in ("rock", "jazz", "hip-hop", "funk"):
             result = _drums(genre, 2, "basic")
             for note in result:
@@ -99,7 +99,7 @@ class TestPropertyBased:
     @hyp_settings(max_examples=60, deadline=2000)
     def test_bass_generator_always_in_bass_range(self, genre, root):
         """Bass-Generator gibt Noten in praktischem Bass-Bereich zurück."""
-        from src.agent.tools.pattern_generators import _bass
+        from src.agent.tools.music.pattern_generators import _bass
         result = _bass(genre, 2, root, "basic")
         for note in result:
             # Bass-Bereich: tief genug für Bässe (MIDI21=A0), hoch genug für Fills
@@ -115,12 +115,12 @@ class TestPropertyBased:
         result_json = json.dumps({"score": score, "rhythmic_ok": True,
                                   "harmonic_ok": True, "genre_fit": True,
                                   "issues": [], "suggestions": [], "summary": "test"})
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes = _drums("rock", 1, "basic")
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=result_json):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=result_json):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(notes, "VD-HEAVY", "rock", "A", "minor")
 
         assert 0.0 <= result.get("score", 0) <= 1.0, \
@@ -262,8 +262,8 @@ class TestSnapshots:
     @pytest.mark.unit
     def test_rock_drum_prompt_snapshot(self, snapshot):
         """Rock-Drum-Prompt ist deterministisch und ändert sich nicht unbeabsichtigt."""
-        from src.agent.tools.pattern_generators import _drums
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
 
         notes  = _drums("rock", 2, "basic")
         prompt = _build_validation_prompt(notes, "VD-HEAVY", "rock", "A", "minor", 2, 120)
@@ -274,8 +274,8 @@ class TestSnapshots:
     @pytest.mark.unit
     def test_jazz_drum_prompt_snapshot(self, snapshot):
         """Jazz-Drum-Prompt enthält Ride-Kriterien — Snapshot erkennt Regressionen."""
-        from src.agent.tools.pattern_generators import _drums
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
 
         notes  = _drums("jazz", 2, "basic")
         prompt = _build_validation_prompt(notes, "VD-HEAVY", "jazz", "C", "minor", 2, 120)
@@ -285,7 +285,7 @@ class TestSnapshots:
     @pytest.mark.unit
     def test_melody_prompt_no_drum_criteria_snapshot(self, snapshot):
         """Melodie-Prompt enthält keine Drum-Kriterien — Snapshot schützt vor Regression."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         notes  = [{"step": 0, "pitch": 60, "vel": 0.8, "dur": 0.5},
                   {"step": 0.5, "pitch": 64, "vel": 0.75, "dur": 0.5}]
         prompt = _build_validation_prompt(notes, "Piano", "contemporary", "C", "chromatic", 2, 60)
@@ -295,7 +295,7 @@ class TestSnapshots:
     @pytest.mark.unit
     def test_error_pattern_prompt_snapshot(self, snapshot):
         """Fehler-Pattern-Prompt enthält ACHTUNG-Präambel — Snapshot schützt Format."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         notes  = [{"step": 0, "pitch": 46, "vel": 0.85, "dur": 0.5},
                   {"step": 0.5, "pitch": 48, "vel": 0.72, "dur": 0.5}]
         base   = _build_validation_prompt(notes, "VB-ROYAL", "rock", "A", "minor", 2, 120)
@@ -330,12 +330,12 @@ class TestPerformance:
     @pytest.mark.unit
     def test_single_validation_under_200ms(self):
         """Einzelne Validierung (ohne echtes LLM) < 200ms."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes = _drums("rock", 2, "basic")
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", side_effect=_mock_llm_fast):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", side_effect=_mock_llm_fast):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             start = time.perf_counter()
             result = validate_music_pattern(notes, "VD-HEAVY", "rock", "A", "minor")
             elapsed = time.perf_counter() - start
@@ -346,8 +346,8 @@ class TestPerformance:
     @pytest.mark.unit
     def test_10_sequential_validations_throughput(self):
         """10 sequenzielle Validierungen: Gesamtzeit < 500ms (mock ~5ms each)."""
-        from src.agent.tools.pattern_generators import _drums, _bass
-        from src.agent.tools.music_data import _root_midi
+        from src.agent.tools.music.pattern_generators import _drums, _bass
+        from src.agent.tools.music.music_data import _root_midi
 
         patterns = [
             (_drums("rock", 2, "basic"),         "VD-HEAVY", "rock"),
@@ -362,9 +362,9 @@ class TestPerformance:
             (_drums("pop",    2, "basic"),        "VD-HEAVY", "pop"),
         ]
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", side_effect=_mock_llm_fast):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", side_effect=_mock_llm_fast):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             start = time.perf_counter()
             results = [validate_music_pattern(n, i, g, "A", "minor")
                        for n, i, g in patterns]
@@ -378,17 +378,17 @@ class TestPerformance:
     @pytest.mark.unit
     def test_parallel_validations_no_race_condition(self):
         """5 parallele Validierungen: keine Race-Conditions, alle Ergebnisse gültig."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         results = []
         errors  = []
 
         def _validate(genre: str):
             try:
                 notes = _drums(genre, 2, "basic")
-                with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-                     patch("src.agent.tools.music_validator._call_llm",
+                with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+                     patch("src.agent.tools.music.music_validator._call_llm",
                            side_effect=_mock_llm_fast):
-                    from src.agent.tools.music_validator import validate_music_pattern
+                    from src.agent.tools.music.music_validator import validate_music_pattern
                     r = validate_music_pattern(notes, "VD-HEAVY", genre, "A", "minor")
                     results.append(r)
             except Exception as e:
@@ -410,12 +410,12 @@ class TestPerformance:
     @pytest.mark.unit
     def test_slow_llm_timeout_detection(self):
         """Langsames LLM (150ms) wird korrekt verarbeitet — kein hängendes System."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes = _drums("rock", 2, "basic")
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", side_effect=_mock_llm_slow):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", side_effect=_mock_llm_slow):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             start   = time.perf_counter()
             result  = validate_music_pattern(notes, "VD-HEAVY", "rock", "A", "minor")
             elapsed = time.perf_counter() - start
@@ -427,8 +427,8 @@ class TestPerformance:
     @pytest.mark.unit
     def test_prompt_generation_is_fast(self):
         """Prompt-Generierung (ohne LLM) < 10ms für komplexe Patterns."""
-        from src.agent.tools.pattern_generators import _drums
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         from tests.test_mlx_black_page_drums import BLACK_PAGE_DRUMS
 
         start = time.perf_counter()

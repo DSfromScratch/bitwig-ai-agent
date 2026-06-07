@@ -90,7 +90,7 @@ def _run_and_capture(prompt: str) -> dict | None:
     bus.subscribe("result_done", _on_done)
 
     try:
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
+        with patch("src.agent.tools.bitwig.song_tools._check_bridge", return_value=True), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
              patch("time.sleep"):
@@ -226,7 +226,7 @@ class TestResultBuilder:
 
         from langchain_core.messages import AIMessage
 
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
+        with patch("src.agent.tools.bitwig.song_tools._check_bridge", return_value=True), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
              patch("time.sleep"):
@@ -291,7 +291,7 @@ class TestResultBuilder:
         bus.subscribe("result_done", lambda e: executed.append(e["payload"]))
 
         try:
-            with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
+            with patch("src.agent.tools.bitwig.song_tools._check_bridge", return_value=True), \
                  patch("pythonosc.udp_client.SimpleUDPClient"), \
                  patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
                  patch("time.sleep"):
@@ -328,7 +328,7 @@ class TestResultBuilder:
             "bitwig_load_instrument",
         }
 
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=True), \
+        with patch("src.agent.tools.bitwig.song_tools._check_bridge", return_value=True), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("bitwig_mcp_server._wait_osc_reply", return_value=True), \
              patch("time.sleep"):

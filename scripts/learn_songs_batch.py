@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.agent.tools.song_learn_tool import _do_learn  # noqa: E402
+from src.agent.tools.knowledge.song_learn_tool import _do_learn  # noqa: E402
 
 
 def main() -> int:

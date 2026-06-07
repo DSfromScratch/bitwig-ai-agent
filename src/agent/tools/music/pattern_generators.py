@@ -2,7 +2,7 @@
 Pattern-Generatoren für alle Instrument-Typen und Genres.
 """
 from __future__ import annotations
-from src.agent.tools.music_data import _CHORDS, _SCALES, _NOTE_NAMES, _DEFAULT_PROGRESSIONS, _root_midi  # noqa: F401
+from src.agent.tools.music.music_data import _CHORDS, _SCALES, _NOTE_NAMES, _DEFAULT_PROGRESSIONS, _root_midi  # noqa: F401
 
 def _drums(genre: str, bars: int, style: str) -> list[dict]:
     notes: list[dict] = []

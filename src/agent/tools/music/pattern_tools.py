@@ -5,17 +5,17 @@ Daten: music_data.py | Generatoren: pattern_generators.py
 from __future__ import annotations
 from langchain_core.tools import tool
 
-from src.agent.tools.music_data import (  # noqa: F401
+from src.agent.tools.music.music_data import (  # noqa: F401
     _CHORDS, _SCALES, _NOTE_NAMES, _DEFAULT_PROGRESSIONS, _root_midi,
 )
-from src.agent.tools.pattern_generators import (  # noqa: F401
+from src.agent.tools.music.pattern_generators import (  # noqa: F401
     _drums, _bass, _chords, _melody, _808_kick, _808_snare,
 )
 
 def _get_feedback_style(instrument: str, genre: str, default_style: str) -> str:
     """Liest vergangene Scores aus Neo4j und wählt besseren Style wenn Score < 0.7."""
     try:
-        from src.agent.tools.music_learning import get_pattern_history
+        from src.agent.tools.knowledge.music_learning import get_pattern_history
         history = get_pattern_history(instrument, genre)
         avg_score = history.get("avg_score", 1.0)
         iterations = history.get("iterations", 0)

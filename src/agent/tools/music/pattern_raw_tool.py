@@ -163,7 +163,7 @@ def write_pattern_raw(
     extra = ""
     if key:
         try:
-            from src.agent.tools.reward import key_conformance
+            from src.agent.tools.music.reward import key_conformance
             conf = key_conformance(valid_notes, key)
             extra = f" | key_conformance({key})={conf:.2f}"
         except Exception:

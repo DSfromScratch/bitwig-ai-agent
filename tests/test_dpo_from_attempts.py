@@ -10,7 +10,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_context_signature_is_stable():
-    from src.agent.tools.music_learning import _context_signature
+    from src.agent.tools.knowledge.music_learning import _context_signature
     s1 = _context_signature("Synth", "rock", "C", "minor", 120, 2)
     s2 = _context_signature("Synth", "rock", "C", "minor", 120, 2)
     s3 = _context_signature("Synth", "rock", "C", "major", 120, 2)
@@ -22,7 +22,7 @@ def test_context_signature_is_stable():
 def test_store_learning_feedback_writes_attempt_node():
     """Verifiziert, dass _store_learning_feedback einen PatternAttempt-MERGE
     mit notes_json, score, attempt_id und context_signature ausführt."""
-    import src.agent.tools.music_learning as ml
+    import src.agent.tools.knowledge.music_learning as ml
 
     driver = MagicMock()
     session_ctx = MagicMock()

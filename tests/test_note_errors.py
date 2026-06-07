@@ -199,9 +199,9 @@ class TestHarmonicErrors:
         err = HARMONIC_ERRORS[0]
         resp = _resp(0.25, ["Bb2 als Tonika — in A minor sollte A2 (MIDI45) die Root sein"],
                      harmonic_ok=False)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.55,   f"Falscher Root soll niedrig scoren: {result['score']}"
@@ -214,9 +214,9 @@ class TestHarmonicErrors:
         err = HARMONIC_ERRORS[1]
         resp = _resp(0.35, ["F#4 (MIDI66) ist nicht in C major — Tritonus erzeugt starke Dissonanz"],
                      harmonic_ok=False)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.55
@@ -233,9 +233,9 @@ class TestOutOfRange:
         err = OUT_OF_RANGE[0]
         resp = _resp(0.20, ["MIDI94 (Bb6) liegt außerhalb des Gitarren-Bereichs — max Fret 22 = MIDI86"],
                      harmonic_ok=True)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.45
@@ -248,9 +248,9 @@ class TestOutOfRange:
         """MIDI24 (C1) unter Low-E Bass (MIDI28) erkannt."""
         err = OUT_OF_RANGE[1]
         resp = _resp(0.25, ["MIDI24 (C1) liegt unter dem tiefsten Bass-Ton E1 (MIDI28)"])
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.50
@@ -261,9 +261,9 @@ class TestOutOfRange:
         err = OUT_OF_RANGE[2]
         resp = _resp(0.20, ["MIDI15 liegt unter A0 (MIDI21) — außerhalb des 88-Tasten-Bereichs"],
                      harmonic_ok=False)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.45
@@ -278,9 +278,9 @@ class TestPhysicallyImpossible:
         resp = _resp(0.30,
             ["HH-open (MIDI46) und HH-closed (MIDI42) gleichzeitig auf Step 0 — nicht spielbar"],
             rhythmic_ok=False)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.55
@@ -294,9 +294,9 @@ class TestPhysicallyImpossible:
         err = PHYSICALLY_IMPOSSIBLE[1]
         resp = _resp(0.10, ["Negative Note-Dauer (dur=-0.25) auf Step 0.5 — ungültige MIDI-Note"],
                      rhythmic_ok=False)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.30, \
@@ -312,9 +312,9 @@ class TestWrongRange:
         resp = _resp(0.15,
             ["Drum-Instrument nutzt Piano-Pitches (MIDI60=C4, MIDI64=E4) — Drums sollen MIDI 36-59 nutzen"],
             rhythmic_ok=False)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.40
@@ -325,9 +325,9 @@ class TestWrongRange:
         err = WRONG_RANGE[1]
         resp = _resp(0.20,
             ["Bass-Instrument spielt in Soprano-Range (MIDI81=A5) — Bass soll unter MIDI48 bleiben"])
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.45
@@ -340,9 +340,9 @@ class TestVelocityErrors:
         """Velocity > 1.0 wird als ungültig erkannt."""
         err = VELOCITY_ERRORS[0]
         resp = _resp(0.20, ["Velocity 2.5 auf MIDI36 — muss zwischen 0.0 und 1.0 liegen"])
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.50
@@ -352,9 +352,9 @@ class TestVelocityErrors:
         """Velocity = 0.0 (stumme Note) wird als Problem erkannt."""
         err = VELOCITY_ERRORS[1]
         resp = _resp(0.35, ["Stumme Note: vel=0.0 auf MIDI48 (Step 0.5) — Note ist unhörbar"])
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
         assert result["score"] < 0.55
@@ -370,9 +370,9 @@ class TestErrorCountDistribution:
         for err in ALL_ERRORS:
             low_score = 0.15 + len(scores) * 0.02  # variiert 0.15-0.41
             resp = _resp(low_score, [err["error"][:60]], harmonic_ok=False)
-            with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-                 patch("src.agent.tools.music_validator._call_llm", return_value=resp):
-                from src.agent.tools.music_validator import validate_music_pattern
+            with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+                 patch("src.agent.tools.music.music_validator._call_llm", return_value=resp):
+                from src.agent.tools.music.music_validator import validate_music_pattern
                 result = validate_music_pattern(
                     err["notes"], err["instrument"], err["genre"], err["key"], err["scale"])
             scores.append(result.get("score", 1.0))
@@ -384,8 +384,8 @@ class TestErrorCountDistribution:
     @pytest.mark.unit
     def test_error_patterns_have_lower_score_than_correct(self):
         """Fehler-Patterns scoren niedriger als korrekte Patterns."""
-        from src.agent.tools.pattern_generators import _drums, _bass
-        from src.agent.tools.music_data import _root_midi
+        from src.agent.tools.music.pattern_generators import _drums, _bass
+        from src.agent.tools.music.music_data import _root_midi
 
         # Korrektes Pattern
         correct_notes = _drums("rock", 2, "basic")
@@ -396,13 +396,13 @@ class TestErrorCountDistribution:
         # Fehler-Pattern (Drums mit Piano-MIDI)
         error_resp = _resp(0.15, ["Drum-MIDI-Werte falsch"])
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True):
-            with patch("src.agent.tools.music_validator._call_llm", return_value=correct_resp):
-                from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True):
+            with patch("src.agent.tools.music.music_validator._call_llm", return_value=correct_resp):
+                from src.agent.tools.music.music_validator import validate_music_pattern
                 score_correct = validate_music_pattern(
                     correct_notes, "VD-HEAVY", "rock", "A", "minor")["score"]
 
-            with patch("src.agent.tools.music_validator._call_llm", return_value=error_resp):
+            with patch("src.agent.tools.music.music_validator._call_llm", return_value=error_resp):
                 score_error = validate_music_pattern(
                     WRONG_RANGE[0]["notes"], "VD-HEAVY", "rock", "C", "minor")["score"]
 

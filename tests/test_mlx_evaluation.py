@@ -13,7 +13,7 @@ import os
 import time
 import pytest
 
-from src.agent.tools.pattern_generators import _drums, _bass, _chords, _root_midi
+from src.agent.tools.music.pattern_generators import _drums, _bass, _chords, _root_midi
 
 
 # ── Bekannte Test-Patterns (Ground Truth) ─────────────────────────────────────
@@ -72,7 +72,7 @@ GOOD_BASS_LINE = {
 def _call_validator(notes: list, instrument: str = "VD-HEAVY",
                     genre: str = "rock", key: str = "A") -> dict:
     """Ruft den Validator auf und gibt strukturiertes Ergebnis zurück."""
-    from src.agent.tools.music_validator import validate_music_pattern
+    from src.agent.tools.music.music_validator import validate_music_pattern
     result = validate_music_pattern(notes, instrument, genre, key, "minor", 2, 120)
     return result
 
@@ -234,7 +234,7 @@ class TestScoreDiscrimination:
         """Algorithmisch generierte Patterns sollen Score > 0.5 bekommen."""
         if not mlx_available:
             pytest.skip("MLX-Server nicht erreichbar")
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes  = _drums(genre, 2, style)
         result = _call_validator(notes, genre=genre)
         assert _is_valid_response(result), f"Kein valides JSON für {genre}/{style}"

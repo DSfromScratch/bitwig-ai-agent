@@ -78,44 +78,44 @@ def test_to_write_pattern_raw_call_empty_returns_empty():
 # ── write_pattern_raw Tool ────────────────────────────────────────────────────
 
 def test_write_pattern_raw_validates_pitch_range():
-    from src.agent.tools.pattern_raw_tool import validate_notes, NoteValidationError
+    from src.agent.tools.music.pattern_raw_tool import validate_notes, NoteValidationError
     with pytest.raises(NoteValidationError, match="außerhalb 0-127"):
         validate_notes([{"pitch": 200, "start": 0, "dur": 1}], 4)
 
 
 def test_write_pattern_raw_validates_negative_start():
-    from src.agent.tools.pattern_raw_tool import validate_notes, NoteValidationError
+    from src.agent.tools.music.pattern_raw_tool import validate_notes, NoteValidationError
     with pytest.raises(NoteValidationError, match="negativ"):
         validate_notes([{"pitch": 60, "start": -1, "dur": 1}], 4)
 
 
 def test_write_pattern_raw_validates_empty_notes():
-    from src.agent.tools.pattern_raw_tool import validate_notes, NoteValidationError
+    from src.agent.tools.music.pattern_raw_tool import validate_notes, NoteValidationError
     with pytest.raises(NoteValidationError, match="leer"):
         validate_notes([], 4)
 
 
 def test_write_pattern_raw_auto_converts_midi_velocity():
-    from src.agent.tools.pattern_raw_tool import validate_notes
+    from src.agent.tools.music.pattern_raw_tool import validate_notes
     # vel=100 (MIDI-int) → 100/127 ≈ 0.787
     out = validate_notes([{"pitch": 60, "start": 0, "dur": 1, "vel": 100}], 4)
     assert 0.7 < out[0]["vel"] < 0.8
 
 
 def test_write_pattern_raw_accepts_aliases():
-    from src.agent.tools.pattern_raw_tool import validate_notes
+    from src.agent.tools.music.pattern_raw_tool import validate_notes
     out = validate_notes([{"pitch": 60, "step": 0, "length": 1, "velocity": 0.5}], 4)
     assert out[0]["step"] == 0 and out[0]["dur"] == 1 and out[0]["vel"] == 0.5
 
 
 def test_write_pattern_raw_rejects_all_notes_outside_length():
-    from src.agent.tools.pattern_raw_tool import validate_notes, NoteValidationError
+    from src.agent.tools.music.pattern_raw_tool import validate_notes, NoteValidationError
     with pytest.raises(NoteValidationError, match="jenseits"):
         validate_notes([{"pitch": 60, "start": 10, "dur": 1}], length_beats=4)
 
 
 def test_write_pattern_raw_sorts_notes_deterministic():
-    from src.agent.tools.pattern_raw_tool import validate_notes
+    from src.agent.tools.music.pattern_raw_tool import validate_notes
     out = validate_notes([
         {"pitch": 64, "start": 2, "dur": 1},
         {"pitch": 60, "start": 0, "dur": 1},

@@ -21,9 +21,9 @@ import pytest
 pytest.importorskip("bitwigbridge", reason="bitwigbridge-Repo nicht installiert (CI)")
 
 from src.bitwig_executor import execute_setup, compose_notes
-from src.agent.tools.suggest_tools import get_launchpad_mode, set_launchpad_mode, play_notes, arm_track
-from src.agent.tools.bitwig_tools import control_bitwig as _control_bitwig_fn
-from src.agent.tools.song_tools import get_bitwig_track_state as _get_track_state_fn
+from src.agent.tools.bitwig.suggest_tools import get_launchpad_mode, set_launchpad_mode, play_notes, arm_track
+from src.agent.tools.bitwig.bitwig_tools import control_bitwig as _control_bitwig_fn
+from src.agent.tools.bitwig.song_tools import get_bitwig_track_state as _get_track_state_fn
 
 
 def _control_bitwig(**kwargs) -> str:
@@ -97,7 +97,7 @@ class TestDrumSetupSchema:
         """execute_setup akzeptiert ein gültiges Drum-Setup-Dict ohne Fehler."""
         from unittest.mock import patch
         with patch("src.bitwig_executor._exec_step_and_wait", return_value="ok"), \
-             patch("src.agent.tools.song_tools._check_bridge", return_value=True):
+             patch("src.agent.tools.bitwig.song_tools._check_bridge", return_value=True):
             result = execute_setup({
                 "context_type": "song",
                 "target": {"bpm": 120, "genre": "drum"},
@@ -130,7 +130,7 @@ class TestDrumSetupSchema:
     @pytest.mark.unit
     def test_drum_note_to_pad_mapping(self):
         """Kick (36) liegt auf Pad 11, Snare (38) auf Pad 13."""
-        from src.agent.tools.suggest_tools import _DRUM_NOTE_TO_PAD
+        from src.agent.tools.bitwig.suggest_tools import _DRUM_NOTE_TO_PAD
         assert _DRUM_NOTE_TO_PAD[36] == 11  # Kick: Zeile 1, Spalte 1
         assert _DRUM_NOTE_TO_PAD[38] == 13  # Snare: Zeile 1, Spalte 3
         assert _DRUM_NOTE_TO_PAD[42] == 23  # HH closed: Zeile 2, Spalte 3
@@ -138,7 +138,7 @@ class TestDrumSetupSchema:
     @pytest.mark.unit
     def test_drum_pad_color_kick_is_orange_red(self):
         """Kick-Pad hat die korrekte orange-rote Farbe."""
-        from src.agent.tools.suggest_tools import _DRUM_PAD_COLORS
+        from src.agent.tools.bitwig.suggest_tools import _DRUM_PAD_COLORS
         r, g, b = _DRUM_PAD_COLORS[36]
         assert r == 63 and g == 10 and b == 0
 

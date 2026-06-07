@@ -169,7 +169,7 @@ class TestCypherQueries:
     @pytest.mark.unit
     def test_hnsw_index_call_present(self):
         """knowledge_tool.py muss db.index.vector.queryNodes verwenden."""
-        import src.agent.tools.knowledge_tool as kt
+        import src.agent.tools.knowledge.knowledge_tool as kt
         src_code = inspect.getsource(kt)
         assert "db.index.vector.queryNodes" in src_code, (
             "HNSW-Index-Query 'db.index.vector.queryNodes' nicht gefunden — "
@@ -179,7 +179,7 @@ class TestCypherQueries:
     @pytest.mark.unit
     def test_brute_force_scan_removed(self):
         """Der alte Brute-Force-Pattern darf nicht mehr im Code sein."""
-        import src.agent.tools.knowledge_tool as kt
+        import src.agent.tools.knowledge.knowledge_tool as kt
         src_code = inspect.getsource(kt)
         assert "MATCH (d:Document) WHERE d.embedding IS NOT NULL" not in src_code, (
             "Alter Brute-Force-Scan noch im Code: "
@@ -189,7 +189,7 @@ class TestCypherQueries:
     @pytest.mark.unit
     def test_score_constants_defined(self):
         """Score-Threshold-Konstanten müssen im query_bitwig_docs-Body definiert sein."""
-        import src.agent.tools.knowledge_tool as kt
+        import src.agent.tools.knowledge.knowledge_tool as kt
         src_code = inspect.getsource(kt.query_bitwig_docs.func)
         assert "_SCORE_MIN_DOC" in src_code, "_SCORE_MIN_DOC nicht in query_bitwig_docs"
         assert "_SCORE_MIN_YT"  in src_code, "_SCORE_MIN_YT nicht in query_bitwig_docs"
@@ -197,14 +197,14 @@ class TestCypherQueries:
     @pytest.mark.unit
     def test_next_chunk_query_present(self):
         """NEXT_CHUNK-Traversal-Query muss im Code vorhanden sein."""
-        import src.agent.tools.knowledge_tool as kt
+        import src.agent.tools.knowledge.knowledge_tool as kt
         src_code = inspect.getsource(kt.query_bitwig_docs.func)
         assert "NEXT_CHUNK" in src_code, "NEXT_CHUNK-Traversal fehlt in query_bitwig_docs"
 
     @pytest.mark.unit
     def test_kq_count_guard_present(self):
         """KnowledgeQA-Query muss einen count()-Guard haben."""
-        import src.agent.tools.knowledge_tool as kt
+        import src.agent.tools.knowledge.knowledge_tool as kt
         src_code = inspect.getsource(kt.query_bitwig_docs.func)
         assert "qa_count" in src_code, (
             "qa_count-Guard fehlt — KnowledgeQA-Query wird immer ausgeführt"
@@ -242,8 +242,8 @@ class TestScoreThreshold:
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             # _query_neo4j (Graph-Suche) mocken damit nur Vektor-Teil getestet wird
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 return query_bitwig_docs.invoke({"query": "test"})
 
     @pytest.mark.unit
@@ -318,8 +318,8 @@ class TestContextChunk:
         session_mock = _smart_session(doc_results=[yt_doc], neighbor=neighbor)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 result = query_bitwig_docs.invoke({"query": "test"})
 
         assert "Neighbor chunk" in result, "Nachbar-Chunk via NEXT_CHUNK nicht im Ergebnis"
@@ -338,8 +338,8 @@ class TestContextChunk:
         session_mock = _smart_session(doc_results=[yt_doc], neighbor=duplicate_neighbor)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 result = query_bitwig_docs.invoke({"query": "test"})
 
         assert result.count("Main chunk") == 1, "Chunk-Duplikat im Ergebnis"
@@ -354,8 +354,8 @@ class TestContextChunk:
         session_mock = _smart_session(doc_results=[struct_doc])
 
         with _patch_neo4j(session_mock), _patch_embeddings():
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 result = query_bitwig_docs.invoke({"query": "test"})
 
         assert "Device doc" in result
@@ -379,8 +379,8 @@ class TestVideoUrlLinks:
         session_mock = _smart_session(doc_results=[yt_doc])
 
         with _patch_neo4j(session_mock), _patch_embeddings():
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 result = query_bitwig_docs.invoke({"query": "test"})
 
         assert "[Video](https://www.youtube.com/watch?v=ABC123)" in result, (
@@ -397,8 +397,8 @@ class TestVideoUrlLinks:
         session_mock = _smart_session(doc_results=[struct_doc])
 
         with _patch_neo4j(session_mock), _patch_embeddings():
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 result = query_bitwig_docs.invoke({"query": "test"})
 
         assert "[Video](" not in result, "Kein Video-Link für strukturierten Doc erwartet"
@@ -417,8 +417,8 @@ class TestKnowledgeQAGuard:
         session_mock = _smart_session(doc_results=[struct_doc], qa_count=0)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 query_bitwig_docs.invoke({"query": "test"})
 
         # KnowledgeQA-HNSW-Query darf nicht aufgerufen werden
@@ -436,8 +436,8 @@ class TestKnowledgeQAGuard:
         session_mock = _smart_session(doc_results=[struct_doc], qa_count=5, qa_results=[])
 
         with _patch_neo4j(session_mock), _patch_embeddings():
-            with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
-                from src.agent.tools.knowledge_tool import query_bitwig_docs
+            with patch("src.agent.tools.knowledge.knowledge_tool._query_neo4j", return_value=""):
+                from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
                 query_bitwig_docs.invoke({"query": "test"})
 
         # KnowledgeQA-HNSW-Query muss aufgerufen werden
@@ -693,7 +693,7 @@ class TestNeo4jQueryBitwigDocs:
     @pytest.mark.slow
     def test_returns_youtube_result_for_tutorial_query(self, neo4j_session_live):
         """Bitwig-Tutorial-Query liefert mindestens einen YouTube-Chunk zurück."""
-        from src.agent.tools.knowledge_tool import query_bitwig_docs
+        from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
         result = query_bitwig_docs.invoke({"query": "Bitwig modulation Poly Grid tutorial"})
         assert "YouTube:" in result or "youtu.be" in result or "youtube.com" in result, (
             "Keine YouTube-Ergebnisse für Tutorial-Query"
@@ -703,7 +703,7 @@ class TestNeo4jQueryBitwigDocs:
     @pytest.mark.slow
     def test_score_above_threshold_in_result(self, neo4j_session_live):
         """Ergebnis muss Score-Angaben enthalten die ≥ Threshold sind."""
-        from src.agent.tools.knowledge_tool import query_bitwig_docs
+        from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
         import re
         result = query_bitwig_docs.invoke({"query": "reverb send track Bitwig"})
         scores = [float(m) for m in re.findall(r"score: (\d+\.\d+)", result)]
@@ -716,7 +716,7 @@ class TestNeo4jQueryBitwigDocs:
     @pytest.mark.slow
     def test_result_not_empty(self, neo4j_session_live):
         """query_bitwig_docs liefert nie einen leeren String."""
-        from src.agent.tools.knowledge_tool import query_bitwig_docs
+        from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
         result = query_bitwig_docs.invoke({"query": "Phase-4 synthesizer parameters"})
         assert result and result.strip(), "query_bitwig_docs gab leeres Ergebnis zurück"
 
@@ -724,7 +724,7 @@ class TestNeo4jQueryBitwigDocs:
     @pytest.mark.slow
     def test_video_link_in_youtube_result(self, neo4j_session_live):
         """YouTube-Chunks im Ergebnis enthalten klickbaren [Video]-Link."""
-        from src.agent.tools.knowledge_tool import query_bitwig_docs
+        from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
         result = query_bitwig_docs.invoke({"query": "Bitwig compressor tutorial how to use"})
         if "YouTube:" in result:
             assert "[Video](" in result, (

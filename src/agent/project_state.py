@@ -176,7 +176,7 @@ class BitwigProjectState:
     @classmethod
     def _load_note_counts(cls) -> dict[str, int]:
         try:
-            from src.agent.tools.song_tools import _get_note_counts
+            from src.agent.tools.bitwig.song_tools import _get_note_counts
             return _get_note_counts()
         except Exception:
             return {}

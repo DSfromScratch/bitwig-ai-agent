@@ -183,7 +183,7 @@ class TestE2EScoreLoop:
         damit jede Iteration unabhängig auf einem sauberen Zustand startet.
         """
         from src.agent.core import chat
-        from src.agent.tools.song_tools import (
+        from src.agent.tools.bitwig.song_tools import (
             _clear_all_tracks,
             _get_current_track_count,
             _get_note_counts,

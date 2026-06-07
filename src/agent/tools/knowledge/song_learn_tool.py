@@ -216,7 +216,7 @@ def _persist_to_neo4j(artist: str, title: str, meta: dict, features: dict,
 # ── 5. Orchestrierung ───────────────────────────────────────────────────────
 
 def _do_learn(artist: str, title: str, youtube_url: str, transcribe_midi: bool) -> dict:
-    from src.agent.tools.song_metadata_tool import search_artist_song_dict
+    from src.agent.tools.knowledge.song_metadata_tool import search_artist_song_dict
 
     t_start = time.time()
     meta = search_artist_song_dict(artist, title)

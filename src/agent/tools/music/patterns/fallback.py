@@ -1,6 +1,6 @@
 """Hardcoded Fallback-Strategy — extrahiert aus pattern_generators._drums (B.2)."""
 from __future__ import annotations
-from src.agent.tools.pattern_generators import _drums
+from src.agent.tools.music.pattern_generators import _drums
 
 
 class HardcodedFallbackStrategy:

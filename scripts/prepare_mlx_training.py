@@ -92,7 +92,7 @@ def load_neo4j_examples() -> list[dict]:
     try:
         from dotenv import load_dotenv
         load_dotenv()
-        from src.agent.tools.mlx_export import (
+        from src.agent.tools.meta.mlx_export import (
             _fetch_patterns, _build_prompt, _build_completion,
             _theory_examples, _project_examples, _chord_progression_examples,
             _song_context_examples,

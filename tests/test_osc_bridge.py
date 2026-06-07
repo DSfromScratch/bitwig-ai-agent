@@ -105,7 +105,7 @@ class TestSongTools:
     def test_get_track_state_returns_count(self, osc_available, neo4j_available):
         if not osc_available:
             pytest.skip("BitwigAgentBridge nicht erreichbar")
-        from src.agent.tools.song_tools import get_bitwig_track_state
+        from src.agent.tools.bitwig.song_tools import get_bitwig_track_state
         result = get_bitwig_track_state.invoke({})
         assert isinstance(result, str)
         assert "Track" in result or "Bridge" in result
@@ -116,7 +116,7 @@ class TestSongTools:
         if not osc_available:
             pytest.skip("Bitwig nicht erreichbar")
         # verify_song wurde entfernt — Track-State via get_bitwig_track_state prüfen
-        from src.agent.tools.song_tools import get_bitwig_track_state
+        from src.agent.tools.bitwig.song_tools import get_bitwig_track_state
         result = get_bitwig_track_state.func()
         assert isinstance(result, str)
         assert len(result) > 0

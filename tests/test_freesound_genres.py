@@ -100,7 +100,7 @@ def test_build_genre_gt_pairs_no_melodic_key():
 def test_build_genre_gt_pairs_scores_high():
     """GT-Pair muss im Reward-System hoch scoren (>= 0.8)."""
     from scripts._neo4j_song_prompts import build_genre_groundtruth_pairs
-    from src.agent.tools.reward import score_completion
+    from src.agent.tools.music.reward import score_completion
 
     genres = [{"name": "Funk", "bpm": 105, "energy": 0.7,
                "onset_steps": [0, 3, 4, 7, 8, 11, 12, 15]}]
@@ -112,7 +112,7 @@ def test_build_genre_gt_pairs_scores_high():
 def test_build_genre_gt_pairs_validates_with_pattern_raw():
     """Erzeugte Noten müssen validate_notes() bestehen."""
     from scripts._neo4j_song_prompts import build_genre_groundtruth_pairs
-    from src.agent.tools.pattern_raw_tool import validate_notes
+    from src.agent.tools.music.pattern_raw_tool import validate_notes
 
     genres = [{"name": "Trap", "bpm": 140, "energy": 0.5,
                "onset_steps": [0, 2, 6, 8, 10, 14]}]

@@ -209,7 +209,7 @@ class TestBitwigResultModels:
 
         result = BitwigResultBuilder().set_tempo(120).build()
 
-        with patch("src.agent.tools.song_tools._check_bridge", return_value=False), \
+        with patch("src.agent.tools.bitwig.song_tools._check_bridge", return_value=False), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
@@ -251,12 +251,12 @@ class TestE2EGuitarLoop:
     def _agent_drums_bass(self, prompt: str, reset: bool = True) -> tuple[str, dict[str, int], list[str]]:
         from src.agent.core import chat
         from src.agent.events import get_event_bus
-        from src.agent.tools.song_tools import (
+        from src.agent.tools.bitwig.song_tools import (
             _clear_all_tracks, _get_note_counts, _reset_note_counts,
         )
         if reset:
             deleted = _clear_all_tracks()
-            from src.agent.tools.song_tools import _get_current_track_count
+            from src.agent.tools.bitwig.song_tools import _get_current_track_count
             remaining = _get_current_track_count()
             status = "✓" if remaining == 0 else f"⚠ {remaining} Track(s) verblieben!"
             print(f"  Bitwig reset: {deleted} Track(s) gelöscht {status}")
@@ -286,7 +286,7 @@ class TestE2EGuitarLoop:
         """
         from src.agent.core import execute_plan
         from src.agent.models import BitwigResultBuilder
-        from src.agent.tools.song_tools import _reset_note_counts
+        from src.agent.tools.bitwig.song_tools import _reset_note_counts
 
         _reset_note_counts()
         result = (
@@ -333,7 +333,7 @@ class TestE2EGuitarLoop:
                 )
 
             # Phase 2: Gitarren-Lead via BitwigResultBuilder (OOP direkt, kein LLM)
-            from src.agent.tools.song_tools import _get_current_track_count
+            from src.agent.tools.bitwig.song_tools import _get_current_track_count
             real_track_count = _get_current_track_count()
             guitar_track_idx = real_track_count + 1
             print(f"Phase 2 — OOP Gitarre (Track {guitar_track_idx})")
@@ -348,7 +348,7 @@ class TestE2EGuitarLoop:
                     f"Ergebnis: {guitar_result[:400]}"
                 )
 
-            from src.agent.tools.song_tools import _get_note_counts, _get_track_names
+            from src.agent.tools.bitwig.song_tools import _get_note_counts, _get_track_names
             track_count  = _get_current_track_count()
             notes_guitar = _get_note_counts()
             track_names  = _get_track_names()

@@ -39,7 +39,7 @@ load_dotenv()
 
 import requests
 
-from src.agent.tools.reward import score_completion
+from src.agent.tools.music.reward import score_completion
 
 COMPOSER_URL = os.getenv(
     "COMPOSER_URL", "http://192.168.0.4:8080/v1/chat/completions")

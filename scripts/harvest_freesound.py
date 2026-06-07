@@ -65,7 +65,7 @@ def harvest_genre(
     per_genre: int = 3,
 ) -> dict[str, Any] | None:
     """Sucht + analysiert bis zu `per_genre` Loops für ein Genre, bildet Konsens."""
-    from src.agent.tools.freesound_tool import (
+    from src.agent.tools.knowledge.freesound_tool import (
         _analyze_file,
         _freesound_download,
         _freesound_search,

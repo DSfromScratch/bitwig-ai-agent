@@ -126,7 +126,7 @@ def detect_genre_semantic(
     - MF-Konfidenz ≤ 0.6  → Regelwerk bevorzugen, MF-Daten als Ergänzung
     - MF nicht verfügbar  → nur Regelwerk
     """
-    from src.agent.tools.audio_llm_tool import analyze_genre_structured
+    from src.agent.tools.music.audio_llm_tool import analyze_genre_structured
 
     print("   → Music Flamingo Genre-Analyse...")
     mf_result = analyze_genre_structured(file_path)

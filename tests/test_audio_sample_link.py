@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MIGRATION = ROOT / "src/knowledge/migrations/link_audio_samples.cypher"
 RUNNER = ROOT / "scripts/link_audio_samples.py"
 INGEST = ROOT / "scripts/ingest_audio_samples.py"
-KNOWLEDGE = ROOT / "src/agent/tools/knowledge_tool.py"
+KNOWLEDGE = ROOT / "src/agent/tools/knowledge/knowledge_tool.py"
 
 
 def test_migration_rule_a_matches_track_name():

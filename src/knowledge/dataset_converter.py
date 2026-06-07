@@ -349,10 +349,10 @@ def generate_gold_standard_examples(count_per_genre: int = 30) -> Iterator[dict]
     Erzeugt ca. 250 positive Beispiele aus bekannt-guten Pattern-Kombinationen.
     """
     try:
-        from src.agent.tools.pattern_generators import (
+        from src.agent.tools.music.pattern_generators import (
             _drums, _bass, _chords
         )
-        from src.agent.tools.music_data import _root_midi
+        from src.agent.tools.music.music_data import _root_midi
     except ImportError:
         log.warning("pattern_generators nicht verfügbar")
         return
@@ -391,9 +391,9 @@ def generate_gold_standard_examples(count_per_genre: int = 30) -> Iterator[dict]
                 elif any(k in inst_lower for k in ["vb","bass","fm4","surge"]):
                     notes = _bass(genre, bars, _root_midi(key, octave=2), style)
                 elif any(k in inst_lower for k in ["vg","guitar","phase4","dexed"]):
-                    from src.agent.tools.music_data import _DEFAULT_PROGRESSIONS
+                    from src.agent.tools.music.music_data import _DEFAULT_PROGRESSIONS
                     chords_list = _DEFAULT_PROGRESSIONS.get(genre, ["C","Am","F","G"])
-                    from src.agent.tools.pattern_generators import _chords
+                    from src.agent.tools.music.pattern_generators import _chords
                     notes = _chords(genre, bars, chords_list, style)
                 else:
                     continue
@@ -464,7 +464,7 @@ def convert_minimal_pattern_examples() -> Iterator[dict]:
     und funktional (>= 0.65). Verhindert dass 1-Note = 0.45+ scored wird.
     """
     try:
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
     except ImportError as e:
         log.warning("music_validator nicht importierbar: %s", e)
         return
@@ -556,7 +556,7 @@ def convert_black_page_examples() -> Iterator[dict]:
     Ziel: Modell lernt dass Komplexität (Tuplets, Atonalität, Ghost Notes) kein
     Qualitätsmangel ist — avant-garde patterns verdienen score >= 0.75.
     """
-    from src.agent.tools.music_validator import _build_validation_prompt
+    from src.agent.tools.music.music_validator import _build_validation_prompt
 
     # ── Importiere MIDI-Daten aus Tests ──────────────────────────────────────
     try:
@@ -671,8 +671,8 @@ def convert_multi_instrument_examples(count_per_combo: int = 8) -> Iterator[dict
       Drums + Melodie  → Bass
     """
     try:
-        from src.agent.tools.pattern_generators import _drums, _bass, _chords, _melody
-        from src.agent.tools.music_data import _root_midi, _DEFAULT_PROGRESSIONS
+        from src.agent.tools.music.pattern_generators import _drums, _bass, _chords, _melody
+        from src.agent.tools.music.music_data import _root_midi, _DEFAULT_PROGRESSIONS
     except ImportError as e:
         log.warning("pattern_generators nicht importierbar: %s", e)
         return
@@ -837,7 +837,7 @@ def convert_note_error_examples() -> Iterator[dict]:
     Lehrinhalt: Modell lernt score < 0.55 UND konkretes Issue zu nennen.
     """
     try:
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
     except ImportError as e:
         log.warning("music_validator nicht importierbar: %s", e)
         return

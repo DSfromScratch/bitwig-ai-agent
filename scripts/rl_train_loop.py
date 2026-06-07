@@ -101,7 +101,7 @@ def _eval_prompts_with_neo4j(extra_anchors: int = 8,
 def evaluate(model_url: str, temperature: float = 0.0,
              prompts: list[str] | None = None) -> float:
     """Berechnet avg_reward auf den Eval-Prompts."""
-    from src.agent.tools.reward import score_completion
+    from src.agent.tools.music.reward import score_completion
 
     eval_set = prompts if prompts is not None else _eval_prompts_with_neo4j()
     scores = []

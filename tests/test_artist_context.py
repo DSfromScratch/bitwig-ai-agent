@@ -18,7 +18,7 @@ def test_tool_is_registered():
 
 
 def test_empty_name_returns_hint():
-    from src.agent.tools.artist_tool import get_artist_context
+    from src.agent.tools.knowledge.artist_tool import get_artist_context
     with patch("src.knowledge.neo4j_graph.is_available", return_value=True), \
          patch("src.knowledge.neo4j_graph.session"):
         out = get_artist_context.invoke({"artist_name": "  "})
@@ -52,7 +52,7 @@ def _fake_session(artist_row, songs=None, genres=None, similar=None):
 
 
 def test_formats_full_artist_profile():
-    from src.agent.tools.artist_tool import get_artist_context
+    from src.agent.tools.knowledge.artist_tool import get_artist_context
     artist = {
         "name": "Daft Punk", "genre": "French House", "style": "Filtered synths",
         "bpm": "120–128", "key": "F minor",
@@ -73,7 +73,7 @@ def test_formats_full_artist_profile():
 
 
 def test_unknown_artist_lists_available():
-    from src.agent.tools.artist_tool import get_artist_context
+    from src.agent.tools.knowledge.artist_tool import get_artist_context
 
     sess = MagicMock()
 

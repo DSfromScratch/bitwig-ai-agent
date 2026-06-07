@@ -11,9 +11,9 @@ pytestmark = pytest.mark.unit
 
 # ── song_metadata_tool ──────────────────────────────────────────────────────
 
-@patch("src.agent.tools.song_metadata_tool.httpx.get")
+@patch("src.agent.tools.knowledge.song_metadata_tool.httpx.get")
 def test_musicbrainz_lookup_parses_response(mock_get):
-    from src.agent.tools.song_metadata_tool import _musicbrainz_lookup
+    from src.agent.tools.knowledge.song_metadata_tool import _musicbrainz_lookup
     mock_get.return_value = MagicMock(
         status_code=200,
         raise_for_status=lambda: None,
@@ -33,9 +33,9 @@ def test_musicbrainz_lookup_parses_response(mock_get):
     assert r["score"] == 100
 
 
-@patch("src.agent.tools.song_metadata_tool.httpx.get")
+@patch("src.agent.tools.knowledge.song_metadata_tool.httpx.get")
 def test_musicbrainz_lookup_returns_none_on_empty(mock_get):
-    from src.agent.tools.song_metadata_tool import _musicbrainz_lookup
+    from src.agent.tools.knowledge.song_metadata_tool import _musicbrainz_lookup
     mock_get.return_value = MagicMock(
         status_code=200, raise_for_status=lambda: None,
         json=lambda: {"recordings": []},
@@ -43,15 +43,15 @@ def test_musicbrainz_lookup_returns_none_on_empty(mock_get):
     assert _musicbrainz_lookup("X", "Y") is None
 
 
-@patch("src.agent.tools.song_metadata_tool._lastfm_info", return_value=None)
-@patch("src.agent.tools.song_metadata_tool._acousticbrainz_features",
+@patch("src.agent.tools.knowledge.song_metadata_tool._lastfm_info", return_value=None)
+@patch("src.agent.tools.knowledge.song_metadata_tool._acousticbrainz_features",
        return_value={"bpm": 137.5, "key": "A#", "scale": "major",
                      "genre_dortmund": "electronic"})
-@patch("src.agent.tools.song_metadata_tool._musicbrainz_lookup",
+@patch("src.agent.tools.knowledge.song_metadata_tool._musicbrainz_lookup",
        return_value={"mbid": "x", "title": "T", "artist": "A",
                      "tags": ["rock"], "releases": [], "score": 100})
 def test_search_artist_song_formats(mock_mb, mock_ab, mock_lf):
-    from src.agent.tools.song_metadata_tool import search_artist_song
+    from src.agent.tools.knowledge.song_metadata_tool import search_artist_song
     out = search_artist_song.invoke({"artist": "A", "title": "T"})
     assert "MBID" in out
     assert "BPM (AB): 137.5" in out
@@ -62,7 +62,7 @@ def test_search_artist_song_formats(mock_mb, mock_ab, mock_lf):
 # ── song_learn_tool ─────────────────────────────────────────────────────────
 
 def test_build_content_text_includes_all_fields():
-    from src.agent.tools.song_learn_tool import _build_content_text
+    from src.agent.tools.knowledge.song_learn_tool import _build_content_text
     meta = {
         "musicbrainz": {"tags": ["rock"]},
         "acousticbrainz": {"scale": "major", "danceability": "danceable"},
@@ -79,25 +79,25 @@ def test_build_content_text_includes_all_fields():
 
 
 def test_learn_song_rejects_invalid_url():
-    from src.agent.tools.song_learn_tool import learn_song_from_youtube
+    from src.agent.tools.knowledge.song_learn_tool import learn_song_from_youtube
     r = learn_song_from_youtube.invoke({
         "artist": "X", "title": "Y", "youtube_url": "not-a-url",
     })
     assert "Ungültige URL" in r
 
 
-@patch("src.agent.tools.song_learn_tool._persist_to_neo4j",
+@patch("src.agent.tools.knowledge.song_learn_tool._persist_to_neo4j",
        return_value={"persisted": True, "node_key": "A / T"})
-@patch("src.agent.tools.song_learn_tool._extract_features",
+@patch("src.agent.tools.knowledge.song_learn_tool._extract_features",
        return_value={"bpm": 120.0, "key": "C", "duration_s": 180.0,
                      "spectral_centroid_mean": 1500.0, "rms_mean": 0.1,
                      "section_times_s": [0.0, 60.0, 120.0]})
-@patch("src.agent.tools.song_learn_tool._download_youtube_audio")
-@patch("src.agent.tools.song_metadata_tool.search_artist_song_dict",
+@patch("src.agent.tools.knowledge.song_learn_tool._download_youtube_audio")
+@patch("src.agent.tools.knowledge.song_metadata_tool.search_artist_song_dict",
        return_value={"musicbrainz": None, "acousticbrainz": None, "lastfm": None})
 def test_learn_song_pipeline_orchestration(mock_meta, mock_dl, mock_feat,
                                             mock_persist, tmp_path):
-    from src.agent.tools.song_learn_tool import learn_song_from_youtube
+    from src.agent.tools.knowledge.song_learn_tool import learn_song_from_youtube
     fake_audio = tmp_path / "x.wav"
     fake_audio.write_bytes(b"RIFF")
     mock_dl.return_value = fake_audio
@@ -115,11 +115,11 @@ def test_learn_song_pipeline_orchestration(mock_meta, mock_dl, mock_feat,
     mock_persist.assert_called_once()
 
 
-@patch("src.agent.tools.song_learn_tool._download_youtube_audio", return_value=None)
-@patch("src.agent.tools.song_metadata_tool.search_artist_song_dict",
+@patch("src.agent.tools.knowledge.song_learn_tool._download_youtube_audio", return_value=None)
+@patch("src.agent.tools.knowledge.song_metadata_tool.search_artist_song_dict",
        return_value={"musicbrainz": None, "acousticbrainz": None, "lastfm": None})
 def test_learn_song_returns_error_on_download_fail(mock_meta, mock_dl):
-    from src.agent.tools.song_learn_tool import learn_song_from_youtube
+    from src.agent.tools.knowledge.song_learn_tool import learn_song_from_youtube
     r = learn_song_from_youtube.invoke({
         "artist": "A", "title": "T",
         "youtube_url": "https://example.com/x",

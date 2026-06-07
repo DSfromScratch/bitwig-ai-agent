@@ -197,7 +197,7 @@ class TestBlackPageGuitar:
     @pytest.mark.unit
     def test_guitar_prompt_no_drum_criteria(self):
         """Validator-Prompt für Gitarren-Pattern enthält keine Drum-Kriterien."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         prompt = _build_validation_prompt(
             BLACK_PAGE_GUITAR[:20], "Guitar", "contemporary", "C", "chromatic", 2, 60
         )
@@ -208,9 +208,9 @@ class TestBlackPageGuitar:
     @pytest.mark.unit
     def test_rasgueado_not_flagged_as_error(self):
         """Rasgueado (rapid repeated notes) soll nicht als 'Issue' markiert werden."""
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=_llm_ok(0.80)):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=_llm_ok(0.80)):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 MEASURE_6_7, "Guitar", "contemporary", "C", "chromatic", 2, 60
             )
@@ -222,10 +222,10 @@ class TestBlackPageGuitar:
     def test_full_black_page_guitar_validate_and_learn(self):
         """Vollständiges Gitarren-Pattern durchläuft validate_and_learn ohne Absturz."""
         driver, session = _mock_neo4j()
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=_llm_ok(0.85)), \
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=_llm_ok(0.85)), \
              patch("neo4j.GraphDatabase.driver", return_value=driver):
-            from src.agent.tools.music_learning import validate_and_learn
+            from src.agent.tools.knowledge.music_learning import validate_and_learn
             result = validate_and_learn.invoke({
                 "notes":      BLACK_PAGE_GUITAR,
                 "instrument": "Guitar",

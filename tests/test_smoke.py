@@ -164,7 +164,7 @@ class TestProjectSmoke:
     def test_execute_result_returns_string(self):
         """execute_result gibt immer einen String zurück — nie None oder Exception."""
         with patch("bitwig_mcp_server._check_connection", return_value=True), \
-             patch("src.agent.tools.song_tools._check_bridge", return_value=False), \
+             patch("src.agent.tools.bitwig.song_tools._check_bridge", return_value=False), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("time.sleep"):
             from bitwig_mcp_server import execute_result
@@ -290,7 +290,7 @@ class TestUUIDLookup:
 
     def _lookup(self, name: str) -> str | None:
         with patch("src.agent.osc.device_uuid._DEVICE_UUID_CACHE", _TEST_UUID_MAP):
-            from src.agent.tools.song_tools import _lookup_device_uuid
+            from src.agent.tools.bitwig.song_tools import _lookup_device_uuid
             return _lookup_device_uuid(name)
 
     @pytest.mark.unit

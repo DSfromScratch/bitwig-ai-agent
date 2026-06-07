@@ -33,7 +33,7 @@ def score_and_learn(
     2. Speichert score + issues + notes_json in Neo4j (ProductionPattern)
     3. Gibt {score, improved_notes, suggestions} zurück
     """
-    from src.agent.tools.music_validator import validate_music_pattern
+    from src.agent.tools.music.music_validator import validate_music_pattern
 
     validation = validate_music_pattern(notes, instrument, genre, key, scale, bars, bpm)
 

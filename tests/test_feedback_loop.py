@@ -35,14 +35,14 @@ class TestJazzPattern:
 
     @pytest.mark.unit
     def test_jazz_drums_have_ride(self):
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes = _drums("jazz", 2, "basic")
         pitches = {n["pitch"] for n in notes}
         assert 51 in pitches, f"Jazz-Drums müssen Ride (MIDI51) enthalten. Pitches: {pitches}"
 
     @pytest.mark.unit
     def test_jazz_drums_have_snare(self):
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes = _drums("jazz", 2, "basic")
         pitches = {n["pitch"] for n in notes}
         assert 38 in pitches, f"Jazz-Drums müssen Snare (MIDI38) haben. Pitches: {pitches}"
@@ -50,7 +50,7 @@ class TestJazzPattern:
     @pytest.mark.unit
     def test_jazz_drums_snare_on_offbeats(self):
         """Snare muss auf Beat 2 und 4 (steps 1.0 und 3.0) liegen."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes = _drums("jazz", 2, "basic")
         snare_steps = sorted({n["step"] % 4 for n in notes if n["pitch"] == 38})
         assert 1.0 in snare_steps, f"Snare muss auf Beat 2 (step 1.0). Steps: {snare_steps}"
@@ -59,7 +59,7 @@ class TestJazzPattern:
     @pytest.mark.unit
     def test_jazz_drums_hh_pedal_on_offbeats(self):
         """HH-Pedal (MIDI44) typischerweise auf Beat 2+4 im Jazz."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
         notes = _drums("jazz", 2, "basic")
         hh_pedal_steps = sorted({n["step"] % 4 for n in notes if n["pitch"] == 44})
         assert len(hh_pedal_steps) >= 1, f"HH-Pedal sollte in Jazz-Pattern. Steps: {hh_pedal_steps}"
@@ -67,8 +67,8 @@ class TestJazzPattern:
     @pytest.mark.unit
     def test_jazz_prompt_mentions_ride(self):
         """Validator-Prompt für Jazz muss Ride-Cymbal als Kriterium nennen."""
-        from src.agent.tools.pattern_generators import _drums
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         notes = _drums("jazz", 2, "basic")
         prompt = _build_validation_prompt(notes, "VD-HEAVY", "jazz", "C", "minor", 2, 120)
         assert "Ride" in prompt or "51" in prompt, \
@@ -79,17 +79,17 @@ class TestJazzPattern:
     @pytest.mark.unit
     def test_jazz_validator_scores_ride_pattern_high(self):
         """Validator soll Jazz-Pattern mit Ride+Snare hoch bewerten (>= 0.70)."""
-        from src.agent.tools.pattern_generators import _drums
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
 
         notes = _drums("jazz", 2, "basic")
         prompt = _build_validation_prompt(notes, "VD-HEAVY", "jazz", "C", "minor", 2, 120)
 
         mock_response = _llm_response(0.78, suggestions=["Ride-Variationen einbauen"])
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_response):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_response):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(notes, "VD-HEAVY", "jazz", "C", "minor", 2, 120)
 
         assert result.get("score", 0) >= 0.70, \
@@ -98,8 +98,8 @@ class TestJazzPattern:
     @pytest.mark.unit
     def test_rock_prompt_unchanged(self):
         """Rock-Prompt enthält weiterhin Kick+Snare-Kriterien."""
-        from src.agent.tools.pattern_generators import _drums
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         notes = _drums("rock", 2, "basic")
         prompt = _build_validation_prompt(notes, "VD-HEAVY", "rock", "A", "minor", 2, 120)
         assert "Beat 1" in prompt or "Beat 2" in prompt, \
@@ -124,7 +124,7 @@ class TestFeedbackLoopE2E:
     @pytest.mark.unit
     def test_validate_and_learn_stores_to_neo4j(self):
         """validate_and_learn ruft Neo4j-Speicherung auf wenn Score verfügbar."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
 
         notes = _drums("rock", 2, "basic")
         mock_resp = _llm_response(0.82)
@@ -134,10 +134,10 @@ class TestFeedbackLoopE2E:
         driver.__enter__            = lambda d: driver
         driver.__exit__             = MagicMock(return_value=False)
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp), \
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp), \
              patch("neo4j.GraphDatabase.driver", return_value=driver):
-            from src.agent.tools.music_learning import validate_and_learn
+            from src.agent.tools.knowledge.music_learning import validate_and_learn
             result = validate_and_learn.invoke(
                 {"notes": notes, "instrument": "VD-HEAVY", "genre": "rock", "key": "A"})
 
@@ -148,7 +148,7 @@ class TestFeedbackLoopE2E:
     @pytest.mark.unit
     def test_validate_and_learn_low_score_suggests_improvement(self):
         """Bei Score < 0.7 soll 'Verbesserung empfohlen' im Output stehen."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
 
         notes     = _drums("rock", 2, "basic")
         mock_resp = _llm_response(0.45, issues=["Kick fehlt"], suggestions=["Kick auf Beat 1"])
@@ -156,10 +156,10 @@ class TestFeedbackLoopE2E:
         driver    = MagicMock()
         driver.session.return_value = session
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp), \
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp), \
              patch("neo4j.GraphDatabase.driver", return_value=driver):
-            from src.agent.tools.music_learning import validate_and_learn
+            from src.agent.tools.knowledge.music_learning import validate_and_learn
             result = validate_and_learn.invoke(
                 {"notes": notes, "instrument": "VD-HEAVY", "genre": "rock", "key": "A"})
 
@@ -170,7 +170,7 @@ class TestFeedbackLoopE2E:
     @pytest.mark.unit
     def test_score_and_learn_returns_score(self):
         """score_and_learn gibt score + notes + suggestions zurück."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
 
         notes     = _drums("jazz", 2, "basic")
         mock_resp = _llm_response(0.76, suggestions=["Ride-Variationen einbauen"])
@@ -178,10 +178,10 @@ class TestFeedbackLoopE2E:
         driver    = MagicMock()
         driver.session.return_value = session
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp), \
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp), \
              patch("neo4j.GraphDatabase.driver", return_value=driver):
-            from src.agent.tools.music_learning import score_and_learn
+            from src.agent.tools.knowledge.music_learning import score_and_learn
             result = score_and_learn(notes, "VD-HEAVY", genre="jazz", key="C")
 
         assert result["score"]   == pytest.approx(0.76, abs=0.01)
@@ -199,7 +199,7 @@ class TestFeedbackLoopE2E:
              patch("src.agent.osc.track_state._get_current_track_count", return_value=2), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("time.sleep"):
-            from src.agent.tools.pattern_tools import write_pattern
+            from src.agent.tools.music.pattern_tools import write_pattern
             result = write_pattern.invoke({
                 "track_index": 1,
                 "instrument":  "VD-HEAVY",
@@ -225,15 +225,15 @@ class TestFeedbackLoopE2E:
         with patch("src.bitwig_executor._check_connection", return_value=True), \
              patch("bitwigbridge.executor._exec_step_and_wait", return_value="write_notes"), \
              patch("src.agent.osc.track_state._get_current_track_count", return_value=2), \
-             patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp), \
+             patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp), \
              patch("neo4j.GraphDatabase.driver", return_value=driver), \
              patch("pythonosc.udp_client.SimpleUDPClient"), \
              patch("time.sleep"):
 
-            from src.agent.tools.pattern_tools import write_pattern
-            from src.agent.tools.music_learning import validate_and_learn
-            from src.agent.tools.pattern_generators import _drums
+            from src.agent.tools.music.pattern_tools import write_pattern
+            from src.agent.tools.knowledge.music_learning import validate_and_learn
+            from src.agent.tools.music.pattern_generators import _drums
 
             # Schritt 1: Pattern generieren und schreiben
             write_result = write_pattern.invoke({
@@ -253,12 +253,12 @@ class TestFeedbackLoopE2E:
     @pytest.mark.unit
     def test_validate_and_learn_no_llm_returns_graceful(self):
         """Wenn LLM nicht verfügbar: kein Absturz, sinnvoller Hinweis."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
 
         notes = _drums("rock", 2, "basic")
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=False):
-            from src.agent.tools.music_learning import validate_and_learn
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=False):
+            from src.agent.tools.knowledge.music_learning import validate_and_learn
             result = validate_and_learn.invoke(
                 {"notes": notes, "instrument": "VD-HEAVY", "genre": "rock", "key": "A"})
 
@@ -269,7 +269,7 @@ class TestFeedbackLoopE2E:
     @pytest.mark.unit
     def test_neo4j_upsert_called_with_correct_fields(self):
         """Neo4j MERGE-Abfrage enthält instrument, genre, score."""
-        from src.agent.tools.pattern_generators import _drums
+        from src.agent.tools.music.pattern_generators import _drums
 
         notes     = _drums("rock", 2, "basic")
         mock_resp = _llm_response(0.75)
@@ -277,10 +277,10 @@ class TestFeedbackLoopE2E:
         driver    = MagicMock()
         driver.session.return_value = session
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp), \
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp), \
              patch("neo4j.GraphDatabase.driver", return_value=driver):
-            from src.agent.tools.music_learning import score_and_learn
+            from src.agent.tools.knowledge.music_learning import score_and_learn
             score_and_learn(notes, "VD-HEAVY", genre="rock", key="A", store_to_neo4j=True)
 
         # Prüfe dass Neo4j-Aufrufe gemacht wurden

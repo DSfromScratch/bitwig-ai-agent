@@ -203,7 +203,7 @@ Antworte NUR als JSON:
 def _build_rag_context(instrument: str, genre: str, key: str) -> str:
     """Lädt erfolgreiche Patterns als Few-Shot-Kontext (Ansatz 2: RAG)."""
     try:
-        from src.agent.tools.music_learning import get_rag_examples
+        from src.agent.tools.knowledge.music_learning import get_rag_examples
         examples = get_rag_examples(instrument, genre, key, min_score=0.75, limit=2)
         if not examples:
             return ""

@@ -130,7 +130,7 @@ class TestBlackPageMLX:
     @pytest.mark.unit
     def test_validator_prompt_for_atonal_melody(self):
         """Validator-Prompt für atonale Melodie enthält keine Drum-Kriterien."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         prompt = _build_validation_prompt(
             BLACK_PAGE_NOTES, "Piano", "contemporary", "C", "chromatic", 4, 60
         )
@@ -147,9 +147,9 @@ class TestBlackPageMLX:
             0.82,
             suggestions=["Dynamische Kontraste ausbauen"]
         )
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 BLACK_PAGE_NOTES, "Piano", "contemporary", "C", "chromatic", 4, 60
             )
@@ -163,9 +163,9 @@ class TestBlackPageMLX:
     def test_validator_no_kick_complaint_for_melody(self):
         """'Kein Kick' soll bei Melodie-Pattern nicht als Issue auftauchen."""
         mock_resp = _llm_response(0.75)
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp):
-            from src.agent.tools.music_validator import validate_music_pattern
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp):
+            from src.agent.tools.music.music_validator import validate_music_pattern
             result = validate_music_pattern(
                 BLACK_PAGE_NOTES, "Piano", "contemporary", "C", "chromatic", 4, 60
             )
@@ -184,10 +184,10 @@ class TestBlackPageMLX:
         session = _mock_neo4j_session()
         driver  = _mock_driver(session)
 
-        with patch("src.agent.tools.music_validator._is_available", return_value=True), \
-             patch("src.agent.tools.music_validator._call_llm", return_value=mock_resp), \
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp), \
              patch("neo4j.GraphDatabase.driver", return_value=driver):
-            from src.agent.tools.music_learning import validate_and_learn
+            from src.agent.tools.knowledge.music_learning import validate_and_learn
             result = validate_and_learn.invoke({
                 "notes":      BLACK_PAGE_NOTES,
                 "instrument": "Piano",
@@ -205,7 +205,7 @@ class TestBlackPageMLX:
     @pytest.mark.unit
     def test_mlx_prompt_complexity(self):
         """Der generierte Prompt für The Black Page enthält Noten-Details."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         prompt = _build_validation_prompt(
             BLACK_PAGE_NOTES, "Piano", "contemporary", "C", "chromatic", 4, 60
         )
@@ -220,7 +220,7 @@ class TestBlackPageMLX:
     @pytest.mark.unit
     def test_score_not_penalized_for_missing_drums(self):
         """Pattern ohne Kick/Snare bekommt keinen automatischen Score-Abzug im Prompt."""
-        from src.agent.tools.music_validator import _build_validation_prompt
+        from src.agent.tools.music.music_validator import _build_validation_prompt
         prompt = _build_validation_prompt(
             BLACK_PAGE_NOTES, "Piano", "contemporary", "C", "chromatic", 4, 60
         )

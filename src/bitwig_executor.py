@@ -142,7 +142,7 @@ def execute_setup(result: dict) -> str:
             if name and any(k in name.lower() for k in
                             {"drum", "vd-", "vd_", "mt-power", "v0 ", "v1 ", "v8 ", "v9 "}):
                 try:
-                    from src.agent.tools.suggest_tools import set_drum_profile
+                    from src.agent.tools.bitwig.suggest_tools import set_drum_profile
                     set_drum_profile(name)
                 except Exception:
                     pass

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.agent.tools import knowledge_tool as kt
+from src.agent.tools.knowledge import knowledge_tool as kt
 
 pytestmark = pytest.mark.unit
 

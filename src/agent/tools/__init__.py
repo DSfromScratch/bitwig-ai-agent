@@ -1,26 +1,26 @@
-from src.agent.tools.knowledge_tool import query_bitwig_docs
-from src.agent.tools.kb_store_tool import store_result_in_kb
-from src.agent.tools.project_learning_tool import scan_and_learn_project
-from src.agent.tools.reconstruct_tool import reconstruct_project
-from src.agent.tools.recipe_tool import create_track_from_recipe
-from src.agent.tools.bitwig_tools import control_bitwig
-from src.agent.tools.song_tools import (
+from src.agent.tools.knowledge.knowledge_tool import query_bitwig_docs
+from src.agent.tools.knowledge.kb_store_tool import store_result_in_kb
+from src.agent.tools.knowledge.project_learning_tool import scan_and_learn_project
+from src.agent.tools.knowledge.reconstruct_tool import reconstruct_project
+from src.agent.tools.bitwig.recipe_tool import create_track_from_recipe
+from src.agent.tools.bitwig.bitwig_tools import control_bitwig
+from src.agent.tools.bitwig.song_tools import (
     check_bitwig_connection,
     get_bitwig_track_state,
 )
-from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
-from src.agent.tools.pattern_tools import write_pattern
-from src.agent.tools.pattern_raw_tool import write_pattern_raw
-from src.agent.tools.context_tool import get_song_context
-from src.agent.tools.artist_tool import get_artist_context
-from src.agent.tools.web_search_tool import web_search
-from src.agent.tools.freesound_tool import find_audio_example
-from src.agent.tools.music_validator import validate_music
-from src.agent.tools.audio_llm_tool import analyze_song
-from src.agent.tools.song_metadata_tool import search_artist_song
-from src.agent.tools.song_learn_tool import learn_song_from_youtube
-from src.agent.tools.music_learning import validate_and_learn
-from src.agent.tools.mlx_export import export_mlx_training_data
+from src.agent.tools.bitwig.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
+from src.agent.tools.music.pattern_tools import write_pattern
+from src.agent.tools.music.pattern_raw_tool import write_pattern_raw
+from src.agent.tools.music.context_tool import get_song_context
+from src.agent.tools.knowledge.artist_tool import get_artist_context
+from src.agent.tools.knowledge.web_search_tool import web_search
+from src.agent.tools.knowledge.freesound_tool import find_audio_example
+from src.agent.tools.music.music_validator import validate_music
+from src.agent.tools.music.audio_llm_tool import analyze_song
+from src.agent.tools.knowledge.song_metadata_tool import search_artist_song
+from src.agent.tools.knowledge.song_learn_tool import learn_song_from_youtube
+from src.agent.tools.knowledge.music_learning import validate_and_learn
+from src.agent.tools.meta.mlx_export import export_mlx_training_data
 from src.bitwig_executor import execute_setup, compose_notes
 from langchain_core.tools import StructuredTool, tool as _tool
 from pydantic import BaseModel, model_validator

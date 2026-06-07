@@ -24,7 +24,7 @@ import pytest
 pytest.importorskip("bitwigbridge", reason="bitwigbridge-Repo nicht installiert (CI)")
 
 from src.bitwig_executor import execute_setup
-from src.agent.tools.pattern_tools import (
+from src.agent.tools.music.pattern_tools import (
     write_pattern, _drums, _bass, _chords, _melody, _root_midi,
     _808_kick, _808_snare,
 )
