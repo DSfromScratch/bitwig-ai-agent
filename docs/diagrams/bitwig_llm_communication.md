@@ -1,156 +1,210 @@
 # Kommunikationsdiagramm — Bitwig ↔ LLM
 
+> **Architektur-Update:** Die Kommunikation läuft jetzt über ein **JSON-Step-Protokoll**.
+> Der Python-Agent sendet `/step/exec` mit einem JSON-Objekt (`type` + `args`) an die
+> Java-Extension. Diese verwaltet eine **Step-Queue** und nutzt Bitwig's
+> **`host.scheduleTask()`-Scheduler**, um API-Aufrufe korrekt gestaffelt auszuführen
+> (z.B. 80ms nach Track-Add, 200ms nach Device-Load). Nach jedem Step kommt
+> `/step/done` als ACK zurück.
+
+---
+
 ## Systemübersicht (Komponentendiagramm)
 
 ```mermaid
-graph LR
-    subgraph WIN ["Windows / WSL"]
-        BW["Bitwig Studio\n(DrivenByMoss Extension)"]
-        EXT["BitwigAgentBridge.bwextension\nJava / OSC Bridge"]
+graph TB
+    subgraph DAW ["Bitwig Studio  (DAW Host)"]
+        BW["Bitwig Studio 6"]
+        subgraph EXT ["BitwigStepPluginExtension  (.bwextension)"]
+            OSC_IN["OSC Server<br/>UDP :8002"]
+            QUEUE["stepQueue<br/>LinkedList<String[]>"]
+            DISP["executeStep<br/>Dispatcher"]
+            SCHED["host.scheduleTask<br/>Bitwig Task Scheduler"]
+            HANDLERS["Step-Handler:<br/>execAddTrack<br/>execLoadInstrument<br/>execAppendEffect<br/>execWriteNotes<br/>execSetParam<br/>…"]
+            API["Bitwig Controller API<br/>trackBank, cursorTrack,<br/>cursorDevice, popupBrowser"]
+
+            OSC_IN --> QUEUE
+            QUEUE --> DISP
+            DISP --> HANDLERS
+            HANDLERS --> SCHED
+            SCHED --> API
+            API -.->|done| OSC_OUT
+        end
+        OSC_OUT["OSC Reply<br/>UDP :9002<br/>/step/done"]
         BW --- EXT
     end
 
-    subgraph LINUX ["Linux Host"]
-        subgraph AGENT ["Python Agent  (Port :9003)"]
-            CORE["Agent Core\nLangGraph"]
-            TOOLS["Tools Layer\n18 Agent + 39 MCP"]
-            MCP["MCP Server\nstdio subprocess"]
-            CORE --- TOOLS
-            TOOLS --- MCP
+    subgraph HOST ["Python Agent Host"]
+        subgraph AGENT ["Python Agent"]
+            LISTENER["osc_listener.py<br/>UDP :9003"]
+            CORE["core.py<br/>LangGraph ReAct"]
+            EVENTS["events.py<br/>EventBus (Observer)"]
+            TOOLS["song_tools.py<br/>+ 56 weitere Tools"]
+            CLIENT["osc/client.py<br/>OscClient"]
+
+            LISTENER --> CORE
+            CORE --> TOOLS
+            CORE -.emit.-> EVENTS
+            TOOLS -.emit.-> EVENTS
+            TOOLS --> CLIENT
         end
 
-        subgraph KB ["Knowledge Base"]
-            NEO["Neo4j :7687\nGraph + Vector Search"]
-        end
-
-        subgraph INFRA ["Infrastruktur (Podman)"]
-            VLLM["vLLM :8100\nQwen3-14B-AWQ\nOpenAI-kompatibel"]
-            NEO4J_C["Neo4j Container :7687"]
+        subgraph INFRA ["Infrastruktur"]
+            VLLM["vLLM :8100<br/>Qwen3-14B-AWQ"]
+            NEO["Neo4j :7687<br/>Wissensgraph"]
+            MCP["MCP Server<br/>(stdio subprocess)"]
         end
     end
 
-    EXT  <-->|"OSC UDP\n:8001 → Agent\n:9001 ← Bridge"| TOOLS
-    CORE <-->|"HTTP OpenAI API\nPOST /v1/chat/completions"| VLLM
-    TOOLS <-->|"Bolt TCP :7687\nCypher + Vector"| NEO
-    NEO --- NEO4J_C
+    CLIENT <-->|"OSC UDP<br/>:8002 /step/exec<br/>:9002 /step/done"| EXT
+    LISTENER <-->|"OSC UDP :9003<br/>/agent/ui/prompt<br/>/agent/ui/response"| EXT
+    CORE <-->|"HTTP /v1/chat/completions"| VLLM
+    TOOLS <-->|"Bolt :7687"| NEO
+    TOOLS <-->|"JSON-RPC stdio"| MCP
 ```
 
-## Vollständiger Kommunikationsfluss (Sequenzdiagramm)
+## Step-Protocol Sequenzdiagramm
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant UI  as Benutzer / Bitwig UI
-    participant BW  as Bitwig Studio<br/>(DrivenByMoss)
-    participant EXT as BitwigAgentBridge<br/>.bwextension  :8001
-    participant AGT as Python Agent<br/>OSC Listener  :9003
-    participant LLM as vLLM Server<br/>Qwen3-14B-AWQ  :8100
-    participant KB  as Neo4j Graph DB<br/>:7687 Bolt
-    participant MCP as MCP Server<br/>(stdio)
+    participant U   as User / Bitwig UI
+    participant LIS as osc_listener<br/>UDP :9003
+    participant CORE as core.py<br/>(LangGraph)
+    participant LLM as vLLM :8100<br/>Qwen3-14B-AWQ
+    participant KB  as Neo4j :7687
+    participant TOOL as song_tools.py
+    participant BUS as EventBus
+    participant EXT as BitwigStepPlugin<br/>UDP :8002 / :9002
+    participant SCH as host.scheduleTask
+    participant BW  as Bitwig API
 
-    %% ── Schritt 1: Prompt kommt von Bitwig ──────────────────────────────────
-    UI  ->> BW : Taste / MIDI-Controller / Chat-Eingabe
-    BW  ->> EXT: interner API-Aufruf
-    EXT ->> AGT: OSC UDP :9003  →  /agent/ui/prompt "Rock-Riff Em"
+    %% ── 1. Prompt-Eingang ─────────────────────────────────────────────────────
+    U   ->> LIS : OSC /agent/ui/prompt "Rock-Riff Em 140 BPM"
+    LIS ->> CORE: AgentState{messages:[user]}
 
-    %% ── Schritt 2: Erster LLM-Aufruf ────────────────────────────────────────
-    AGT ->> LLM: POST /v1/chat/completions<br/>{ model: "Qwen3-14B-AWQ",<br/>  messages: [system, user],<br/>  tools: [...18+39 Schemas] }
-    LLM -->> AGT: { choices: [{ tool_calls: [<br/>  { name: "query_bitwig_docs",<br/>    args: {query: "rock guitar"} }] }] }
+    %% ── 2. LLM Iteration 1 ────────────────────────────────────────────────────
+    CORE ->> LLM: POST /v1/chat/completions<br/>(system + tools[57])
+    LLM -->> CORE: tool_calls=[query_bitwig_docs("rock guitar")]
 
-    %% ── Schritt 3: Knowledge-Base-Query ─────────────────────────────────────
-    AGT ->> KB : Bolt:  MATCH (d:Device)-[:USES]-(g:Genre)<br/>WHERE toLower(g.name) CONTAINS "rock"<br/>RETURN d.name, d.category, r.weight
-    KB -->> AGT: [{ name:"Phase-4", category:"synthesizer" },<br/>              { name:"Distortion", category:"audio_fx" }]
+    CORE ->> KB : MATCH (d:Device)-[:USES]-(g:Genre {name:"rock"})
+    KB -->> CORE: [{name:"Phase-4"},{name:"Distortion"}]
+    CORE ->> BUS: emit("reasoning",{detected_phase:"song"})
 
-    %% ── Schritt 4: Zweiter LLM-Aufruf mit KB-Ergebnis ───────────────────────
-    AGT ->> LLM: POST /v1/chat/completions<br/>{ messages: [..., ToolMessage(KB-Ergebnis)],<br/>  tools: [...] }
-    LLM -->> AGT: { tool_calls: [<br/>  { name: "build_song",<br/>    args: { project_json: "{bpm:140,\n    tracks:[{instrument:'Phase-4',\n    clip:{notes:[...]}}]}" } }] }
+    %% ── 3. LLM Iteration 2 → build_song ──────────────────────────────────────
+    CORE ->> LLM: POST /v1/chat/completions  (+ ToolMessage)
+    LLM -->> CORE: tool_calls=[build_song({tempo:140, tracks:[…]})]
 
-    %% ── Schritt 5: OSC-Nachrichten an Bitwig ─────────────────────────────────
-    AGT ->> EXT: OSC UDP :8001  →  /transport/tempo  140
-    AGT ->> EXT: OSC UDP :8001  →  /track/add/instrument
-    AGT ->> EXT: OSC UDP :8001  →  /browser/device/load  "Phase-4"
-    AGT ->> EXT: OSC UDP :8001  →  /clip/create  [0, 16]
+    %% ── 4. Step-Protocol Loop ────────────────────────────────────────────────
+    CORE ->> TOOL: build_song.invoke(project_json)
 
-    loop Für jede MIDI-Note  (z.B. 48×)
-        AGT ->> EXT: OSC UDP :8001  →  /clip/note/beat  [step, pitch, vel, dur]
+    rect rgb(240, 248, 255)
+        Note over TOOL,EXT: Step-Protocol: Pro Aktion 1× JSON-Step
+        loop Für jeden Step (set_tempo, add_track, load_instrument,<br/>append_effect, write_notes, …)
+            TOOL ->> EXT: OSC /step/exec  {"type":"add_track","args":{…}}
+            alt stepQueue leer
+                EXT  ->> EXT : stepExecuting = true
+            else stepQueue belegt
+                EXT  ->> EXT : stepQueue.add(json) <br/>(serialisiert!)
+            end
+            EXT  ->> SCH : scheduleTask(execAddTrack, 0ms)
+            SCH  ->> BW  : trackBank.scrollIntoView(…)<br/>application.createInstrumentTrack(…)
+            BW  -->> SCH : (async API)
+            SCH  ->> SCH : scheduleTask(stepDone, 80ms)<br/>(Wartezeit für DAW)
+            SCH  ->> EXT : stepDone(src,"add_track")
+            EXT -->> TOOL: OSC /step/done "add_track"<br/>(UDP :9002)
+            TOOL ->> BUS : emit("result_step_done",{type,index})
+            EXT  ->> EXT : nächster Step aus stepQueue.poll()
+        end
     end
 
-    AGT ->> EXT: OSC UDP :8001  →  /browser/fx/load  "Distortion"
+    TOOL ->> BUS : emit("track_done",{role:"guitar",notes:48})
+    TOOL -->> CORE: ToolMessage("OK — 1 Track, 48 Noten")
 
-    %% ── Schritt 6: Verifikation ───────────────────────────────────────────────
-    AGT ->> EXT: OSC UDP :8001  →  /agent/track/count  1
-    EXT -->> AGT: OSC UDP :9001  →  /agent/track/count  2   (int)
+    %% ── 5. LLM Iteration 3 → Antworttext ─────────────────────────────────────
+    CORE ->> LLM: POST /v1/chat/completions  (+ ToolMessage)
+    LLM -->> CORE: AIMessage("Rock-Riff angelegt: Phase-4 · 140 BPM · 48 Noten")
+    CORE ->> BUS: emit("song_done",{track_count:1})
 
-    AGT ->> EXT: OSC UDP :8001  →  /scene/0/launch  1
-    Note over AGT,EXT: 3 Sekunden abspielen
-
-    %% ── Schritt 7: Optionaler MCP-Aufruf ────────────────────────────────────
-    opt MCP-Tool aufgerufen (z.B. bitwig_load_instrument)
-        AGT ->> MCP: stdin  JSON-RPC  {"method":"bitwig_load_instrument",<br/>"params":{...}}
-        MCP ->> EXT: OSC UDP :8001  →  /browser/device/load  ...
-        EXT -->> MCP: OSC UDP :9001  →  Bestätigung
-        MCP -->> AGT: stdout  JSON-RPC  {"result": "ok"}
-    end
-
-    %% ── Schritt 8: Abschluß-LLM-Aufruf ──────────────────────────────────────
-    AGT ->> LLM: POST /v1/chat/completions<br/>{ messages: [..., ToolMessage(build_result)],<br/>  tools: [...] }
-    LLM -->> AGT: { content: "Rock-Riff angelegt:\nPhase-4 · 140 BPM · 48 Noten" }
-
-    %% ── Schritt 9: Antwort zurück an Bitwig ──────────────────────────────────
-    AGT ->> EXT: OSC UDP :9003  →  /agent/ui/response  "Rock-Riff angelegt: Phase-4..."
-    EXT ->> BW : interner API-Aufruf
-    BW  ->> UI : Antwort in Chat / Notification anzeigen
+    %% ── 6. Antwort ────────────────────────────────────────────────────────────
+    CORE -->> LIS: AgentState{phase:"done", messages:[…]}
+    LIS  ->> EXT: OSC /agent/ui/response "Rock-Riff angelegt: …"
+    EXT  ->> U  : UI-Display
 ```
 
-## OSC-Nachrichtenprotokoll — Referenz
+## Step-Queue State Machine (Java)
 
 ```mermaid
-block-beta
-    columns 3
+stateDiagram-v2
+    [*] --> idle           : Extension geladen
 
-    block:AGENT_TO_BW["Agent → Bitwig  (UDP :8001)"]:3
-        T1["/transport/tempo  &lt;float&gt;"]
-        T2["/transport/play  0|1"]
-        T3["/transport/stop  1"]
+    idle --> queued        : /step/exec eingegangen<br/>(stepExecuting=false)
+    queued --> executing   : executeStep(json)
+    executing --> scheduling: switch(type)→exec*
 
-        R1["/track/add/instrument  1"]
-        R2["/track/{i}/select  1"]
-        R3["/track/{i}/remove  1"]
-        R4["/track/{i}/volume  &lt;0-1&gt;"]
-        R5["/track/{i}/mute  0|1"]
-        R6["/track/{i}/solo  0|1"]
+    scheduling --> waiting : host.scheduleTask(handler, Xms)
+    waiting --> api_call   : nach X ms
+    api_call --> done      : stepDone(src,type)
+    done --> ack_sent      : /step/done OSC reply
 
-        B1["/browser/device/load  &lt;name&gt;"]
-        B2["/browser/preset/load  &lt;name&gt;"]
-        B3["/browser/fx/load  &lt;name&gt;"]
+    ack_sent --> queued    : stepQueue.poll() — nächster Step
+    ack_sent --> idle      : stepQueue.isEmpty()<br/>stepExecuting=false
 
-        C1["/clip/create  [slot, beats]"]
-        C2["/clip/note/beat  [step,pitch,vel,dur]"]
-        C3["/clip/clear  1"]
-        C4["/clip/step_size  0.25"]
-
-        S1["/scene/{i}/launch  1"]
-        S2["/arrange/record/start  1"]
-        S3["/arrange/record/stop  1"]
-
-        P1["/ping  1"]
-        P2["/agent/track/count  1"]
-    end
-
-    block:BW_TO_AGENT["Bitwig → Agent  (UDP :9001)"]:3
-        R10["/pong  1"]
-        R11["/agent/track/count  &lt;int&gt;"]
-        R12["/agent/ui/response  &lt;string&gt;"]
-    end
+    state "Parallel Eingang" as parallel {
+        [*] --> queue_only : /step/exec während<br/>stepExecuting=true
+        queue_only --> [*] : stepQueue.add(json)
+    }
 ```
 
-## Port-Übersicht
+## Step-Typen Übersicht
 
-| Port | Protokoll | Richtung | Beschreibung |
-|------|-----------|----------|--------------|
-| **8001** | OSC UDP | Agent → Bitwig | Befehle an DrivenByMoss Extension |
-| **9001** | OSC UDP | Bitwig → Agent | Antworten (track count, pong) |
-| **9003** | OSC UDP | Bitwig → Agent | User-Prompts, UI-Config |
-| **8100** | HTTP (OpenAI API) | Agent → vLLM | LLM-Inferenz (Qwen3-14B-AWQ) |
-| **7687** | Bolt TCP | Agent → Neo4j | Wissensbasis-Queries + Vektor-Suche |
-| **stdio** | JSON-RPC | Agent ↔ MCP | MCP Tool-Server (subprocess) |
+| Step-Type           | OSC-Args (JSON)                                              | Handler                  | Delay |
+|---------------------|--------------------------------------------------------------|--------------------------|-------|
+| `set_tempo`         | `{bpm: 140.0}`                                               | `execSetTempo`           | 0 ms  |
+| `add_track`         | `{kind: "instrument" \| "audio" \| "group"}`                 | `execAddTrack`           | 80 ms |
+| `select_track`      | `{track_index: 1}`                                           | `execSelectTrack`        | 40 ms |
+| `load_instrument`   | `{track_index: 1, device: "Phase-4"}`                        | `execLoadInstrument`     | 200 ms (Browser) |
+| `append_effect`     | `{track_index: 1, device: "Distortion"}`                     | `execAppendEffect`       | 200 ms (Browser) |
+| `set_param`         | `{track_index: 1, index: 0, value: 0.7}`                     | `execSetParam`           | 0 ms  |
+| `set_param_named`   | `{track_index: 1, name: "Cutoff", value: 0.5}`               | `execSetParamNamed`      | 40 ms |
+| `write_notes`       | `{track_index: 1, slot: 0, beats: 4, notes: [{…}]}`          | `execWriteNotes`         | varies|
+| `clear_tracks`      | `{}`                                                         | `execClearTracks`        | 250 ms / track |
+| `play`              | `{}`                                                         | `transport.play()`       | 0 ms  |
+| `stop`              | `{}`                                                         | `transport.stop()`       | 0 ms  |
+
+## OSC-Port-Übersicht
+
+| Port      | Protokoll        | Richtung          | Zweck                                                  |
+|-----------|------------------|-------------------|--------------------------------------------------------|
+| **8002**  | OSC UDP          | Agent → Bitwig    | `/step/exec` — JSON-Step zur Ausführung                |
+| **9002**  | OSC UDP          | Bitwig → Agent    | `/step/done` — ACK mit Step-Type                       |
+| **8001**  | OSC UDP          | Agent → Bitwig    | Legacy `BitwigAgentBridge` (Track-Count, Ping)         |
+| **9001**  | OSC UDP          | Bitwig → Agent    | Legacy Antworten (Track-Count int)                     |
+| **9003**  | OSC UDP          | Bitwig → Agent    | `/agent/ui/prompt`, `/agent/ui/config`                 |
+| **9003**  | OSC UDP          | Agent → Bitwig    | `/agent/ui/response` (Antworttext)                     |
+| **8100**  | HTTP (OpenAI)    | Agent → vLLM      | `POST /v1/chat/completions` — Qwen3-14B-AWQ            |
+| **7687**  | Bolt TCP         | Agent → Neo4j     | Cypher-Queries + Vector-Search                         |
+| **stdio** | JSON-RPC         | Agent ↔ MCP       | MCP Tool-Server (39 Tools, subprocess)                 |
+
+## Wesentliche Architektur-Eigenschaften
+
+### 1. Sequenzielle Step-Verarbeitung
+Die `stepQueue` (synchronized LinkedList) und das `stepExecuting`-Flag garantieren,
+dass nur **ein Step zur Zeit** läuft. Eingehende Steps während einer laufenden
+Ausführung werden eingereiht und nach `/step/done` automatisch weiterverarbeitet.
+
+### 2. Bitwig-konformes Scheduling
+Statt blockierender Waits verwendet die Extension **`host.scheduleTask()`** mit
+typischerweise 40–250 ms Verzögerung, damit Bitwig genug Zeit hat, asynchrone
+API-Updates (Browser-Population, Device-Load, Bank-Refresh) abzuschließen.
+
+### 3. Observer-Pattern auf Python-Seite
+Der **EventBus** (`events.py`) entkoppelt Pipeline-Events von Subscriber-Logik:
+- Default-Subscriber: JSONL-Logger (`logs/generation_events.jsonl`) + Python-Logger
+- Wildcard `*`-Subscriber für Dashboard/Monitoring
+- Synchron, aber Exception-isoliert pro Subscriber
+
+### 4. Reduzierte LangGraph-Topologie
+Nur **2 Nodes** (`agent` + `tools`) mit conditional edge `route_by_phase`.
+Die alte Master/Slave-Architektur wurde durch die EventBus-getriebene
+ReAct-Schleife ersetzt.

@@ -2,6 +2,16 @@
 
 Jedes Finding aus der Architektur-Beurteilung mit konkretem Pattern und Code-Skizze.
 
+> **Implementierungs-Status (Juni 2026):**
+> - ✅ **Finding 1 (Command Queue + Scheduling)** ist in `BitwigStepPluginExtension.java`
+>   bereits umgesetzt (`stepQueue` + `host.scheduleTask()`). Siehe
+>   [`bitwig_llm_communication.md`](bitwig_llm_communication.md).
+> - ✅ **Event-Pattern** für Pipeline-Feedback ist in `src/agent/events.py` als
+>   `EventBus` (Observer) live. Siehe [`agent_flow.md`](agent_flow.md).
+> - ✅ **Circuit Breaker** (Finding 5) ist in `src/agent/osc/circuit_breaker.py` aktiv.
+> - ✅ **OSC-Client-Abstraktion** in `src/agent/osc/client.py` (eliminiert Code-Duplikation).
+> - ⏳ Findings 2, 3, 4, 6–12 sind weiterhin offen bzw. teilweise umgesetzt.
+
 ---
 
 ## Finding 1 — OSC/UDP ohne Transaktionsgarantie
