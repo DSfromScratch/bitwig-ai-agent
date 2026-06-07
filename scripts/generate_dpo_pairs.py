@@ -319,6 +319,7 @@ def generate_pairs(
     max_prompts: int = 50,
     song_anchors: int = 20,
     song_prompts_per_anchor: int = 2,
+    genre_patterns: bool = True,
 ) -> dict:
     out_dir = out_dir or data_dir
     os.makedirs(out_dir, exist_ok=True)
@@ -342,19 +343,31 @@ def generate_pairs(
         neo_prompts  = []
         neo_gt_pairs = []
 
+    # Freesound-GenrePatterns → finite Drum-Ground-Truth (Anti-Runaway-Signal)
+    genre_gt_pairs: list[tuple[str, str]] = []
+    if genre_patterns:
+        try:
+            from scripts._neo4j_song_prompts import build_genre_groundtruth_pairs
+            genre_gt_pairs = build_genre_groundtruth_pairs(max_per_genre=1)
+        except Exception as exc:
+            print(f"⚠ Genre-Pattern-GT übersprungen: {exc}")
+
     print(f"📋 {len(train_pairs)} Trainings-Prompts + {len(hard)} Hard-Prompts "
           f"+ {len(neo_prompts)} Neo4j-Song-Prompts "
-          f"+ {len(neo_gt_pairs)} Neo4j-GroundTruth-Pairs (write_pattern_raw)")
+          f"+ {len(neo_gt_pairs)} Neo4j-GroundTruth-Pairs (write_pattern_raw) "
+          f"+ {len(genre_gt_pairs)} Freesound-Genre-Drum-GT-Pairs")
 
     examples: list[dict] = []
 
-    # Strategie A: Ground-Truth-Paare (Trainings-Prompts + Hard-Prompts + note_plan-GT)
+    # Strategie A: Ground-Truth-Paare (Trainings-Prompts + Hard-Prompts + note_plan-GT + Genre-Drum-GT)
     print(f"\n── Strategie A: Ground-Truth-Paare ──────────────────────────")
     n_a    = _strategy_A_ground_truth(model_url, train_pairs, examples)
     n_ah   = _strategy_A_ground_truth(model_url, hard, examples)
     n_a_np = _strategy_A_ground_truth(model_url, neo_gt_pairs, examples)
-    print(f"   {n_a + n_ah + n_a_np} Paare "
-          f"(Train: {n_a}, Hard: {n_ah}, Neo4j-note_plan: {n_a_np})")
+    n_a_g  = _strategy_A_ground_truth(model_url, genre_gt_pairs, examples)
+    print(f"   {n_a + n_ah + n_a_np + n_a_g} Paare "
+          f"(Train: {n_a}, Hard: {n_ah}, Neo4j-note_plan: {n_a_np}, "
+          f"Freesound-Genre: {n_a_g})")
 
     # Strategie B: Kontrast-Paare (Hard-Prompts + Neo4j-Song-Prompts)
     print(f"\n── Strategie B: Kontrast-Paare ──────────────────────────────")
@@ -382,13 +395,13 @@ def generate_pairs(
 
     stats = {
         "pairs_generated": len(examples),
-        "strategy_A":      n_a + n_ah,
-        "strategy_B":      n_b,
+        "strategy_A":      n_a + n_ah + n_a_np + n_a_g,
+        "strategy_B":      n_b + n_b_n,
         "train_pairs":     len(train_ex),
         "valid_pairs":     len(valid_ex),
     }
     print(f"\n✅ {len(examples)} DPO-Paare gespeichert "
-          f"(A={n_a + n_ah + n_a_np}, B={n_b + n_b_n}) → {out_dir}/dpo_train.jsonl")
+          f"(A={n_a + n_ah + n_a_np + n_a_g}, B={n_b + n_b_n}) → {out_dir}/dpo_train.jsonl")
     return stats
 
 
@@ -402,6 +415,8 @@ if __name__ == "__main__":
                         help="Wie viele (:Song)-Knoten aus Neo4j als Stil-Anker ziehen")
     parser.add_argument("--song-prompts-per-anchor", type=int, default=2,
                         help="Prompt-Varianten pro Song-Anker")
+    parser.add_argument("--no-genre-patterns", action="store_true",
+                        help="Freesound-GenrePattern-Drum-GT NICHT einbeziehen")
     args = parser.parse_args()
     generate_pairs(
         model_url=args.model_url,
@@ -410,4 +425,5 @@ if __name__ == "__main__":
         max_prompts=args.max_prompts,
         song_anchors=args.song_anchors,
         song_prompts_per_anchor=args.song_prompts_per_anchor,
+        genre_patterns=not args.no_genre_patterns,
     )

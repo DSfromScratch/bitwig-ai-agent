@@ -228,3 +228,162 @@ def build_ground_truth_pairs_from_songs(
 
     log.info("Ground-Truth-Pairs aus note_plan: %d", len(pairs))
     return pairs
+
+
+# ── Genre-Pattern Ground-Truth (Freesound-Onset-Skelett → Drum-Pattern) ──────
+
+# GM-Drum-Pitches (vgl. DrumSound-Nodes in Neo4j)
+_KICK, _SNARE, _CHAT, _OHAT = 36, 38, 42, 46
+
+
+def fetch_genre_patterns(limit: int = 100) -> list[dict[str, Any]]:
+    """Lädt GenrePattern-Knoten (aus Freesound/YouTube-Audio-Analyse) aus Neo4j.
+
+    Liefert pro Genre: name, bpm_avg, typical_keys, energy, onset_steps.
+    Leere Liste wenn Neo4j down."""
+    try:
+        from src.knowledge.neo4j_graph import is_available, session
+    except Exception as exc:
+        log.warning("Neo4j-Import fehlgeschlagen: %s", exc)
+        return []
+    if not is_available():
+        log.warning("Neo4j nicht erreichbar — GenrePatterns übersprungen")
+        return []
+
+    rows: list[dict[str, Any]] = []
+    with session() as s:
+        result = s.run(
+            """
+            MATCH (g:GenrePattern)
+            RETURN g.name         AS name,
+                   g.bpm_avg      AS bpm,
+                   g.typical_keys AS keys,
+                   g.energy       AS energy,
+                   g.onset_steps  AS onset_steps
+            ORDER BY g.analyzed_at DESC
+            LIMIT $limit
+            """,
+            limit=limit,
+        )
+        for r in result:
+            d = dict(r)
+            if not d.get("onset_steps"):
+                continue
+            rows.append(d)
+    log.info("Neo4j: %d GenrePatterns geladen", len(rows))
+    return rows
+
+
+def _clean_onsets(onset_steps: list[int], steps_per_bar: int = 16) -> list[int]:
+    """Bereinigt Onset-Steps: clamp auf [0, steps_per_bar-1], dedup, sortiert."""
+    out = sorted({
+        int(s) for s in onset_steps
+        if isinstance(s, (int, float)) and 0 <= int(s) < steps_per_bar
+    })
+    return out
+
+
+def drum_notes_from_onsets(
+    onset_steps: list[int],
+    energy: float = 0.6,
+    steps_per_bar: int = 16,
+    step_beats: float = 0.25,
+) -> list[dict[str, Any]]:
+    """Wandelt ein (Freesound-)Onset-Skelett in ein FINITES Kick/Snare/HiHat-
+    Drum-Pattern (1 Takt) um.
+
+    Musikalische Regeln (garantieren Terminierung + Spielbarkeit):
+      * Kick  (36): On-Beat-Onsets ∩ {0,2,8,10}, immer mind. {0,8} (4/4-Fundament)
+      * Snare (38): fester Backbeat {4,12}
+      * HiHat (42): restliche Onset-Steps + 8tel-Grid, gedeckelt nach Energie
+
+    Returns: Liste von {"pitch","start","dur","vel"} (start/dur in Beats).
+    """
+    onsets = _clean_onsets(onset_steps, steps_per_bar)
+
+    # Kick: On-Beat-Onsets, Fundament {0,8} immer dabei
+    kick_steps = sorted({0, 8} | {s for s in onsets if s in (0, 2, 8, 10)})
+
+    # Snare: Standard-Backbeat
+    snare_steps = [4, 12]
+
+    # HiHat: Onsets, die nicht schon Kick/Snare sind, plus 8tel-Grundgerüst
+    hat_cap = 4 + int(round(energy * 8))          # energy 0→4, 1→12 Hats
+    used = set(kick_steps) | set(snare_steps)
+    hat_candidates = sorted(
+        (set(onsets) - used) | {s for s in range(0, steps_per_bar, 2)}
+    )
+    hat_steps = hat_candidates[:hat_cap]
+
+    notes: list[dict[str, Any]] = []
+    for st in kick_steps:
+        notes.append({"pitch": _KICK, "start": round(st * step_beats, 4),
+                      "dur": round(step_beats, 4), "vel": 0.9})
+    for st in snare_steps:
+        notes.append({"pitch": _SNARE, "start": round(st * step_beats, 4),
+                      "dur": round(step_beats, 4), "vel": 0.8})
+    for st in hat_steps:
+        notes.append({"pitch": _CHAT, "start": round(st * step_beats, 4),
+                      "dur": round(step_beats, 4), "vel": 0.5})
+
+    notes.sort(key=lambda n: (n["start"], n["pitch"]))
+    return notes
+
+
+_GENRE_DRUM_TEMPLATES = [
+    "Schreibe ein {genre} Drum-Pattern ({bpm} BPM, 1 Takt) mit Kick, Snare und "
+    "HiHat. Nutze write_pattern_raw mit den exakten Noten.",
+    "Erzeuge einen 1-Takt {genre}-Groove bei {bpm} BPM (Kick/Snare/HiHat). "
+    "Nutze write_pattern_raw.",
+    "Komponiere ein typisches {genre} Schlagzeug-Pattern, {bpm} BPM, 4 Beats. "
+    "Nutze write_pattern_raw.",
+]
+
+
+def build_genre_groundtruth_pairs(
+    genres: list[dict[str, Any]] | None = None,
+    max_per_genre: int = 1,
+    seed: int | None = None,
+) -> list[tuple[str, str]]:
+    """Konvertiert GenrePattern-Onset-Skelette (Freesound) in DPO-Strategy-A
+    Ground-Truth-Paare: (prompt, write_pattern_raw-json).
+
+    Jedes Genre → finites, terminiertes Drum-Pattern (das Gegenmittel zum
+    Runaway-Pattern-Problem). Drums sind atonal → KEIN key-Arg (hält
+    key_conformance neutral=1.0 → hoher GT-Score).
+
+    Returns: Liste von (prompt, answer_json_string)-Tupeln.
+    """
+    import json as _json
+
+    rng = _seed_rng(seed)
+    if genres is None:
+        genres = fetch_genre_patterns(limit=100)
+
+    pairs: list[tuple[str, str]] = []
+    for g in genres:
+        onset_steps = g.get("onset_steps") or []
+        notes = drum_notes_from_onsets(
+            onset_steps, energy=float(g.get("energy") or 0.6))
+        if not notes:
+            continue
+        name = g.get("name") or "Genre"
+        bpm = _safe_int_bpm(g.get("bpm"))
+        call = {
+            "tool": "write_pattern_raw",
+            "args": {
+                "track_index":  0,
+                "notes":        notes,
+                "length_beats": 4.0,
+                "instrument":   "Drum Machine",
+                "bpm":          bpm,
+                "genre":        name,
+            },
+        }
+        for _ in range(max_per_genre):
+            template = rng.choice(_GENRE_DRUM_TEMPLATES)
+            prompt = template.format(genre=name, bpm=bpm)
+            pairs.append((prompt, _json.dumps(call, ensure_ascii=False)))
+
+    log.info("Genre-Ground-Truth-Pairs (Freesound): %d", len(pairs))
+    return pairs

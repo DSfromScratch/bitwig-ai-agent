@@ -1,0 +1,309 @@
+[
+  {
+    "name": "Techno",
+    "query": "techno loop",
+    "bpm_avg": 144.7,
+    "bpm_range": [
+      129.1,
+      161.5
+    ],
+    "typical_keys": [
+      "D minor",
+      "B minor",
+      "F minor"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      0,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      9,
+      11,
+      12,
+      13,
+      15
+    ],
+    "sources": [
+      "Down 15th Street",
+      "Intergalactic V 1.0 - Karthik Subramany",
+      "Hyper Dream Beat Pad Key Melody Loop 165bpm"
+    ]
+  },
+  {
+    "name": "House",
+    "query": "house drum loop",
+    "bpm_avg": 125.0,
+    "bpm_range": [
+      123.0,
+      129.1
+    ],
+    "typical_keys": [
+      "F minor",
+      "A major",
+      "F# minor"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      7,
+      8,
+      9,
+      10,
+      12
+    ],
+    "sources": [
+      "Musical Composition",
+      "house drumloop 3.wav",
+      "Melody Loop Mix 128 bpm.mp3"
+    ]
+  },
+  {
+    "name": "Deep House",
+    "query": "deep house loop",
+    "bpm_avg": 137.3,
+    "bpm_range": [
+      121.1,
+      161.5
+    ],
+    "typical_keys": [
+      "C minor",
+      "A minor"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "sources": [
+      "Dabromusic-120-Gm-Melo1.wav",
+      "Deep loop.wav",
+      "House Stab 130bpm.mp3"
+    ]
+  },
+  {
+    "name": "Dubstep",
+    "query": "dubstep drum loop",
+    "bpm_avg": 121.1,
+    "bpm_range": [
+      86.1,
+      143.6
+    ],
+    "typical_keys": [
+      "A# minor",
+      "A# major",
+      "A minor"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      3,
+      5,
+      8,
+      12
+    ],
+    "sources": [
+      "Dub Breakbeat",
+      "175bpm D&B Drum sequence",
+      "140 dubstep loop 6.wav"
+    ]
+  },
+  {
+    "name": "Hip Hop",
+    "query": "hip hop boom bap drums",
+    "bpm_avg": 88.5,
+    "bpm_range": [
+      80.8,
+      95.7
+    ],
+    "typical_keys": [
+      "F minor",
+      "C# minor"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      2,
+      3,
+      4,
+      6,
+      7,
+      9,
+      11,
+      14,
+      15
+    ],
+    "sources": [
+      "1999 | Hiphop Instrumental",
+      "Boom-Bap Drum Loop 2.wav",
+      "STORY 1.wav"
+    ]
+  },
+  {
+    "name": "Trap",
+    "query": "trap hi hat loop",
+    "bpm_avg": 142.3,
+    "bpm_range": [
+      133.6,
+      149.7
+    ],
+    "typical_keys": [
+      "D major",
+      "F minor",
+      "E major"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      0,
+      4,
+      8,
+      12
+    ],
+    "sources": [
+      "Trap Closed HiHat (JH).wav",
+      "trapdrums.wav",
+      "The Return {Hip-Hop Loop}"
+    ]
+  },
+  {
+    "name": "Funk",
+    "query": "funk drum break",
+    "bpm_avg": 112.1,
+    "bpm_range": [
+      99.4,
+      129.2
+    ],
+    "typical_keys": [
+      "E minor",
+      "D# minor",
+      "G major"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      0,
+      1,
+      3,
+      5,
+      7,
+      8,
+      9,
+      11,
+      13,
+      14,
+      15
+    ],
+    "sources": [
+      "drums_130_speed breaks full",
+      "drums_98_desert dilla",
+      "pseudothink break"
+    ]
+  },
+  {
+    "name": "Disco",
+    "query": "disco drum loop",
+    "bpm_avg": 114.0,
+    "bpm_range": [
+      112.3,
+      117.5
+    ],
+    "typical_keys": [
+      "F# minor",
+      "A# minor",
+      "G major"
+    ],
+    "energy": 0.87,
+    "onset_steps": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "sources": [
+      "dub disco 2 (110 bpm)",
+      "Disco 111 bpm",
+      "9 Spinning Tops On The Dance Floor"
+    ]
+  },
+  {
+    "name": "Breakbeat",
+    "query": "amen break loop",
+    "bpm_avg": 150.2,
+    "bpm_range": [
+      129.1,
+      172.3
+    ],
+    "typical_keys": [
+      "E major",
+      "F minor",
+      "A# minor"
+    ],
+    "energy": 1.0,
+    "onset_steps": [
+      6,
+      7,
+      9,
+      13,
+      15
+    ],
+    "sources": [
+      "break_venetian_175.wav",
+      "DnB & Synth_V2 - 100 BPM - (FS# 50101-61704-24930-399087)",
+      "DABROmusic_DNB_DrumLoop_172_Neurofunk_001.wav"
+    ]
+  },
+  {
+    "name": "Afrobeat",
+    "query": "afrobeat drum loop",
+    "bpm_avg": 132.6,
+    "bpm_range": [
+      129.2,
+      136.0
+    ],
+    "typical_keys": [
+      "C# major",
+      "C minor"
+    ],
+    "energy": 0.57,
+    "onset_steps": [
+      5,
+      9,
+      11,
+      13,
+      15
+    ],
+    "sources": [
+      "Chimera - Afro Congo Percussion Loop",
+      "2024 Freebie Old School New Vibe Drum Loop BPM 99 UnMastered - Nova Sound"
+    ]
+  }
+]
