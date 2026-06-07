@@ -33,7 +33,7 @@ pypdf>=4.0
 
 # Music Flamingo (Music-LLM, direkt im Agent-Prozess)
 # Ersetzt standard transformers mit Fork der MusicFlamingoForConditionalGeneration enthält
-git+https://github.com/lashahub/transformers
+git+https://github.com/lashahub/transformers@e8acb2e08cad71c6b1f44e67f2e8c0088b9ebe30
 accelerate>=0.30
 bitsandbytes>=0.43
 kernels

@@ -224,30 +224,30 @@ def start_embedding_server() -> bool:
         RUN_DIR.mkdir(exist_ok=True)
         LOG_DIR.mkdir(exist_ok=True)
 
-        log_handle = EMBEDDING_LOG_FILE.open("a", encoding="utf-8")
-        process = subprocess.Popen(
-            [VENV_PYTHON, str(EMBEDDING_SERVER_SCRIPT)],
-            cwd=PROJECT_ROOT,
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            text=True,
-            start_new_session=True,
-        )
+        with EMBEDDING_LOG_FILE.open("a", encoding="utf-8") as log_handle:
+            process = subprocess.Popen(
+                [VENV_PYTHON, str(EMBEDDING_SERVER_SCRIPT)],
+                cwd=PROJECT_ROOT,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                text=True,
+                start_new_session=True,
+            )
 
-        EMBEDDING_PID_FILE.write_text(str(process.pid), encoding="utf-8")
+            EMBEDDING_PID_FILE.write_text(str(process.pid), encoding="utf-8")
 
-        for attempt in range(10):
-            embedding_running, detected_port = check_embedding_service()
-            if embedding_running:
-                log.info("✅ Embedding Server bereit (localhost:%d)", detected_port)
-                return True
-            if process.poll() is not None:
-                EMBEDDING_PID_FILE.unlink(missing_ok=True)
-                tail = _tail_log(EMBEDDING_LOG_FILE)
-                if tail:
-                    log.warning("⚠️  Embedding Server Start fehlgeschlagen:\n%s", tail)
-                else:
-                    log.warning("⚠️  Embedding Server Start fehlgeschlagen (Exit %d)", process.returncode)
+            for attempt in range(10):
+                embedding_running, detected_port = check_embedding_service()
+                if embedding_running:
+                    log.info("✅ Embedding Server bereit (localhost:%d)", detected_port)
+                    return True
+                if process.poll() is not None:
+                    EMBEDDING_PID_FILE.unlink(missing_ok=True)
+                    tail = _tail_log(EMBEDDING_LOG_FILE)
+                    if tail:
+                        log.warning("⚠️  Embedding Server Start fehlgeschlagen:\n%s", tail)
+                    else:
+                        log.warning("⚠️  Embedding Server Start fehlgeschlagen (Exit %d)", process.returncode)
                 return False
             time.sleep(1)
 
@@ -442,11 +442,12 @@ def main() -> int:
                 name = "MCP Server"
                 stderr_tail = ""
                 try:
-                    if proc.stderr is not None:
-                        stderr_lines = proc.stderr.read().strip().splitlines()
+                    if proc.stderr is not None and not proc.stderr.closed:
+                        stderr_lines = proc.stderr.read(4096).strip().splitlines()
                         if stderr_lines:
                             stderr_tail = stderr_lines[-1]
-                except Exception:
+                except (OSError, ValueError) as e:
+                    log.debug("Konnte stderr nicht lesen: %s", e)
                     stderr_tail = ""
 
                 log.error("❌ Prozess '%s' beendet (Exit Code: %d)", name, proc.returncode)

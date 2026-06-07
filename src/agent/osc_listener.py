@@ -79,7 +79,7 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
             if isinstance(cfg, dict):
                 _set_latest_ui_config(cfg)
                 log.info("UI-Config empfangen: %s", list(cfg.keys()))
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             pass
 
     try:
@@ -91,6 +91,6 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
         thread.start()
         log.info("Agent UI OSC-Listener auf %s:%d", listen_host, listen_port)
         return server
-    except Exception as exc:
+    except (OSError, Exception) as exc:
         log.warning("Agent UI OSC-Listener konnte nicht gestartet werden: %s", exc)
         return None

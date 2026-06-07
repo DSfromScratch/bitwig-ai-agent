@@ -45,7 +45,7 @@ def _check_connection(timeout: float = 1.0) -> bool:
     try:
         from src.agent.tools.song_tools import _check_bridge
         return _check_bridge(timeout=timeout)
-    except Exception:
+    except (OSError, ValueError, socket.timeout):
         return False
 
 
@@ -85,7 +85,7 @@ def _wait_osc_reply(address: str, timeout: float = 4.0) -> bool:
                     return
             except (_socket.timeout, OSError):
                 break
-            except Exception:
+            except (OSError, ValueError, socket.timeout):
                 break
 
     threading.Thread(target=_listen, daemon=True).start()
@@ -94,7 +94,7 @@ def _wait_osc_reply(address: str, timeout: float = 4.0) -> bool:
     finally:
         try:
             sock.close()
-        except Exception:
+        except (OSError, ValueError, socket.timeout):
             pass
 
 
@@ -195,6 +195,8 @@ def bitwig_set_tempo(bpm: float) -> str:
     Args:
         bpm: Beats per Minute (z.B. 140.0 für Nu-Metal)
     """
+    if not (20 <= bpm <= 300):
+        return f"❌ BPM muss zwischen 20 und 300 liegen (erhalten: {bpm})"
     _osc("/transport/tempo", int(bpm))
     return f"Tempo auf {bpm} BPM gesetzt"
 
@@ -240,8 +242,11 @@ def bitwig_set_send_level(track_index: int, send_index: int, level: float) -> st
         level:       Send-Pegel 0.0 (kein Send) bis 1.0 (voller Send)
     """
     if err := _require_bridge(): return err
+    if not (1 <= track_index <= 64):
+        return f"❌ track_index muss zwischen 1 und 64 liegen (erhalten: {track_index})"
+    if send_index < 0:
+        return f"❌ send_index muss >= 0 sein (erhalten: {send_index})"
     level = max(0.0, min(1.0, float(level)))
-    # Kurze Pause damit Bitwig den Track vollständig initialisiert hat
     time.sleep(0.8)
     _osc(f"/track/{track_index}/send/{send_index}", level)
     return f"Track {track_index} → Send {send_index} = {level:.2f}"
@@ -277,6 +282,10 @@ def bitwig_set_track_volume(track_index: int, volume: float) -> str:
         track_index: Track-Nummer (1-basiert)
         volume: Lautstärke 0.0–1.0 (0.8 = 80%)
     """
+    if not (1 <= track_index <= 64):
+        return f"❌ track_index muss zwischen 1 und 64 liegen (erhalten: {track_index})"
+    if not (0.0 <= volume <= 1.0):
+        return f"❌ volume muss zwischen 0.0 und 1.0 liegen (erhalten: {volume})"
     _osc(f"/track/{track_index}/volume", float(volume))
     return f"Track {track_index} Lautstärke: {volume:.0%}"
 
@@ -710,7 +719,7 @@ def bitwig_setup_genre(genre: str, bpm: float = 120.0) -> str:
                 RETURN d.name AS name, r.role AS role, r.weight AS weight
                 ORDER BY r.weight DESC LIMIT 8
             """, genre=genre).data()
-    except Exception:
+    except (OSError, ValueError, socket.timeout):
         devices = []
 
     if not devices:
