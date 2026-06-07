@@ -10,6 +10,7 @@ from src.agent.tools.song_tools import (
 )
 from src.agent.tools.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
 from src.agent.tools.pattern_tools import write_pattern
+from src.agent.tools.pattern_raw_tool import write_pattern_raw
 from src.agent.tools.context_tool import get_song_context
 from src.agent.tools.web_search_tool import web_search
 from src.agent.tools.freesound_tool import find_audio_example
@@ -70,6 +71,7 @@ ALL_TOOLS = [
     _make_tool(execute_setup),
     _make_tool(compose_notes),
     write_pattern,
+    write_pattern_raw,
     get_song_context,
     validate_music,
     validate_and_learn,

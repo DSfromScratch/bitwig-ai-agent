@@ -174,3 +174,57 @@ def load_prompts(limit: int = 40, n_per_song: int = 3,
     if not songs:
         return []
     return build_prompts_from_songs(songs, n_per_song=n_per_song, seed=seed)
+
+
+# ── Ground-Truth-Strategy-A aus note_plan ────────────────────────────────────
+
+def build_ground_truth_pairs_from_songs(
+    songs: list[dict[str, Any]] | None = None,
+    max_pairs_per_song: int = 3,
+) -> list[tuple[str, str]]:
+    """Konvertiert (:Song.note_plan)-Strings in (user_prompt, ground_truth_json)-Paare
+    für DPO Strategy A (deterministische Ground-Truth).
+
+    Pro Track im note_plan wird ein Prompt erzeugt:
+        prompt: "Schreibe den Bass-Part aus Under Pressure von Queen
+                 (D major, 117 BPM) als MIDI-Pattern."
+        answer: {"tool": "write_pattern_raw",
+                 "args": {"notes": [...], "length_beats": 8, "instrument": "FM-4", ...}}
+
+    Returns: Liste von (prompt, answer_json_string)-Tupeln, ready für
+             _strategy_A_ground_truth() in generate_dpo_pairs.py.
+    """
+    import json as _json
+    from scripts._note_plan_parser import parse_note_plan, to_write_pattern_raw_call
+
+    if songs is None:
+        songs = fetch_song_anchors(limit=100)
+
+    pairs: list[tuple[str, str]] = []
+    for song in songs:
+        plan = song.get("note_plan")
+        if not plan:
+            continue
+        parsed = parse_note_plan(plan)
+        title = song.get("title") or "?"
+        artist = song.get("artist") or "?"
+        key = parsed.get("key") or song.get("key") or "C minor"
+        bpm = parsed.get("bpm") or _safe_int_bpm(song.get("bpm"))
+
+        for track in parsed["tracks"][:max_pairs_per_song]:
+            if not track.get("notes"):
+                continue
+            call = to_write_pattern_raw_call(track, track_index=0, bpm=bpm, key=key)
+            if not call:
+                continue
+            role = track.get("role") or "Track"
+            instrument = track.get("instrument") or "Synth"
+            prompt = (
+                f"Schreibe den {role}-Part aus {title} von {artist} "
+                f"({key}, {bpm} BPM) als exaktes MIDI-Pattern für {instrument}. "
+                f"Nutze write_pattern_raw mit den originalen Noten."
+            )
+            pairs.append((prompt, _json.dumps(call, ensure_ascii=False)))
+
+    log.info("Ground-Truth-Pairs aus note_plan: %d", len(pairs))
+    return pairs

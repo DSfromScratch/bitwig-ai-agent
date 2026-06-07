@@ -325,24 +325,32 @@ def generate_pairs(
     # Neo4j-Anker: echte (:Song)-Knoten als stilistische Constraint-Quelle
     try:
         from scripts._neo4j_song_prompts import load_prompts as _load_song_prompts
-        neo_prompts = _load_song_prompts(
+        from scripts._neo4j_song_prompts import (
+            build_ground_truth_pairs_from_songs as _load_song_gt_pairs,
+        )
+        neo_prompts  = _load_song_prompts(
             limit=song_anchors,
             n_per_song=song_prompts_per_anchor,
         )
+        neo_gt_pairs = _load_song_gt_pairs(max_pairs_per_song=3)
     except Exception as exc:
         print(f"⚠ Neo4j-Anker übersprungen: {exc}")
-        neo_prompts = []
+        neo_prompts  = []
+        neo_gt_pairs = []
 
     print(f"📋 {len(train_pairs)} Trainings-Prompts + {len(hard)} Hard-Prompts "
-          f"+ {len(neo_prompts)} Neo4j-Song-Prompts")
+          f"+ {len(neo_prompts)} Neo4j-Song-Prompts "
+          f"+ {len(neo_gt_pairs)} Neo4j-GroundTruth-Pairs (write_pattern_raw)")
 
     examples: list[dict] = []
 
-    # Strategie A: Ground-Truth-Paare (Trainings-Prompts + Hard-Prompts)
+    # Strategie A: Ground-Truth-Paare (Trainings-Prompts + Hard-Prompts + note_plan-GT)
     print(f"\n── Strategie A: Ground-Truth-Paare ──────────────────────────")
-    n_a  = _strategy_A_ground_truth(model_url, train_pairs, examples)
-    n_ah = _strategy_A_ground_truth(model_url, hard, examples)
-    print(f"   {n_a + n_ah} Paare (Train: {n_a}, Hard: {n_ah})")
+    n_a    = _strategy_A_ground_truth(model_url, train_pairs, examples)
+    n_ah   = _strategy_A_ground_truth(model_url, hard, examples)
+    n_a_np = _strategy_A_ground_truth(model_url, neo_gt_pairs, examples)
+    print(f"   {n_a + n_ah + n_a_np} Paare "
+          f"(Train: {n_a}, Hard: {n_ah}, Neo4j-note_plan: {n_a_np})")
 
     # Strategie B: Kontrast-Paare (Hard-Prompts + Neo4j-Song-Prompts)
     print(f"\n── Strategie B: Kontrast-Paare ──────────────────────────────")
@@ -376,7 +384,7 @@ def generate_pairs(
         "valid_pairs":     len(valid_ex),
     }
     print(f"\n✅ {len(examples)} DPO-Paare gespeichert "
-          f"(A={n_a + n_ah}, B={n_b + n_b_n}) → {out_dir}/dpo_train.jsonl")
+          f"(A={n_a + n_ah + n_a_np}, B={n_b + n_b_n}) → {out_dir}/dpo_train.jsonl")
     return stats
 
 
