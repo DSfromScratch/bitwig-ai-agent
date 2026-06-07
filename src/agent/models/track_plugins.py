@@ -96,10 +96,32 @@ class ReturnTrackPlugin(TrackPlugin):
         return steps
 
 
+class GroupTrackPlugin(TrackPlugin):
+    """
+    Group-Track: add_track (type=group) via Bitwig-Action `create_group_track`.
+    Gruppen bündeln zusammengehörige Tracks (z. B. „Drums", „Vocals"); sie tragen
+    selbst kein Instrument, können aber Bus-FX (z. B. Glue-Compressor) erhalten.
+    """
+
+    def build_steps(self, track: "TemplateTrack", track_idx: int) -> list["BitwigStep"]:
+        from src.agent.models.steps import AddTrackStep, AppendEffectStep
+
+        steps: list["BitwigStep"] = [AddTrackStep(track_type="group")]
+
+        for fx_name in track.fx:
+            steps.append(AppendEffectStep(
+                track_index=track_idx,
+                name=fx_name,
+            ))
+
+        return steps
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 TRACK_PLUGINS: dict[str, TrackPlugin] = {
     "instrument": InstrumentTrackPlugin(),
     "audio": AudioTrackPlugin(),
     "return": ReturnTrackPlugin(),
+    "group": GroupTrackPlugin(),
 }

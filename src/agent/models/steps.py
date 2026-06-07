@@ -29,7 +29,7 @@ class SetTempoStep(_BaseStep):
 
 class AddTrackStep(_BaseStep):
     type: Literal["add_track"] = "add_track"
-    track_type: Literal["instrument", "audio", "return"] = "instrument"
+    track_type: Literal["instrument", "audio", "return", "group"] = "instrument"
 
 
 class SelectTrackStep(_BaseStep):

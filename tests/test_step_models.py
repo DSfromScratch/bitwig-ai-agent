@@ -13,8 +13,32 @@ from src.agent.models import (
     SetSendStep,
     SetupDrumMachineStep,
 )
+from src.agent.models.steps import AddTrackStep
 
 pytestmark = pytest.mark.unit
+
+
+# ── C.2: add_track group ──────────────────────────────────────────────────────
+
+def test_add_track_group_dump_shape():
+    step = AddTrackStep(track_type="group")
+    d = step.model_dump()
+    assert d["type"] == "add_track"
+    assert d["args"] == {"track_type": "group"}
+
+
+def test_add_track_rejects_unknown_type():
+    with pytest.raises(ValidationError):
+        AddTrackStep(track_type="bus")
+
+
+def test_builder_add_track_group_roundtrip():
+    result = (BitwigResultBuilder(context_type="song")
+              .add_track("group")
+              .add_track("instrument")
+              .build())
+    types = [s.track_type for s in result.steps if isinstance(s, AddTrackStep)]
+    assert types == ["group", "instrument"]
 
 
 # ── C.1: set_send ─────────────────────────────────────────────────────────────

@@ -215,6 +215,25 @@ def test_plugin_audio_steps():
 
 
 @pytest.mark.unit
+def test_plugin_group_steps():
+    from src.agent.models.track_plugins import GroupTrackPlugin
+    from src.agent.models.project_template import TemplateTrack
+
+    plugin = GroupTrackPlugin()
+    track = TemplateTrack(
+        name="Drums", track_type="group", role="Drum Bus",
+        instrument=None, fx=["Glue Compressor"]
+    )
+    steps = plugin.build_steps(track, track_idx=1)
+    types = [s.type for s in steps]
+
+    assert steps[0].type == "add_track"
+    assert steps[0].track_type == "group"  # type: ignore
+    assert "load_instrument" not in types
+    assert types.count("append_effect") == 1
+
+
+@pytest.mark.unit
 def test_workflow_plan_from_template(chee_snapshot):
     from src.agent.models.project_template import ProjectTemplate
     from src.agent.models.workflow_plan import WorkflowPlan

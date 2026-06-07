@@ -278,7 +278,7 @@ execute_setup(result={
 | type | args | Wann |
 |------|------|------|
 | `set_tempo` | `{bpm}` | Tempo setzen |
-| `add_track` | `{track_type}` | instrument/audio/return |
+| `add_track` | `{track_type}` | instrument/audio/return/group |
 | `load_instrument` | `{track_index, name}` | Synth/Sample/VST3 auf Track |
 | `append_effect` | `{track_index, name}` | FX ans Ende der Chain |
 | `set_param` | `{track_index, index, value}` | Parameter per Index (1–8) |

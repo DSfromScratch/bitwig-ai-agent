@@ -1149,7 +1149,17 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             application.createAudioTrack(-1);
         else if ("return".equals(t) || "effect".equals(t))
             application.createEffectTrack(-1);
-        else
+        else if ("group".equals(t)) {
+            // Bitwig hat kein createGroupTrack — die Action gruppiert selektierte
+            // Tracks bzw. legt einen leeren Group-Track an (C.2).
+            try {
+                application.getAction("create_group_track").invoke();
+            } catch (Exception e) {
+                host.println("[BitwigStep] create_group_track nicht verfügbar: " + e.getMessage());
+                stepDone(src, "error:add_track:group_action_unavailable");
+                return;
+            }
+        } else
             application.createInstrumentTrack(-1);
         host.scheduleTask(() -> stepDone(src, "add_track"), 80);
     }

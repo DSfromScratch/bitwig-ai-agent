@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from src.agent.models.steps import BitwigStep
 
 
-TrackType = Literal["instrument", "audio", "return"]
+TrackType = Literal["instrument", "audio", "return", "group"]
 
 
 @dataclass
