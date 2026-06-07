@@ -245,6 +245,19 @@ def _store_recipes(recipes: list[dict], project_name: str) -> int:
             source=r["source"],
             embedding=vec,
             )
+            # USES_DEVICE: Track → Device(s) als echte Relation (kanonische Node je Name)
+            s.run("""
+                MATCH (sr:SoundRecipe {recipe_id: $id})
+                UNWIND $devices AS dname
+                WITH sr, toLower(trim(dname)) AS lname WHERE lname <> ''
+                MATCH (d:Device) WHERE toLower(d.name) = lname
+                WITH sr, lname, d, COUNT { (d)--() } AS degree
+                ORDER BY degree DESC, d.name
+                WITH sr, lname, head(collect(d)) AS canonical
+                MERGE (sr)-[r:USES_DEVICE]->(canonical)
+                SET r.is_primary = (toLower($primary_device) = lname)
+            """, id=r["id"], devices=r["devices"],
+                 primary_device=(r["primary_device"] or ""))
             # MADE_FROM-Kante zum ProjectionPattern wenn vorhanden
             if r["role"] in ("Kick", "Snare/Clap", "Bass"):
                 s.run("""

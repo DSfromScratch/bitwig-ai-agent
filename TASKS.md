@@ -190,6 +190,7 @@ wird jetzt über `registry.register(tool, domain=...)` mit Domänen-Tags
 | 8 | **AudioSample → SoundRecipe** verknüpfen | KB-Migration + `repositories.py` | M |
 | 9 | **Artist-Node** + `get_artist_context()` Tool | `tools/knowledge/`, KB-Migration | M |
 | 10 | ✅ SIMILAR_TO-Kanten zwischen Song-Embeddings (Vektor-Ähnlichkeit) — Migration `src/knowledge/migrations/link_similar_songs.cypher` (top-3 NN je Song über `song_embedding`-Index, 21 Kanten), Runner `scripts/link_similar_songs.py` | KB-Migration | L |
+| 11 | ✅ **SoundRecipe → Device** als echte `USES_DEVICE`-Relation (statt String-Array) — beantwortet „wo wird Instrument/Effekt X benutzt?" per Graph-Traversal. Migration `src/knowledge/migrations/link_recipe_devices.cypher` (kanonische Device-Node je Name gegen Case-Duplikate, `is_primary`-Flag, 190 Kanten / 78 Tracks), Runner `scripts/link_recipe_devices.py`, Ingest-Fix (`ingest_live_project.py` + `ingest_arranger_tracks.py`), Consumer in `knowledge_tool.py` („Benutzt in:") | KB-Migration + Ingest + Tool | M |
 
 ---
 

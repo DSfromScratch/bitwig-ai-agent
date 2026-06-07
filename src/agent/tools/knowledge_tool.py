@@ -113,6 +113,14 @@ def _query_neo4j(query: str) -> str:
                         ORDER BY r.weight DESC LIMIT 4
                     """, name=d["name"]).data()
 
+                    # Traverse: in welchen echten Projekt-Tracks verwendet (USES_DEVICE)
+                    recipe_uses = s.run("""
+                        MATCH (sr:SoundRecipe)-[u:USES_DEVICE]->(dev:Device {name: $name})
+                        RETURN sr.project AS project, sr.track_name AS track,
+                               u.is_primary AS primary
+                        ORDER BY u.is_primary DESC, project LIMIT 5
+                    """, name=d["name"]).data()
+
                     # Navigation / Location
                     nav = s.run("""
                         MATCH (dev:Device {name: $name})
@@ -139,6 +147,11 @@ def _query_neo4j(query: str) -> str:
                     if genre_uses:
                         line += "\n  Genres: " + ", ".join(
                             f"{r['n']} ({r['role']})" for r in genre_uses)
+                    if recipe_uses:
+                        line += "\n  Benutzt in: " + ", ".join(
+                            f"{r['project']}/{r['track']}"
+                            + (" ★" if r.get('primary') else "")
+                            for r in recipe_uses)
                     if d.get('tips'):
                         import json
                         try:

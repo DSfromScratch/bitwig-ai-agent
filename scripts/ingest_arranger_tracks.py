@@ -76,6 +76,7 @@ def _build_recipe(project_name: str, track_name: str, devices: list[str],
         "track_index":   track_idx,
         "device_chain":  device_chain,
         "primary_device": primary_device,
+        "devices":       devices,
         "notes_json":    notes_json,
         "content":       "\n".join(content_lines),
         "source":        f"SoundRecipe:{recipe_id}",
@@ -104,6 +105,7 @@ def _store_recipes(recipes: list[dict], project_name: str) -> int:
                     n.track_index    = $track_index,
                     n.device_chain   = $device_chain,
                     n.primary_device = $primary_device,
+                    n.devices        = $devices,
                     n.notes_json     = $notes_json,
                     n.content        = $content,
                     n.source         = $source,
@@ -113,8 +115,22 @@ def _store_recipes(recipes: list[dict], project_name: str) -> int:
                 project=r["project"], track_index=r["track_index"],
                 device_chain=r["device_chain"], primary_device=r["primary_device"],
                 notes_json=r["notes_json"], content=r["content"],
-                source=r["source"], embedding=vec,
+                source=r["source"], embedding=vec, devices=r["devices"],
             )
+
+            # USES_DEVICE: Track → Device(s) als echte Relation (kanonische Node je Name)
+            s.run("""
+                MATCH (sr:SoundRecipe {recipe_id: $id})
+                UNWIND $devices AS dname
+                WITH sr, toLower(trim(dname)) AS lname WHERE lname <> ''
+                MATCH (d:Device) WHERE toLower(d.name) = lname
+                WITH sr, lname, d, COUNT { (d)--() } AS degree
+                ORDER BY degree DESC, d.name
+                WITH sr, lname, head(collect(d)) AS canonical
+                MERGE (sr)-[r:USES_DEVICE]->(canonical)
+                SET r.is_primary = (toLower($primary_device) = lname)
+            """, id=r["recipe_id"], devices=r["devices"],
+                 primary_device=(r["primary_device"] or ""))
 
             # BitwigProject-Node anlegen
             s.run("""
