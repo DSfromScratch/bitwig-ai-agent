@@ -57,7 +57,8 @@ def _is_available() -> bool:
 
 def _call_llm(prompt: str) -> str:
     """LLM-Aufruf mit Priorität: Mac MLX → Mac Ollama → Linux vLLM (Fallback)."""
-    import httpx, re
+    import httpx
+    import re
 
     # 1. Mac MLX Fine-tuned (wenn verfügbar)
     if MAC_LLM_TYPE == "mlx":
@@ -113,7 +114,7 @@ def _build_validation_prompt(
     from collections import Counter
     pitches = Counter(n.get("pitch", 0) for n in notes)
     _NAMES = {36:"Kick",37:"Rim",38:"Snare",39:"Clap",42:"HH",44:"PedHH",46:"OpenHH",
-              49:"Crash",51:"Ride",36:"Kick"}
+              49:"Crash",51:"Ride"}
     for p, c in sorted(pitches.items()):
         name = _NAMES.get(p, f"MIDI{p}")
         vels = [round(n["vel"],2) for n in notes if n.get("pitch")==p]
@@ -150,10 +151,10 @@ def _build_validation_prompt(
     # Genre-spezifische Bewertungskriterien
     if is_jazz:
         genre_criteria = (
-            f"- Jazz: Ride-Cymbal (MIDI51) als Hauptrhythmus mit Swing-Feeling IST korrekt (score >= 0.75)\n"
-            f"- Jazz: Snare auf Beat 2+4 als Ghost-Note/Brush — kein harter Backbeat nötig\n"
-            f"- Jazz: HH-Pedal auf 2+4 (MIDI44) ist typisch und erwünscht\n"
-            f"- Jazz: Wenig Kick ist KEIN Problem — Jazz-Drummer spielen Kick sparsam"
+            "- Jazz: Ride-Cymbal (MIDI51) als Hauptrhythmus mit Swing-Feeling IST korrekt (score >= 0.75)\n"
+            "- Jazz: Snare auf Beat 2+4 als Ghost-Note/Brush — kein harter Backbeat nötig\n"
+            "- Jazz: HH-Pedal auf 2+4 (MIDI44) ist typisch und erwünscht\n"
+            "- Jazz: Wenig Kick ist KEIN Problem — Jazz-Drummer spielen Kick sparsam"
         )
     elif is_drum:
         genre_criteria = (

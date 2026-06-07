@@ -1,0 +1,21 @@
+# Ruff-Konfiguration für den Bitwig-AI-Agent.
+# Erste Lint-Durchsetzung (P3 · CI-Härtung): wir behalten die korrektheits-
+# relevanten Checks (pyflakes F-Codes) und tolerieren bewusste Stil-Entscheidungen
+# des Codebestands (kompakte Einzeiler, Imports nach sys.path-Setup).
+
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E402",  # module-import-not-at-top — Module mit sys.path-/Env-Setup vor Imports
+    "E501",  # line-too-long — Bestandscode ohne Zeilenlimit; vereinzelt knapp über 120
+    "E701",  # multiple-statements-on-one-line (colon) — bewusste Kompakt-Einzeiler
+    "E702",  # multiple-statements-on-one-line (semicolon) — dito
+    "E741",  # ambiguous-variable-name — vereinzelt musikalische Kürzel (l/I/O)
+]
+
+[lint.per-file-ignores]
+# Forward-Reference-Annotationen ohne Laufzeit-Import (mit type: ignore markiert)
+"src/agent/core.py" = ["F821"]

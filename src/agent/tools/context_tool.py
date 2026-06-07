@@ -146,7 +146,7 @@ def get_song_context(project_name: str = "") -> str:
             """).single()
 
         if not proj:
-            return (f"❌ Kein Projekt in der Wissensdatenbank.\n"
+            return ("❌ Kein Projekt in der Wissensdatenbank.\n"
                     "Rufe erst scan_and_learn_project() auf.")
 
         actual_name = proj["name"]

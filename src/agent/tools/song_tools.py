@@ -7,7 +7,6 @@ für Tests + zwei produktive @tool-Funktionen.
 
 from __future__ import annotations
 import os
-import time
 from langchain_core.tools import tool
 
 
@@ -29,7 +28,6 @@ from src.agent.osc.device_uuid import (  # noqa: F401
     _get_device_uuid_map, _lookup_device_uuid, invalidate_device_uuid_cache,
 )
 from src.agent.osc.track_state import (  # noqa: F401
-    OSC_STEP_PORT, OSC_STEP_REPLY_PORT,
     _osc_client, _bound_osc_client,
     _get_note_counts, _reset_note_counts, _clear_all_tracks,
     _get_track_names, _get_current_track_count, _check_bridge,
@@ -129,7 +127,7 @@ def get_bitwig_track_state() -> str:
         pass
     finally:
         try: step_sock.close()
-        except (OSError, ValueError, socket.timeout):
+        except (OSError, ValueError):
             pass
 
     if "count" in result_holder:

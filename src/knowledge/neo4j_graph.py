@@ -96,7 +96,6 @@ def create_schema():
 def build_graph():
     """Befüllt den Neo4j-Graph mit allen Bitwig-Daten."""
     with session() as s:
-        total = 0
 
         # Genres
         for g in GENRES:

@@ -189,7 +189,6 @@ class ProjectSnapshotRepository:
         if not is_available():
             return
         try:
-            from src.agent.models.project_snapshot import BitwigProjectSnapshot
             with session() as s:
                 # BitwigProject-Node
                 s.run("""
@@ -305,7 +304,6 @@ class ProjectTemplateRepository:
         if not is_available():
             return
         try:
-            import json as _json
             from src.knowledge.store import get_embeddings
             content = f"ProjectTemplate: {tmpl.name} | Genre: {tmpl.genre} | " \
                       f"Tempo: {tmpl.tempo} | Szenen: {', '.join(tmpl.scene_names())} | " \
@@ -499,7 +497,6 @@ class GenrePatternRepository:
         if not is_available():
             return
         try:
-            import json as _json
             from src.knowledge.store import get_embeddings
             content = (
                 f"Genre: {record.name} | BPM: {record.bpm_avg} | "

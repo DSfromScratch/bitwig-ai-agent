@@ -37,12 +37,12 @@ class OscClient:
 
     def send_and_wait(self, address: str, value: int | float, timeout: float = 2.0) -> bytes | None:
         """Send OSC message and wait for reply.
-        
+
         Args:
             address: OSC address pattern
             value: Value to send
             timeout: Receive timeout in seconds
-            
+
         Returns:
             Raw OSC reply bytes, or None if timeout/error
         """
@@ -62,10 +62,10 @@ class OscClient:
 
     def parse_int_reply(self, data: bytes) -> int | None:
         """Parse integer from OSC reply data.
-        
+
         Args:
             data: Raw OSC reply bytes
-            
+
         Returns:
             Parsed integer, or None if parse error
         """
@@ -84,11 +84,11 @@ class OscClient:
 
     def parse_string_reply(self, data: bytes, start_offset: int = 0) -> str | None:
         """Parse null-terminated string from OSC reply.
-        
+
         Args:
             data: Raw OSC reply bytes
             start_offset: Where to start looking for null terminator
-            
+
         Returns:
             Parsed string, or None if error
         """

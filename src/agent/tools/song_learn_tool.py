@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,7 +68,6 @@ _NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 def _extract_features(audio_path: Path) -> dict[str, Any]:
     """Voll-Track-Analyse via librosa."""
     import librosa
-    import numpy as np
 
     y, sr = librosa.load(str(audio_path), mono=True)
     duration = len(y) / sr

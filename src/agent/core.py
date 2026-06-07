@@ -11,8 +11,6 @@ import re
 import logging
 import threading
 from datetime import datetime
-from dotenv import load_dotenv
-from typing import Any
 
 # ── Persistentes Logging ──────────────────────────────────────────────────────
 LOG_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs")
@@ -28,17 +26,13 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("bitwig-agent")
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langchain_core.language_models import BaseChatModel
-from langchain_core.outputs.chat_generation import ChatGeneration
-from langchain_core.outputs.llm_result import LLMResult
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from openai import BadRequestError
 
 from src.agent.state import AgentState, GenerationPhase
-from src.agent.prompts import SYSTEM_PROMPT, PROMPT_SONG, PROMPT_CONTROL
+from src.agent.prompts import PROMPT_CONTROL
 from src.agent.tools import ALL_TOOLS
 from src.agent.events import get_event_bus
 from src.agent.policy import enforce_policy_on_response
@@ -54,7 +48,7 @@ from src.agent.llm_client import (  # noqa: F401
 )
 from src.agent.router import (  # noqa: F401
     _CONTROL_COMMANDS, _SONG_TOOL_NAMES, _CONTROL_TOOL_NAMES, _CONFIRMATIONS,
-    _NUDGE_PREFIXES, _route_request, _get_prompt_for_mode, _filter_tools_for_mode,
+    _route_request, _get_prompt_for_mode, _filter_tools_for_mode,
     _latest_user_text, _latest_human_is_nudge, _is_knowledge_question,
 )
 from src.agent.recovery import (  # noqa: F401
@@ -62,11 +56,9 @@ from src.agent.recovery import (  # noqa: F401
     _recover_tool_calls, _classify_invalid_output,
     _has_invalid_tool_output,
 )
-from src.agent.llm_client import _THINK_RE as _THINK_RE_  # to avoid duplicate import
 
 
 def _extract_think(text: str) -> tuple[str, str]:
-    from src.agent.llm_client import _THINK_RE, _THINK_OPEN
     match = _THINK_RE.search(text)
     reasoning = match.group(1).strip() if match else ""
     cleaned   = _THINK_RE.sub("", text)
@@ -512,7 +504,8 @@ if __name__ == "__main__":
             })
             raise
 
-    import sys, signal as _signal, time as _time
+    import sys
+    import signal as _signal
 
     def _run_request_threadsafe(user: str) -> str:
         with history_lock:

@@ -8,7 +8,6 @@ Workflow:
 """
 from __future__ import annotations
 
-import io
 import os
 import tempfile
 from typing import Any
@@ -113,7 +112,7 @@ def _youtube_search(query: str, max_results: int = 3) -> list[dict]:
                 for e in entries
                 if e.get("id")
             ]
-    except Exception as e:
+    except Exception:
         return []
 
 

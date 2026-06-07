@@ -35,7 +35,6 @@ def reconstruct_project(
     Returns:
         Status-Text mit Zusammenfassung der ausgeführten Steps.
     """
-    import json
     from src.knowledge.neo4j_graph import is_available, session as neo4j_session
     from src.agent.models.project_template import (
         ProjectTemplate, TemplateTrack, TemplateScene, TemplateTimelineSection,
@@ -136,11 +135,11 @@ def reconstruct_project(
     wf_id = WorkflowRepository().save(plan)
 
     # ── 4. Altes Projekt leeren + ausführen ───────────────────────────────
-    from src.agent.osc.project_scan import new_project, save_project, get_project_name
+    from src.agent.osc.project_scan import new_project, save_project
     import time as _time
 
     # Neues leeres Projekt anlegen
-    lines.append(f"\n📄 Öffne neues Bitwig-Projekt …")
+    lines.append("\n📄 Öffne neues Bitwig-Projekt …")
     new_project(timeout=2.0)
     _time.sleep(1.5)  # Bitwig braucht einen Moment
 
@@ -154,9 +153,9 @@ def reconstruct_project(
         # Projekt speichern — Reply kommt sofort, Save-Dialog öffnet sich in Bitwig
         _time.sleep(0.5)
         save_project(timeout=2.0)
-        lines.append(f"💾 Speicher-Dialog geöffnet in Bitwig")
+        lines.append("💾 Speicher-Dialog geöffnet in Bitwig")
         lines.append(f"   → Projektname eingeben (z.B. '{project_name} - Rekonstruiert')")
-        lines.append(f"   → Danach unter Datei → Zuletzt geöffnet auffindbar")
+        lines.append("   → Danach unter Datei → Zuletzt geöffnet auffindbar")
     except Exception as e:
         lines.append(f"❌ Ausführung fehlgeschlagen: {e}")
 

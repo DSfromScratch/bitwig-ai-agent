@@ -124,8 +124,6 @@ class BitwigProjectSnapshot:
             for s in data.get("scenes", [])
         ]
 
-        group_names = {g["idx"]: g["name"] for g in data.get("groups", [])}
-
         tracks_raw = data.get("tracks", [])
         tracks = []
         # Gruppen-Zuordnung: Track gehört zur nächst-vorherigen Gruppe

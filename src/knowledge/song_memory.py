@@ -8,8 +8,6 @@ Collections:
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,9 +33,7 @@ def detect_genre(
     has_guitar  = "guitar" in stems
     has_bass    = "bass"   in stems
     has_drums   = "drums"  in stems
-    has_other   = "other"  in stems
 
-    bass_info  = detected_instruments.get("bass",  {})
     drums_info = detected_instruments.get("drums", {})
     other_info = detected_instruments.get("other", {})
 

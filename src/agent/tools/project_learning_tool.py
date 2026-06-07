@@ -126,7 +126,7 @@ def scan_and_learn_project(project_name: str = "") -> str:
         if wav_files:
             lines.append(f"\n🎵 {len(wav_files)} Audio-Samples gefunden — analysiere …")
             try:
-                from scripts.ingest_audio_samples import analyze_file, store_samples, _build_content
+                from scripts.ingest_audio_samples import analyze_file, store_samples
                 features = []
                 for wav in wav_files[:20]:   # max 20 für Performance
                     feat = analyze_file(wav, max_duration=15.0)
@@ -158,7 +158,7 @@ def scan_and_learn_project(project_name: str = "") -> str:
                 # Grid-Editor öffnen
                 opened = open_track_device(tidx, timeout=3.0)
                 if not opened:
-                    lines.append(f"    ⚠️ Konnte Fenster nicht öffnen")
+                    lines.append("    ⚠️ Konnte Fenster nicht öffnen")
                     continue
 
                 time.sleep(1.5)  # UI rendern lassen
@@ -166,7 +166,7 @@ def scan_and_learn_project(project_name: str = "") -> str:
                 # Screenshot + Analyse
                 img = fetch_screenshot(timeout=12.0)
                 if not img:
-                    lines.append(f"    ⚠️ VNC-Screenshot fehlgeschlagen")
+                    lines.append("    ⚠️ VNC-Screenshot fehlgeschlagen")
                     continue
 
                 analysis = analyze_with_claude(img, track_name=tname, device_name=opened)
@@ -176,7 +176,7 @@ def scan_and_learn_project(project_name: str = "") -> str:
                     preview = analysis.split("\n")[0][:100]
                     lines.append(f"    ✅ {preview}")
                 else:
-                    lines.append(f"    ⚠️ Claude Vision Analyse fehlgeschlagen")
+                    lines.append("    ⚠️ Claude Vision Analyse fehlgeschlagen")
 
                 time.sleep(0.3)
 
@@ -188,11 +188,11 @@ def scan_and_learn_project(project_name: str = "") -> str:
         lines.append("   Für visuelle Grid-Analyse: ANTHROPIC_API_KEY in .env setzen")
 
     # ── 6. Zusammenfassung ────────────────────────────────────────────────
-    lines.append(f"\n📚 Wissensdatenbank aktualisiert. query_bitwig_docs kennt jetzt:")
+    lines.append("\n📚 Wissensdatenbank aktualisiert. query_bitwig_docs kennt jetzt:")
     lines.append(f"   • {len(recipes)} Sound-Rezepte mit Parameter-Details (params_json)")
     if grid_tracks and anthropic_key:
         lines.append(f"   • {len(grid_tracks)} Grid-Patch-Analysen (Signal-Flow, Module)")
     lines.append(f"   • Alle {total} Track-Konfigurationen aus '{project_name}'")
-    lines.append(f"   • ProjectSnapshot + Template → reconstruct_project kann Projekt neu erstellen")
+    lines.append("   • ProjectSnapshot + Template → reconstruct_project kann Projekt neu erstellen")
 
     return "\n".join(lines)

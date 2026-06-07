@@ -194,7 +194,7 @@ def scan_and_store() -> str:
     if not plugins:
         return "Kein VST gefunden — Bitwig läuft? BitwigStepPlugin aktiv?"
 
-    stored = store_plugins_neo4j(plugins)
+    store_plugins_neo4j(plugins)
     by_type: dict[str, list[str]] = {}
     for p in plugins:
         t = _guess_type(p)

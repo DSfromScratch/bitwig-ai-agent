@@ -131,7 +131,7 @@ def _arp_pattern(notes: list[int]) -> list[dict]:
 def _theory_examples() -> list[dict]:
     """Skalen + Akkorde + write_pattern-Beispiele aus Neo4j (alle 24 Tonarten)."""
     try:
-        from src.knowledge.neo4j_graph import is_available, session as neo4j_session
+        from src.knowledge.neo4j_graph import is_available
         neo4j_ok = is_available()
     except Exception:
         neo4j_ok = False
@@ -655,7 +655,6 @@ def _project_examples() -> list[dict]:
             name   = tmpl["name"]
             tempo  = tmpl["tempo"] or 120
             genre  = tmpl["genre"] or "electronic"
-            scenes = ", ".join((tmpl["scenes"] or [])[:4])
             tracks = str(len(tmpl["tracks"] or []))
 
             prompts = [
@@ -693,7 +692,6 @@ def _project_examples() -> list[dict]:
             if not a["content"]:
                 continue
             fname = a["file"].replace(".wav", "").replace("-bounce-1", "")
-            cat   = a["cat"] or "Sample"
             key   = f"{a['key']} ({a['conf']:.0%})" if a["key"] and a["conf"] else ""
             # Erste Zeile des content als Kurzinfo
             first_line = a["content"].split("\n")[0] if a["content"] else ""

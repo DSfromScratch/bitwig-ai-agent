@@ -44,7 +44,6 @@ def create_track_from_recipe(
         SetParamNamedStep, WriteNotesStep,
     )
     from src.agent.models.result import BitwigResult
-    from src.agent.models.workflow_plan import WorkflowPlan
 
     if not is_available():
         return "❌ Neo4j nicht erreichbar."
@@ -128,7 +127,7 @@ def create_track_from_recipe(
     if found_scene:
         lines.append(f"   Noten aus Szene: {found_scene} ({len(notes_data or [])} Noten)")
     elif include_notes and not notes_data:
-        lines.append(f"   ℹ️  Keine MIDI-Noten gespeichert für diesen Track")
+        lines.append("   ℹ️  Keine MIDI-Noten gespeichert für diesen Track")
 
     # ── 2. Aktuellen Track-Count abfragen (für track_idx) ─────────────────
     try:
@@ -217,7 +216,7 @@ def create_track_from_recipe(
             else:
                 lines.append(f"ℹ️  Clip manuell starten: Launcher-Clip auf Track {track_idx} klicken")
         else:
-            lines.append(f"ℹ️  Keine Noten — Track manuell mit MIDI-Input bespielen")
+            lines.append("ℹ️  Keine Noten — Track manuell mit MIDI-Input bespielen")
 
     except Exception as e:
         lines.append(f"\n❌ Ausführung fehlgeschlagen: {e}")

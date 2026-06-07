@@ -76,7 +76,6 @@ def convert_drums_with_llm(max_examples: int = 400) -> Iterator[dict]:
                 break
             item = json.loads(line)
             prompt_roll = item.get("prompt", "")
-            comp_roll   = item.get("completion", "")
 
             notes = _drumroll_to_midi_notes(prompt_roll)
             if not notes:
@@ -351,7 +350,7 @@ def generate_gold_standard_examples(count_per_genre: int = 30) -> Iterator[dict]
     """
     try:
         from src.agent.tools.pattern_generators import (
-            _drums, _bass, _chords, _808_kick, _808_snare
+            _drums, _bass, _chords
         )
         from src.agent.tools.music_data import _root_midi
     except ImportError:
@@ -561,10 +560,11 @@ def convert_black_page_examples() -> Iterator[dict]:
 
     # ── Importiere MIDI-Daten aus Tests ──────────────────────────────────────
     try:
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tests"))
         from test_mlx_black_page        import BLACK_PAGE_NOTES  as PIANO_NOTES
-        from test_mlx_black_page_guitar import BLACK_PAGE_GUITAR as GUITAR_NOTES, tab
+        from test_mlx_black_page_guitar import BLACK_PAGE_GUITAR as GUITAR_NOTES
         from test_mlx_black_page_drums  import BLACK_PAGE_DRUMS  as DRUM_NOTES
     except ImportError as e:
         log.warning("Black Page Tests nicht importierbar: %s", e)
@@ -931,9 +931,9 @@ def convert_note_error_examples() -> Iterator[dict]:
             prompt = _build_validation_prompt(notes, instrument, genre, key, scale, 2, 120)
             # Fehler explizit in den Prompt einbauen (Modell soll sie finden)
             prompt = (
-                f"ACHTUNG: Dieses Pattern enthält möglicherweise einen Fehler.\n"
-                f"Prüfe auf: harmonisch falsche Töne, Bereich-Überschreitung, "
-                f"physisch unmögliche Kombinationen, ungültige Werte.\n\n"
+                "ACHTUNG: Dieses Pattern enthält möglicherweise einen Fehler.\n"
+                "Prüfe auf: harmonisch falsche Töne, Bereich-Überschreitung, "
+                "physisch unmögliche Kombinationen, ungültige Werte.\n\n"
                 + prompt
             )
             completion = json.dumps({
