@@ -1,94 +1,76 @@
+.PHONY: agent agent-service-install agent-service-logs agent-service-start agent-service-status agent-service-stop analyse analyze-grid analyze-grid-local build-extension clean container-neo4j-logs container-neo4j-start container-neo4j-stop container-status container-vllm-build container-vllm-logs container-vllm-start container-vllm-stop dashboard deploy deploy-local deploy-mac deploy-mac-http download-mf embed-server help ingest-arranger ingest-audio ingest-audio-dry ingest-midi ingest-project ingest-project-dry install ml-export ml-validate-test mlx-export mlx-ingest-scales mlx-rl-eval mlx-rl-pairs mlx-rl-train mlx-setup mlx-sync-data mlx-test mlx-train neo4j-import ollama-setup-mac ollama-test scan-vsts screenshot-server show-grids ssh-setup-mac stack-down stack-status stack-up start test test-all test-integration test-neo4j validate yt-ingest yt-ingest-dry
+
 .DEFAULT_GOAL := help
-JAVA_HOME ?= $(or $(wildcard $(HOME)/.sdkman/candidates/java/25.0.2-open),$(wildcard /usr/lib/jvm/java-25-openjdk),$(error JDK 25 nicht gefunden — JAVA_HOME setzen))
-VENV     := .venv
-PYTHON   := $(shell if [ -e "$(VENV)/bin/python" ] && "$(VENV)/bin/python" --version >/dev/null 2>&1; then printf '%s' "$(VENV)/bin/python"; elif command -v python3.11 >/dev/null 2>&1; then command -v python3.11; elif command -v python3 >/dev/null 2>&1; then command -v python3; else command -v python; fi)
-UV       := $(shell command -v uv 2>/dev/null || echo $$HOME/.local/bin/uv)
+
+# ── Toolchain ────────────────────────────────────────────────────────────────
+VENV      := .venv
+PYTHON    := $(shell if [ -e "$(VENV)/bin/python" ] && "$(VENV)/bin/python" --version >/dev/null 2>&1; then printf '%s' "$(VENV)/bin/python"; elif command -v python3.11 >/dev/null 2>&1; then command -v python3.11; elif command -v python3 >/dev/null 2>&1; then command -v python3; else command -v python; fi)
+UV        := $(shell command -v uv 2>/dev/null || echo $$HOME/.local/bin/uv)
 STREAMLIT := $(PYTHON) -m streamlit
-PYTEST   := $(PYTHON) -m pytest
+PYTEST    := $(PYTHON) -m pytest
 
-FILE ?= song.mp3
+# JDK 25 (nur für build-extension nötig; lazy ausgewertet). Sucht Homebrew,
+# macOS java_home, SDKMAN und Standard-Linux-Pfade.
+JAVA_HOME ?= $(or \
+  $(wildcard /opt/homebrew/opt/openjdk@25),\
+  $(wildcard /opt/homebrew/opt/openjdk),\
+  $(shell /usr/libexec/java_home -v 25 2>/dev/null),\
+  $(firstword $(wildcard $(HOME)/.sdkman/candidates/java/*25*)),\
+  $(wildcard /usr/lib/jvm/java-25-openjdk),\
+  $(error JDK 25 nicht gefunden — JAVA_HOME explizit setzen))
 
-# ── Mac Deploy Konfiguration ─────────────────────────────────────────────────
-MAC_HOST     ?= 192.168.0.4
-MAC_USER     ?= sija
-MAC_EXT_DIR  := /Users/$(MAC_USER)/Documents/Bitwig Studio/Extensions
+# ── Pfade & Remote ───────────────────────────────────────────────────────────
+FILE          ?= song.mp3
+MAC_HOST      ?= 192.168.0.4
+MAC_USER      ?= sija
+MAC_EXT_DIR   := /Users/$(MAC_USER)/Documents/Bitwig Studio/Extensions
 LOCAL_EXT_DIR := $(HOME)/Bitwig Studio/Extensions
-LINUX_IP     := $(shell ip route get 1 2>/dev/null | awk '{print $$7; exit}')
-EXT_DIST     := bitwig-extension/dist
+LINUX_IP      := $(shell ip route get 1 2>/dev/null | awk '{print $$7; exit}')
+EXT_DIST      := bitwig-extension/dist
 
-.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status mlx-export mlx-setup mlx-sync-data mlx-train mlx-test mlx-ingest-scales mlx-rl-pairs mlx-rl-eval mlx-rl-train ingest-arranger
+# MLX Fine-Tuning
+MLX_MODEL ?= mlx-community/Qwen2.5-3B-Instruct-4bit
+MLX_DATA  ?= ./training_data
+MLX_OUT   ?= ~/mlx-models
 
-help: ## Verfügbare Befehle anzeigen
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+# ── Hilfe ────────────────────────────────────────────────────────────────────
+help: ## Diese Hilfe anzeigen
+	@awk 'BEGIN {FS = ":.*##"} \
+	  /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0,5); next} \
+	  /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' \
+	  $(MAKEFILE_LIST)
 
-install: ## Abhängigkeiten installieren
+##@ Setup
+
+install: ## Abhängigkeiten installieren (uv venv + requirements)
 	@if [ ! -d "$(VENV)" ]; then $(UV) python install 3.11 && $(UV) venv --python 3.11 $(VENV); fi
 	$(UV) pip install --python $(PYTHON) -r requirements.txt
 
 download-mf: ## Music Flamingo Modell herunterladen (~16 GB, einmalig)
 	$(PYTHON) -c "\
-from huggingface_hub import snapshot_download; \
-print('Lade Music Flamingo FP8...'); \
-snapshot_download('henry1477/music-flamingo-2601-hf-fp8'); \
-print('Download abgeschlossen.')"
+	from huggingface_hub import snapshot_download; \
+	print('Lade Music Flamingo FP8...'); \
+	snapshot_download('henry1477/music-flamingo-2601-hf-fp8'); \
+	print('Download abgeschlossen.')"
 
-scan-vsts: ## Installierte VST-Plugins aus Bitwig scannen und in Neo4j speichern
-	$(PYTHON) -c "from src.knowledge.vst_scanner import scan_and_store; print(scan_and_store())"
+clean: ## Python-Cache löschen
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
+	find . -type f -name "*.pyc" -delete 2>/dev/null; true
+	@echo "✓ Cache bereinigt"
 
-screenshot-server: ## Screenshot-Server auf dem Mac starten (dort im Terminal ausführen!)
-	@echo ">>> Auf dem Mac in einem Terminal ausführen:"
-	@echo "    python3 agent-plugin/screenshot_server.py"
+##@ Stack & Services
 
-analyze-grid-local: ## Grid lokal analysieren: Surya OCR + OpenCV Kabel + NetworkX Graph (kein API-Key)
-	$(PYTHON) scripts/analyze_grid_local.py --project "$(PROJECT)" $(ARGS)
-
-show-grids: ## Grid-Patches als Mermaid-Workflow + VNC-Screenshots anzeigen
-	$(PYTHON) scripts/show_grid_workflow.py --project "$(PROJECT)" $(ARGS)
-
-analyze-grid: ## Grid-Screenshot mit Claude Vision analysieren → Neo4j (--track N --device NAME)
-	$(PYTHON) scripts/analyze_grid_screenshot.py --project "$(PROJECT)" $(ARGS)
-
-ingest-midi: ## MIDI-Clips aus Bitwig lesen + Tonart/Akkorde/Rhythmus analysieren (Bitwig + embed-server)
-	$(PYTHON) scripts/ingest_midi_clips.py --project "$(PROJECT)" $(ARGS)
-
-ingest-audio: ## WAV-Samples eines Projekts analysieren + in Neo4j speichern (embed-server nötig)
-	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" $(ARGS)
-
-ingest-audio-dry: ## Dry-Run: zeigt was ingest-audio analysieren würde
-	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" --dry-run
-
-ingest-project: ## Aktuelles Bitwig-Projekt live scannen + Sound-Rezepte in Neo4j (Bitwig + embed-server nötig)
-	$(PYTHON) scripts/ingest_live_project.py --project "$(PROJECT)" $(ARGS)
-
-ingest-arranger: ## Arranger-Tracks interaktiv ingesten — Track anklicken → Enter (Bitwig + embed-server)
-	$(PYTHON) scripts/ingest_arranger_tracks.py --project "$(PROJECT)" $(ARGS)
-
-ingest-project-dry: ## Dry-Run: zeigt was ingest-project tun würde
-	$(PYTHON) scripts/ingest_live_project.py --project "$(PROJECT)" --dry-run
-
-yt-ingest: ## Bitwig YouTube-Transkripte holen und in Neo4j speichern (Embedding-Server muss laufen: make embed-server)
-	$(PYTHON) scripts/ingest_youtube_transcripts.py --channel "@bitwig" $(ARGS)
-
-yt-ingest-dry: ## Dry-Run: zeigt was yt-ingest tun würde (keine Änderungen, kein Embedding-Server nötig)
-	$(PYTHON) scripts/ingest_youtube_transcripts.py --channel "@bitwig" --limit 10 --dry-run
-
-neo4j-import: ## Neo4j Graph aus Bitwig-Installation neu aufbauen
-	$(PYTHON) -c "\
-from src.knowledge.neo4j_graph import create_schema, build_graph; \
-create_schema(); build_graph(); print('✓ Neo4j Graph aufgebaut')"
-
-dashboard: ## Streamlit Dashboard starten
-	$(STREAMLIT) run dashboard/app.py --server.port 8501
-
-embed-server: ## Lokalen Embedding-Server starten (Port 8080, kein HF-Netzwerk)
-	$(PYTHON) start_agent.py --embed-server-up
+start: ## 🚀 MCP Server + Agent starten (vollständiger Stack)
+	$(PYTHON) start_agent.py
 
 agent: ## Interaktiven CLI-Agent starten (vLLM nötig)
 	@LD_LIBRARY_PATH=.cuda_compat:$(LD_LIBRARY_PATH) $(PYTHON) -m src.agent.core
 
-start: ## 🚀 MCP Server + Agent starten (vollständiger Stack)
-	$(PYTHON) start_agent.py
+embed-server: ## Lokalen Embedding-Server starten (Port 8080)
+	$(PYTHON) start_agent.py --embed-server-up
+
+dashboard: ## Streamlit Dashboard starten (Port 8501)
+	$(STREAMLIT) run dashboard/app.py --server.port 8501
 
 stack-up: ## Vollen Stack starten (Neo4j + vLLM + Agent)
 	systemctl --user start neo4j.service vllm@agent.service
@@ -101,52 +83,151 @@ stack-status: ## Stack-Status anzeigen
 	@systemctl --user status neo4j.service vllm@agent.service --no-pager 2>/dev/null | grep -E '(●|○|Active|Main PID)'
 	$(PYTHON) start_agent.py --status-only
 
+agent-service-install: ## Agent als systemd User-Service installieren (autostart)
+	@mkdir -p ~/.config/systemd/user
+	@install -m 644 scripts/bitwig-agent.service ~/.config/systemd/user/bitwig-agent.service
+	@systemctl --user daemon-reload
+	@systemctl --user enable bitwig-agent.service
+	@echo "✓ bitwig-agent.service installiert und aktiviert (Autostart beim Login)"
+	@echo "  Starten: make agent-service-start"
+
+agent-service-start: ## Agent Service starten
+	systemctl --user start bitwig-agent.service
+	@sleep 2 && systemctl --user status bitwig-agent.service --no-pager | head -8
+
+agent-service-stop: ## Agent Service stoppen
+	systemctl --user stop bitwig-agent.service
+	@echo "✓ bitwig-agent.service gestoppt"
+
+agent-service-status: ## Agent Service Status anzeigen
+	systemctl --user status bitwig-agent.service --no-pager
+
+agent-service-logs: ## Agent Service Logs live anzeigen (Ctrl+C beendet)
+	journalctl --user -u bitwig-agent.service -f
+
+##@ Container (Podman Quadlet)
+
+container-neo4j-start: ## Neo4j Container starten
+	systemctl --user start neo4j.service
+	@sleep 3 && systemctl --user status neo4j.service --no-pager | head -6
+
+container-neo4j-stop: ## Neo4j Container stoppen
+	systemctl --user stop neo4j.service
+
+container-neo4j-logs: ## Neo4j Logs live anzeigen
+	journalctl --user -u neo4j.service -f
+
+container-vllm-build: ## fedora-vllm Image bauen (einmalig, ~24 GB)
+	podman build -t localhost/fedora-vllm:latest ~/.local/share/containers/fedora-vllm/
+	@echo "✓ Image localhost/fedora-vllm:latest gebaut"
+
+container-vllm-start: ## vLLM Backend (Qwen3-14B-AWQ) starten
+	systemctl --user start vllm@agent.service
+	@sleep 5 && systemctl --user status vllm@agent.service --no-pager | head -6
+
+container-vllm-stop: ## vLLM Backend stoppen
+	systemctl --user stop vllm@agent.service
+
+container-vllm-logs: ## vLLM Logs live anzeigen
+	journalctl --user -u vllm@agent.service -f
+
+container-status: ## Status aller Container-Services anzeigen
+	@systemctl --user status neo4j.service vllm@agent.service --no-pager 2>/dev/null | grep -E '(●|○|Active|Main PID)'
+
+##@ Knowledge-Base & Ingest
+
+neo4j-import: ## Neo4j Graph aus Bitwig-Installation neu aufbauen
+	$(PYTHON) -c "\
+	from src.knowledge.neo4j_graph import create_schema, build_graph; \
+	create_schema(); build_graph(); print('✓ Neo4j Graph aufgebaut')"
+
+scan-vsts: ## Installierte VST-Plugins scannen und in Neo4j speichern
+	$(PYTHON) -c "from src.knowledge.vst_scanner import scan_and_store; print(scan_and_store())"
+
+ingest-midi: ## MIDI-Clips lesen + Tonart/Akkorde/Rhythmus analysieren
+	$(PYTHON) scripts/ingest_midi_clips.py --project "$(PROJECT)" $(ARGS)
+
+ingest-audio: ## WAV-Samples eines Projekts analysieren + in Neo4j
+	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" $(ARGS)
+
+ingest-audio-dry: ## Dry-Run: zeigt was ingest-audio analysieren würde
+	$(PYTHON) scripts/ingest_audio_samples.py --project "$(PROJECT)" --dry-run
+
+ingest-project: ## Aktuelles Bitwig-Projekt live scannen + Sound-Rezepte
+	$(PYTHON) scripts/ingest_live_project.py --project "$(PROJECT)" $(ARGS)
+
+ingest-project-dry: ## Dry-Run: zeigt was ingest-project tun würde
+	$(PYTHON) scripts/ingest_live_project.py --project "$(PROJECT)" --dry-run
+
+ingest-arranger: ## Arranger-Tracks interaktiv ingesten (Track anklicken → Enter)
+	$(PYTHON) scripts/ingest_arranger_tracks.py --project "$(PROJECT)" $(ARGS)
+
+yt-ingest: ## Bitwig YouTube-Transkripte holen und in Neo4j speichern
+	$(PYTHON) scripts/ingest_youtube_transcripts.py --channel "@bitwig" $(ARGS)
+
+yt-ingest-dry: ## Dry-Run: zeigt was yt-ingest tun würde (kein Embed-Server)
+	$(PYTHON) scripts/ingest_youtube_transcripts.py --channel "@bitwig" --limit 10 --dry-run
+
+##@ Analyse & Vision
+
 analyse: ## Song analysieren: make analyse FILE=song.mp3
 	$(PYTHON) -c "\
-from src.agent.tools.analyse import analyse_audio; \
-import json; \
-r = analyse_audio.invoke({'file_path': '$(FILE)', 'separate_stems': True, 'extract_midi': True, 'send_osc': True}); \
-print(json.dumps({k:v for k,v in r.items() if k not in ('energy_curve','quality')}, indent=2, ensure_ascii=False)); \
-[print(f\"  {q['stem']:10s} {q['quality']}\") for q in r.get('quality',[])]"
+	from src.agent.tools.analyse import analyse_audio; \
+	import json; \
+	r = analyse_audio.invoke({'file_path': '$(FILE)', 'separate_stems': True, 'extract_midi': True, 'send_osc': True}); \
+	print(json.dumps({k:v for k,v in r.items() if k not in ('energy_curve','quality')}, indent=2, ensure_ascii=False)); \
+	[print(f\"  {q['stem']:10s} {q['quality']}\") for q in r.get('quality',[])]"
 
 validate: ## MIDI validieren: make validate GEN=melody.mid REF=bitwig.mid
 	$(PYTHON) -c "\
-from src.audio.midi_validate import validate, print; \
-import json; \
-r = validate('$(GEN)', '$(REF)', '$(or $(PNG),/tmp/validation.png)'); \
-print(json.dumps({k:v for k,v in r.items() if k != 'plot'}, indent=2, ensure_ascii=False))"
+	from src.audio.midi_validate import validate, print; \
+	import json; \
+	r = validate('$(GEN)', '$(REF)', '$(or $(PNG),/tmp/validation.png)'); \
+	print(json.dumps({k:v for k,v in r.items() if k != 'plot'}, indent=2, ensure_ascii=False))"
 
-test: ## Tests ausführen
+analyze-grid-local: ## Grid lokal analysieren: Surya OCR + OpenCV + NetworkX (kein API-Key)
+	$(PYTHON) scripts/analyze_grid_local.py --project "$(PROJECT)" $(ARGS)
+
+analyze-grid: ## Grid-Screenshot mit Claude Vision analysieren → Neo4j
+	$(PYTHON) scripts/analyze_grid_screenshot.py --project "$(PROJECT)" $(ARGS)
+
+show-grids: ## Grid-Patches als Mermaid-Workflow + VNC-Screenshots anzeigen
+	$(PYTHON) scripts/show_grid_workflow.py --project "$(PROJECT)" $(ARGS)
+
+screenshot-server: ## Screenshot-Server-Anleitung (auf dem Mac ausführen)
+	@echo ">>> Auf dem Mac in einem Terminal ausführen:"
+	@echo "    python3 agent-plugin/screenshot_server.py"
+
+##@ Tests
+
+test: ## Unit-Tests ausführen
 	$(PYTEST) tests/ -q
 
-test-integration: ## Integration-Tests ausführen (Mock-OSC, kein Bitwig nötig)
+test-integration: ## Integration-Tests (Mock-OSC, kein Bitwig nötig)
 	BITWIG_TEST_MODE=mock $(PYTEST) tests/ -q -m "integration" --tb=short
 
-test-neo4j: ## Neo4j-Tests ausführen (Neo4j muss laufen: bolt://localhost:7687)
+test-neo4j: ## Neo4j-Tests (Neo4j muss laufen: bolt://localhost:7687)
 	$(PYTEST) tests/ -q -m "neo4j" --tb=short
 
-test-all: ## Alle Tests inkl. Integration und Neo4j ausführen
+test-all: ## Alle Tests inkl. Integration und Neo4j
 	$(PYTEST) tests/ -q -m "" --tb=short
 
-clean: ## Cache löschen
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
-	find . -type f -name "*.pyc" -delete 2>/dev/null; true
-	@echo "✓ Cache bereinigt"
+##@ Bitwig Extension
 
 build-extension: ## Bitwig Extensions bauen (benötigt JDK 25)
+	@[ -x "$(JAVA_HOME)/bin/javac" ] || { echo "✗ JDK 25 nicht unter JAVA_HOME=$(JAVA_HOME) — JAVA_HOME setzen"; exit 1; }
 	cd bitwig-extension && JAVA_HOME=$(JAVA_HOME) ./mvnw package -DskipTests -q
-	@mkdir -p $(EXT_DIST)
-	@cp bitwig-extension/target/BitwigAgentBridge-fix.jar    $(EXT_DIST)/BitwigAgentBridge.bwextension    2>/dev/null || true
-	@cp bitwig-extension/target/BitwigStepPlugin-fix.jar     $(EXT_DIST)/BitwigStepPlugin.bwextension     2>/dev/null || true
-	@cp bitwig-extension/target/LaunchpadController-fix.jar  $(EXT_DIST)/LaunchpadController.bwextension  2>/dev/null || true
-	@cp bitwig-extension/target/BitwigOscBridge-fix.jar      $(EXT_DIST)/BitwigOscBridge.bwextension      2>/dev/null || true
-	@echo "✓ Extensions gebaut → $(EXT_DIST)/"
+	@# Die .bwextension-Dateien werden vom pom (antrun) direkt nach $(EXT_DIST) geschrieben.
+	@set -e; for f in BitwigAgentBridge BitwigStepPlugin LaunchpadController BitwigOscBridge; do \
+	    [ -s "$(EXT_DIST)/$$f.bwextension" ] || { echo "✗ Artefakt fehlt: $(EXT_DIST)/$$f.bwextension"; exit 1; }; \
+	  done
+	@echo "✓ Extensions gebaut → $(EXT_DIST)/  (Bitwig vor Deploy beenden, vermeidet '?'-Icon)"
 
-deploy-local: build-extension ## Extensions lokal auf Linux installieren
+deploy-local: build-extension ## Extensions lokal installieren (Linux)
 	cp $(EXT_DIST)/*.bwextension '$(LOCAL_EXT_DIR)/'
 	@echo "✓ Extensions → $(LOCAL_EXT_DIR)/"
 
-deploy-mac: build-extension ## Extensions auf Mac übertragen via SCP (nur StepPlugin + OscBridge)
+deploy-mac: build-extension ## Extensions auf Mac übertragen via SCP
 	scp -o StrictHostKeyChecking=no \
 	    -o IdentitiesOnly=yes \
 	    -o PreferredAuthentications=publickey,keyboard-interactive,password \
@@ -163,10 +244,13 @@ deploy-mac: build-extension ## Extensions auf Mac übertragen via SCP (nur StepP
 deploy-mac-http: build-extension ## Extensions per HTTP bereitstellen (Mac Browser-Download)
 	@fuser -k 8080/tcp 2>/dev/null; sleep 1; true
 	@echo ">>> Öffne auf Mac: http://$(LINUX_IP):8080"
-	@echo "    Dateien herunterladen → nach $(MAC_EXT_DIR)/ kopieren → Bitwig Extension neu laden"
+	@echo "    Dateien herunterladen → nach $(MAC_EXT_DIR)/ kopieren → Bitwig neu laden"
 	$(PYTHON) -m http.server 8080 --directory $(EXT_DIST)
 
-ssh-setup-mac: ## SSH-Key für Mac einrichten (einmalig, dann deploy-mac ohne Passwort)
+deploy: deploy-local deploy-mac ## Extensions lokal + Mac installieren
+
+
+ssh-setup-mac: ## SSH-Key für Mac einrichten (einmalig)
 	@[ -f ~/.ssh/id_rsa.pub ] || ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa -q
 	@echo ">>> Führe auf dem Mac im Terminal aus:"
 	@echo ""
@@ -176,61 +260,97 @@ ssh-setup-mac: ## SSH-Key für Mac einrichten (einmalig, dann deploy-mac ohne Pa
 	@echo ""
 	@echo "Danach: make deploy-mac"
 
-deploy: deploy-local deploy-mac ## Extensions lokal + Mac installieren
+##@ Training (MLX / RL)
 
+mlx-export: ## Trainingsdaten aus Neo4j exportieren (min_score, → training_data/)
+	$(PYTHON) -c "\
+	from src.agent.tools.mlx_export import export_training_data; \
+	import json; \
+	r = export_training_data('./training_data', min_score=0.70); \
+	print(json.dumps({k: v for k, v in r.items() if k != 'output_path'}, indent=2, ensure_ascii=False)); \
+	print('→', r.get('output_path', 'training_data/'))"
 
-agent-service-install: ## Bitwig Agent als systemd User-Service installieren (autostart)
-	@mkdir -p ~/.config/systemd/user
-	@install -m 644 scripts/bitwig-agent.service ~/.config/systemd/user/bitwig-agent.service
-	@systemctl --user daemon-reload
-	@systemctl --user enable bitwig-agent.service
-	@echo "✓ bitwig-agent.service installiert und aktiviert (startet beim Login automatisch)"
-	@echo "  Starten: make agent-service-start"
+ml-export: ## ML Training-Daten exportieren (Patterns + Validator-Conversations)
+	$(PYTHON) -c "\
+	from src.knowledge.ml_export import export_patterns_to_jsonl, export_validator_conversations, get_export_stats; \
+	print(export_patterns_to_jsonl()); \
+	print(export_validator_conversations()); \
+	print('Stats:', get_export_stats())"
 
-agent-service-start: ## Bitwig Agent Service starten
-	systemctl --user start bitwig-agent.service
-	@sleep 2 && systemctl --user status bitwig-agent.service --no-pager | head -8
+mlx-sync-data: ## Trainingsdaten auf Mac übertragen (→ ~/mlx-training/)
+	@[ -f "$(MLX_DATA)/train.jsonl" ] || { echo "✗ Keine Daten — make mlx-export zuerst"; exit 1; }
+	ssh -o StrictHostKeyChecking=no $(MAC_USER)@$(MAC_HOST) "mkdir -p ~/mlx-training"
+	scp -o StrictHostKeyChecking=no \
+	    $(MLX_DATA)/train.jsonl \
+	    $(MLX_DATA)/valid.jsonl \
+	    $(MLX_DATA)/export_stats.json \
+	    $(MAC_USER)@$(MAC_HOST):~/mlx-training/
+	@echo "✓ $(MLX_DATA)/ → Mac:~/mlx-training/ ($(MAC_HOST))"
 
-agent-service-stop: ## Bitwig Agent Service stoppen
-	systemctl --user stop bitwig-agent.service
-	@echo "✓ bitwig-agent.service gestoppt"
+mlx-setup: ## MLX + mlx-lm auf Mac installieren (Anleitung)
+	@echo ">>> Führe auf dem Mac Terminal aus:"
+	@echo ""
+	@echo "  python3 -m venv ~/.venv-mlx"
+	@echo "  source ~/.venv-mlx/bin/activate"
+	@echo "  pip install mlx mlx-lm huggingface-hub"
+	@echo "  mkdir -p $(MLX_OUT)"
+	@echo "  huggingface-cli download $(MLX_MODEL) --local-dir $(MLX_OUT)/base"
+	@echo ""
+	@echo "Danach Trainingsdaten übertragen: make mlx-sync-data"
 
-agent-service-status: ## Bitwig Agent Service Status anzeigen
-	systemctl --user status bitwig-agent.service --no-pager
+mlx-train: ## MLX LoRA Fine-Tuning Anleitung (auf Mac ausführen)
+	@echo ">>> Führe auf dem Mac Terminal aus:"
+	@echo ""
+	@echo "  source ~/.venv-mlx/bin/activate"
+	@echo "  python -m mlx_lm lora \\"
+	@echo "    --model $(MLX_OUT)/base --train --data ~/mlx-training \\"
+	@echo "    --iters 1000 --batch-size 1 --num-layers 16 \\"
+	@echo "    --learning-rate 1e-5 --save-every 200 --grad-checkpoint \\"
+	@echo "    --max-seq-length 512 --adapter-path $(MLX_OUT)/bitwig-adapter"
+	@echo ""
+	@echo "  python -m mlx_lm.fuse --model $(MLX_OUT)/base \\"
+	@echo "    --adapter-path $(MLX_OUT)/bitwig-adapter \\"
+	@echo "    --save-path $(MLX_OUT)/bitwig-finetuned"
 
-agent-service-logs: ## Bitwig Agent Service Logs live anzeigen (Ctrl+C zum Beenden)
-	journalctl --user -u bitwig-agent.service -f
+mlx-test: ## Fine-tuned Modell auf Mac testen (Anleitung)
+	@echo ">>> Führe auf dem Mac Terminal aus:"
+	@echo ""
+	@echo "  source ~/.venv-mlx/bin/activate"
+	@echo "  python -m mlx_lm.generate --model $(MLX_OUT)/bitwig-finetuned \\"
+	@echo "    --max-tokens 300 \\"
+	@echo "    --prompt 'Erstelle ein 4-taktiges Pattern für Synth Lead in C-Dur, Techno, 128 BPM'"
 
-# ── Container (Podman Quadlet) ──────────────────────────────────────────────
+mlx-ingest-scales: ## Alle 24 Tonarten + Akkorde in Neo4j ingesten
+	source .venv/bin/activate && python scripts/ingest_scales.py
 
-container-neo4j-start: ## Neo4j Container starten
-	systemctl --user start neo4j.service
-	@sleep 3 && systemctl --user status neo4j.service --no-pager | head -6
+mlx-rl-pairs: ## DPO-Paare generieren (Fine-tuned Modell, Port 8080)
+	source .venv/bin/activate && python scripts/generate_dpo_pairs.py \
+			--model-url http://$(MAC_HOST):8080/v1/chat/completions \
+			--data-dir ./training_data \
+			--max-prompts 60
 
-container-neo4j-stop: ## Neo4j Container stoppen
-	systemctl --user stop neo4j.service
+mlx-rl-eval: ## Reward-Score des Fine-tuned Modells messen (Port 8080)
+	source .venv/bin/activate && python3 -c "\
+	from scripts.rl_train_loop import evaluate; \
+	score = evaluate('http://$(MAC_HOST):8080/v1/chat/completions'); \
+	print(f'avg_reward = {score:.3f}')"
 
-container-neo4j-logs: ## Neo4j Logs live anzeigen
-	journalctl --user -u neo4j.service -f
+mlx-rl-train: ## RL-Trainingsschleife starten (generieren → SFT → evaluieren)
+	source .venv/bin/activate && python scripts/rl_train_loop.py \
+			--reward-threshold 0.90 \
+			--rounds 10
 
-container-vllm-build: ## fedora-vllm Image bauen (einmalig, ~24 GB)
-	podman build -t localhost/fedora-vllm:latest ~/.local/share/containers/fedora-vllm/
-	@echo "✓ Image localhost/fedora-vllm:latest gebaut"
+ml-validate-test: ## Fine-tuned Modell mit Rock-Drums testen
+	$(PYTHON) -c "\
+	from src.agent.tools.music_validator import validate_music_pattern; \
+	from src.agent.tools.pattern_generators import _drums; \
+	notes = _drums('rock', 2, 'full'); \
+	r = validate_music_pattern(notes, 'VD-HEAVY', 'rock', 'A', 'minor'); \
+	print('Score:', r.get('score')); print('Summary:', r.get('summary')); print('Issues:', r.get('issues'))"
 
-container-vllm-start: ## vLLM Backend (agent/Qwen3-14B-AWQ) starten
-	systemctl --user start vllm@agent.service
-	@sleep 5 && systemctl --user status vllm@agent.service --no-pager | head -6
+##@ Remote / Mac LLM
 
-container-vllm-stop: ## vLLM Backend stoppen
-	systemctl --user stop vllm@agent.service
-
-container-vllm-logs: ## vLLM Logs live anzeigen
-	journalctl --user -u vllm@agent.service -f
-
-container-status: ## Status aller Container-Services anzeigen
-	@systemctl --user status neo4j.service vllm@agent.service --no-pager 2>/dev/null | grep -E '(●|○|Active|Main PID)'
-
-ollama-setup-mac: ## Ollama auf Mac installieren (manuell auf Mac Terminal ausführen)
+ollama-setup-mac: ## Ollama auf Mac installieren (Anleitung)
 	@echo ">>> Führe auf dem Mac Terminal aus:"
 	@echo ""
 	@echo "  curl -fsSL https://ollama.com/install.sh | sh"
@@ -238,8 +358,7 @@ ollama-setup-mac: ## Ollama auf Mac installieren (manuell auf Mac Terminal ausf�
 	@echo "  launchctl setenv OLLAMA_HOST 0.0.0.0"
 	@echo "  # Firewall: TCP 11434 freigeben"
 	@echo ""
-	@echo "Danach von Linux testen:"
-	@echo "  curl http://192.168.0.4:11434/api/tags"
+	@echo "Danach von Linux testen:  curl http://$(MAC_HOST):11434/api/tags"
 
 ollama-test: ## Mac LLM-Verbindung testen
 	@resp=$$(curl -s --max-time 5 http://$(MAC_HOST):11434/api/tags 2>&1); \
@@ -250,169 +369,3 @@ ollama-test: ## Mac LLM-Verbindung testen
 	  echo "$$resp" | python3 -c "import json,sys; m=json.load(sys.stdin); models=m.get('models',[]); [print('  ✓',x['name']) for x in models] if models else print('  Ollama läuft aber keine Modelle — ollama pull qwen3:8b')"; \
 	fi
 
-# ── MLX Fine-Tuning (Ansatz 3) ──────────────────────────────────────────────
-
-MLX_MODEL ?= mlx-community/Qwen2.5-3B-Instruct-4bit
-MLX_DATA  ?= ./training_data
-MLX_OUT   ?= ~/mlx-models
-
-mlx-export: ## MLX Training-Daten aus Neo4j exportieren (→ training_data/)
-	$(PYTHON) -c "\
-from src.agent.tools.mlx_export import export_training_data; \
-import json; \
-r = export_training_data('./training_data', min_score=0.70); \
-print(json.dumps({k: v for k, v in r.items() if k != 'output_path'}, indent=2, ensure_ascii=False)); \
-print('→', r.get('output_path', 'training_data/'))"
-
-mlx-setup: ## MLX + mlx-lm auf Mac installieren (Anleitung)
-	@echo ">>> Führe auf dem Mac Terminal aus:"
-	@echo ""
-	@echo "  # Python-Venv erstellen (Apple Silicon, macOS 14+)"
-	@echo "  python3 -m venv ~/.venv-mlx"
-	@echo "  source ~/.venv-mlx/bin/activate"
-	@echo ""
-	@echo "  # MLX-Abhängigkeiten installieren"
-	@echo "  pip install mlx mlx-lm huggingface-hub"
-	@echo ""
-	@echo "  # Basis-Modell herunterladen (4-bit quantized, ~2 GB)"
-	@echo "  mkdir -p $(MLX_OUT)"
-	@echo "  huggingface-cli download $(MLX_MODEL) --local-dir $(MLX_OUT)/base"
-	@echo ""
-	@echo "Danach Trainingsdaten übertragen:"
-	@echo "  make mlx-sync-data"
-
-mlx-sync-data: ## Trainingsdaten auf Mac übertragen (SCP)
-	@[ -f "$(MLX_DATA)/train.jsonl" ] || { echo "✗ Keine Daten — make mlx-export zuerst ausführen"; exit 1; }
-	ssh -o StrictHostKeyChecking=no $(MAC_USER)@$(MAC_HOST) "mkdir -p ~/mlx-training"
-	scp -o StrictHostKeyChecking=no \
-	    $(MLX_DATA)/train.jsonl \
-	    $(MLX_DATA)/valid.jsonl \
-	    $(MLX_DATA)/export_stats.json \
-	    $(MAC_USER)@$(MAC_HOST):~/mlx-training/
-	@echo "✓ $(MLX_DATA)/ → Mac:~/mlx-training/ ($(MAC_HOST))"
-
-mlx-train: ## MLX LoRA Fine-Tuning Anleitung anzeigen (auf Mac Terminal ausführen)
-	@echo ">>> Führe auf dem Mac Terminal aus:"
-	@echo ""
-	@echo "  source ~/.venv-mlx/bin/activate"
-	@echo ""
-	@echo "  # LoRA Fine-Tuning (~30–60 min auf M1/M2, ~15 min auf M3/M4)"
-	@echo "  python -m mlx_lm lora \\"
-	@echo "    --model $(MLX_OUT)/base \\"
-	@echo "    --train \\"
-	@echo "    --data ~/mlx-training \\"
-	@echo "    --iters 1000 \\"
-	@echo "    --batch-size 1 \\"
-	@echo "    --num-layers 16 \\"
-	@echo "    --learning-rate 1e-5 \\"
-	@echo "    --save-every 200 \\"
-	@echo "    --grad-checkpoint \\"
-	@echo "    --max-seq-length 512 \\"
-	@echo "    --adapter-path $(MLX_OUT)/bitwig-adapter"
-	@echo ""
-	@echo "  # Adapter in fertiges Modell einbauen"
-	@echo "  python -m mlx_lm.fuse \\"
-	@echo "    --model $(MLX_OUT)/base \\"
-	@echo "    --adapter-path $(MLX_OUT)/bitwig-adapter \\"
-	@echo "    --save-path $(MLX_OUT)/bitwig-finetuned"
-	@echo ""
-	@echo "Danach als Ollama-Modell bereitstellen:"
-	@echo "  make mlx-test"
-
-mlx-ingest-scales: ## Alle 24 Tonarten + Akkorde in Neo4j ingesten
-	source .venv/bin/activate && python scripts/ingest_scales.py
-
-mlx-rl-pairs: ## DPO-Paare generieren (Fine-tuned Modell, Port 8080)
-	source .venv/bin/activate && python scripts/generate_dpo_pairs.py \
-		--model-url http://$(MAC_HOST):8080/v1/chat/completions \
-		--data-dir ./training_data \
-		--max-prompts 60
-
-mlx-rl-eval: ## Reward-Score des Fine-tuned Modells messen (Port 8080)
-	source .venv/bin/activate && python3 -c "\
-from scripts.rl_train_loop import evaluate; \
-score = evaluate('http://$(MAC_HOST):8080/v1/chat/completions'); \
-print(f'avg_reward = {score:.3f}')"
-
-mlx-rl-train: ## RL-Trainingsschleife starten (generieren → SFT → evaluieren)
-	source .venv/bin/activate && python scripts/rl_train_loop.py \
-		--reward-threshold 0.90 \
-		--rounds 10
-
-mlx-test: ## Fine-tuned Modell auf Mac testen (Anleitung)
-	@echo ">>> Führe auf dem Mac Terminal aus:"
-	@echo ""
-	@echo "  source ~/.venv-mlx/bin/activate"
-	@echo ""
-	@echo "  # Direkter Test mit mlx-lm"
-	@echo "  python -m mlx_lm.generate \\"
-	@echo "    --model $(MLX_OUT)/bitwig-finetuned \\"
-	@echo "    --max-tokens 300 \\"
-	@echo "    --prompt 'Erstelle ein 4-taktiges Pattern für Synth Lead in C-Dur, Techno, 128 BPM'"
-	@echo ""
-	@echo "  # Als Ollama-Modell bereitstellen (optional)"
-	@echo "  # → Modelfile erstellen und 'ollama create bitwig-music' ausführen"
-
-ml-export: ## ML Training-Daten aus Neo4j exportieren (für MLX Fine-tuning)
-	$(PYTHON) -c "\
-from src.knowledge.ml_export import export_patterns_to_jsonl, export_validator_conversations, get_export_stats; \
-print(export_patterns_to_jsonl()); \
-print(export_validator_conversations()); \
-print('Stats:', get_export_stats())"
-
-mlx-setup-mac: ## MLX Fine-tuning Setup auf Mac anzeigen
-	@echo "=== MLX Fine-tuning auf Apple Silicon Mac ==="
-	@echo ""
-	@echo "1. MLX installieren (auf Mac Terminal):"
-	@echo "   pip install mlx-lm"
-	@echo ""
-	@echo "2. Training-Daten von Linux kopieren:"
-	@echo "   scp $(LINUX_IP):$(CURDIR)/training_data/*.jsonl ~/training_data/"
-	@echo ""
-	@echo "3. LoRA Fine-tuning starten (auf Mac Terminal):"
-	@echo "   mlx_lm.lora \\"
-	@echo "     --model mlx-community/Qwen3-8B-4bit \\"
-	@echo "     --train \\"
-	@echo "     --data ~/training_data \\"
-	@echo "     --iters 100 \\"
-	@echo "     --batch-size 4 \\"
-	@echo "     --lora-layers 8 \\"
-	@echo "     --learning-rate 1e-4"
-	@echo ""
-	@echo "4. Modell in Ollama registrieren:"
-	@echo "   ollama create qwen3-music -f Modelfile"
-	@echo ""
-	@echo "Voraussetzung: mind. 200 bewertete Patterns (make ml-export zeigt aktuelle Anzahl)"
-
-ml-validate-test: ## Fine-tuned Modell mit Rock-Drums testen
-	$(PYTHON) -c "\
-from src.agent.tools.music_validator import validate_music_pattern; \
-from src.agent.tools.pattern_generators import _drums; \
-notes = _drums('rock', 2, 'full'); \
-r = validate_music_pattern(notes, 'VD-HEAVY', 'rock', 'A', 'minor'); \
-print('Score:', r.get('score')); print('Summary:', r.get('summary')); print('Issues:', r.get('issues'))"
-
-prepare-training-data: ## Datasets herunterladen und in MLX-Format konvertieren
-	@echo "=== Training-Daten vorbereiten ==="
-	@echo "1. Datasets werden konvertiert..."
-	$(PYTHON) -c "\
-from src.knowledge.dataset_converter import prepare_all_datasets; \
-stats = prepare_all_datasets(); \
-print(f'Gesamt: {stats[\"total\"]} Beispiele — Train: {stats[\"train\"]}, Val: {stats[\"val\"]}')"
-	@echo ""
-	@echo "2. Training-Daten auf Mac kopieren:"
-	@echo "   scp training_data/train.jsonl training_data/valid.jsonl $(MAC_USER)@$(MAC_HOST):~/training_data/"
-	@echo ""
-	@echo "3. MLX Training auf Mac fortsetzen:"
-	@echo "   mlx_lm.lora \\"
-	@echo "     --model mlx-community/Qwen3-8B-4bit \\"
-	@echo "     --adapter-path ~/.ollama/models/mlx-models/bitwig-adapter \\"
-	@echo "     --resume-adapter-file ~/.ollama/models/mlx-models/bitwig-adapter/0001000_adapters.safetensors \\"
-	@echo "     --data ~/training_data \\"
-	@echo "     --iters 500 --batch-size 4 --lora-layers 8"
-
-sync-training-mac: ## Training-Daten auf Mac kopieren
-	scp -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
-	    training_data/train.jsonl training_data/valid.jsonl \
-	    "$(MAC_USER)@$(MAC_HOST):~/training_data/"
-	@echo "✓ Trainingsdaten auf Mac"
