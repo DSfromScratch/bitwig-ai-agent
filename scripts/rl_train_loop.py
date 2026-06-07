@@ -150,10 +150,16 @@ _LOCAL_MODE = MAC_HOST in _local_ips() or os.getenv("RL_LOCAL_MODE") == "1"
 
 def _ssh(cmd: str) -> int:
     if _LOCAL_MODE:
-        return subprocess.run(["bash", "-lc", cmd], check=False).returncode
+        # stdin=DEVNULL: verhindert "init_sys_streams: Bad file descriptor"-Crashes
+        # frisch gestarteter Python-Subprozesse, wenn der Loop selbst im
+        # Hintergrund (nohup, ohne TTY) läuft.
+        return subprocess.run(
+            ["bash", "-lc", cmd], check=False, stdin=subprocess.DEVNULL
+        ).returncode
     result = subprocess.run(
         ["ssh", f"{MAC_USER}@{MAC_HOST}", cmd],
         check=False,
+        stdin=subprocess.DEVNULL,
     )
     return result.returncode
 
