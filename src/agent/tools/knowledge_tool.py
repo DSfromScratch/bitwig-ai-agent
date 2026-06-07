@@ -465,8 +465,11 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                 raw_recipes = s.run("""
                     CALL db.index.vector.queryNodes('sound_recipe_embedding', 4, $emb)
                     YIELD node AS n, score
+                    OPTIONAL MATCH (a:AudioSample)-[:SAMPLED_IN]->(n)
+                    WITH n, score, collect(DISTINCT a.filename)[..5] AS samples
                     RETURN n.content AS content, n.source AS source,
                            n.project AS project, n.role AS role,
+                           samples AS samples,
                            null AS doc_type, null AS video_url,
                            'recipe' AS kind, score
                 """, emb=emb).data()
@@ -619,6 +622,8 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
                 if d.get("video_url"):
                     header += f" — [Video]({d['video_url']})"
                 vec_parts.append(f"{header}\n{d['content'][:400].strip()}")
+                if d.get("samples"):
+                    vec_parts[-1] += "\n  🎚️ Samples: " + ", ".join(d["samples"])
             results.append(
                 "## Wissen (Neo4j Vektorsuche)\n\n" +
                 "\n\n---\n\n".join(vec_parts)

@@ -260,8 +260,53 @@ def store_samples(features: list[dict], project_name: str) -> int:
                      filename=feat["filename"])
             stored += 1
 
+        # Robuste, projekt-agnostische SAMPLED_IN-Verknüpfung (zusätzlich zum
+        # optionalen hardcoded track_match oben): Stem == track_name oder
+        # Stem == eindeutiges primary_device. Siehe
+        # src/knowledge/migrations/link_audio_samples.cypher.
+        linked = _link_samples_robust(s, project_name)
+        if linked:
+            print(f"  +{linked} SAMPLED_IN-Kanten (robust: track_name/primary_device)")
+
     print(f"  {stored} AudioSample-Nodes gespeichert ({time.time()-t0:.1f}s)")
     return stored
+
+
+def _link_samples_robust(s, project_name: str) -> int:
+    """Verknüpft AudioSamples projekt-agnostisch über zwei eindeutige Signale."""
+    before = s.run(
+        "MATCH (:AudioSample {project:$p})-[r:SAMPLED_IN]->(:SoundRecipe) "
+        "RETURN count(r) AS c", p=project_name).single()["c"]
+    # Regel A: Stem == track_name (exakt, case-insensitive)
+    s.run("""
+        MATCH (a:AudioSample {project: $p})
+        WHERE a.filename IS NOT NULL
+        WITH a, replace(replace(toLower(a.filename), '.wav', ''), '.aiff', '') AS s0
+        WITH a, CASE WHEN s0 CONTAINS '-bounce'
+                     THEN trim(split(s0, '-bounce')[0]) ELSE s0 END AS stem
+        MATCH (sr:SoundRecipe {project: $p})
+        WHERE toLower(trim(sr.track_name)) = stem
+        MERGE (a)-[r:SAMPLED_IN]->(sr)
+        SET r.match = 'track_name'
+    """, p=project_name)
+    # Regel B: Stem == eindeutiges primary_device
+    s.run("""
+        MATCH (a:AudioSample {project: $p})
+        WHERE a.filename IS NOT NULL AND toLower(a.filename) CONTAINS '-bounce'
+        WITH a, replace(replace(toLower(a.filename), '.wav', ''), '.aiff', '') AS s0
+        WITH a, trim(split(s0, '-bounce')[0]) AS stem
+        MATCH (sr:SoundRecipe {project: $p})
+        WHERE toLower(trim(sr.primary_device)) = stem
+        WITH a, collect(DISTINCT sr) AS recipes
+        WHERE size(recipes) = 1
+        WITH a, recipes[0] AS sr
+        MERGE (a)-[r:SAMPLED_IN]->(sr)
+        SET r.match = coalesce(r.match, 'primary_device')
+    """, p=project_name)
+    after = s.run(
+        "MATCH (:AudioSample {project:$p})-[r:SAMPLED_IN]->(:SoundRecipe) "
+        "RETURN count(r) AS c", p=project_name).single()["c"]
+    return after - before
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
