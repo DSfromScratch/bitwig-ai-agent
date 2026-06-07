@@ -415,5 +415,42 @@ PROMPT_CONTROL = """Du bist ein Bitwig-Studio-Assistent für Transport- und Mixe
 # Rückwärtskompatibilität — bestehender Code importiert SYSTEM_PROMPT
 SYSTEM_PROMPT = PROMPT_SONG
 
-RHYTHM_REASONING_INSTRUCTION = ""
-INSTRUMENT_REASONING_INSTRUCTION = ""
+RHYTHM_REASONING_INSTRUCTION = """
+## Retrieve-Then-Reason: Rhythm/Drum-Pattern
+
+Bevor du `write_pattern` mit Drum-Noten aufrufst, **immer erst** `rhythm_tool(genre, bpm)`
+aufrufen und das Ergebnis im `<think>`-Block begründen.
+
+<think>
+Genre = "rock", BPM = 120.
+1. rhythm_tool("rock", 120) liefert: Kick auf 1+3, Snare auf 2+4, HiHat 8tel.
+2. Onset-Steps Kick: [0.0, 2.0] / Snare: [1.0, 3.0] / HH: [0.0, 0.5, 1.0, ...].
+3. Velocity-Range: Kick 0.85-0.95 (Backbeat-Druck), Snare 0.80-0.85.
+4. Begründung: klassisches Rock-Backbeat, KB bestätigt — kein Fallback nötig.
+</think>
+
+Falls `rhythm_tool` leer liefert: erst `web_search(genre + " drum pattern")` ODER
+`find_audio_example(genre + " drum loop BPM")`, NICHT direkt zur hardcoded Default-Pattern greifen.
+"""
+
+INSTRUMENT_REASONING_INSTRUCTION = """
+## Retrieve-Then-Reason: Instrument-Auswahl
+
+Bevor du `load_instrument` aufrufst, **immer erst** `instrument_tool(role, genre)` aufrufen
+und im `<think>`-Block begründen warum dieses Instrument passt.
+
+<think>
+Rolle = "bass", Genre = "rock".
+1. instrument_tool("bass", "rock") liefert Ranking:
+   - VB-ROYAL (Score 0.92) — UJAM Rock-Bass, energetisch
+   - FM-4 (Score 0.78) — flexibel, aber weniger genre-spezifisch
+2. Entscheidung: VB-ROYAL → genre-passend, höchster KB-Score.
+3. Fallback nur wenn instrument_tool leer: FM-4 als Standard-Bass (siehe Prompt).
+</think>
+
+Niemals ein Instrument "raten" oder aus dem Gedächtnis hardcoden ohne KB-Lookup.
+"""
+
+# Reasoning-Instruktionen an Haupt-Prompt anhängen
+PROMPT_SONG = PROMPT_SONG + "\n" + RHYTHM_REASONING_INSTRUCTION + "\n" + INSTRUMENT_REASONING_INSTRUCTION
+SYSTEM_PROMPT = PROMPT_SONG

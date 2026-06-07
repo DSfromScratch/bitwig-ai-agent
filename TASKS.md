@@ -5,15 +5,15 @@
 
 ---
 
-## A · Tests reparieren
+## A · Tests reparieren — ✅ erledigt
 
-**Ergebnis des letzten Laufs** (`pytest -m unit` mit Marker `not integration and not neo4j and not bridge and not evaluation`):
+**Ergebnis des letzten Laufs** (`pytest -m unit`):
 
 ```
-237 passed · 9 failed · 4 errors · 58 deselected
+250 passed · 58 deselected (0 failed)
 ```
 
-### A.1 — Snapshot-Tests scheitern: `syrupy` fehlt
+### A.1 — Snapshot-Tests scheitern: `syrupy` fehlt ✅
 
 **Symptom:** `fixture 'snapshot' not found` bei 4 Tests in `tests/test_advanced_strategies.py`.
 
@@ -29,7 +29,7 @@
 - `TestSnapshots::test_melody_prompt_no_drum_criteria_snapshot`
 - `TestSnapshots::test_error_pattern_prompt_snapshot`
 
-### A.2 — Neo4j-RAG Mock-Tests scheitern (9 Tests)
+### A.2 — Neo4j-RAG Mock-Tests scheitern (9 Tests) ✅
 
 **Symptom:** Alle Tests landen im `except Exception`-Branch von
 `src/agent/tools/knowledge_tool.py:614` und liefern
@@ -57,7 +57,7 @@ und der tatsächliche Cypher-Aufruf-Pfad in `query_bitwig_docs` driften auseinan
 - `TestKnowledgeQAGuard::test_kq_query_skipped_when_zero_nodes`
 - `TestKnowledgeQAGuard::test_kq_query_runs_when_nodes_present`
 
-### A.3 — Test-Dependencies konsolidieren
+### A.3 — Test-Dependencies konsolidieren ✅
 
 | Aufgabe | Datei | Aufwand |
 |---------|-------|---------|
@@ -70,7 +70,7 @@ und der tatsächliche Cypher-Aufruf-Pfad in `query_bitwig_docs` driften auseinan
 
 Aus [`docs/diagrams/architecture_improvements.md`](docs/diagrams/architecture_improvements.md) — die noch nicht ✅ markierten Punkte.
 
-### B.1 — F9 Retrieve-Then-Reason im System-Prompt 🟡
+### B.1 — F9 Retrieve-Then-Reason im System-Prompt ✅
 
 **Status:** KB-Tools (`rhythm_tool`, `instrument_tool`) existieren, aber der System-Prompt
 enthält noch keine konkreten `<think>`-Beispiele, die das LLM zur Begründung anhalten.
@@ -81,7 +81,7 @@ enthält noch keine konkreten `<think>`-Beispiele, die das LLM zur Begründung a
 | `INSTRUMENT_REASONING_INSTRUCTION` analog ergänzen | `src/agent/prompts.py` | S |
 | Trainingsdaten-Pair für Drum/Instrument-Reasoning im Mac-Native LoRA-Datensatz | `~/mlx-training/train.jsonl` | M |
 
-### B.2 — F2 + F9 KB-backed Strategy-Klasse 🟡
+### B.2 — F2 + F9 KB-backed Strategy-Klasse ✅
 
 **Status:** Repositories und KB-Tools existieren, aber `pattern_generators.py` enthält
 noch hardcodierte Drum-Pattern als Fallback im Produktivpfad.
@@ -92,7 +92,7 @@ noch hardcodierte Drum-Pattern als Fallback im Produktivpfad.
 | Hardcoded-Pattern in `pattern_generators.py` in `HardcodedFallbackStrategy` extrahieren | `src/agent/tools/music/patterns/fallback.py` (neu) | M |
 | Aufrufer auf Strategy-Pattern umstellen | `src/agent/tools/song_tools.py`, `pattern_generators.py` | M |
 
-### B.3 — F10 Restliche Hardcoded-Mappings entfernen 🟡
+### B.3 — F10 Restliche Hardcoded-Mappings entfernen ✅
 
 **Status:** `InstrumentRepository` + `instrument_tool.py` aktiv, aber Fallback-Pfade
 referenzieren noch `INSTRUMENT_MAP`.
