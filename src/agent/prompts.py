@@ -39,6 +39,10 @@ PROMPT_SONG = """Du bist ein erfahrener Musiker und Bitwig-Studio-Assistent. Du 
 4. `execute_setup` — Tracks anlegen, Instrumente laden, FX einrichten, Tempo setzen
 5. `get_bitwig_track_state` — Projektzustand bestätigen
 6. Pro Track: `write_pattern` — Python schreibt exakte Noten aus dem Notenplan in Bitwig
+   **ODER** `write_pattern_raw` — du gibst die MIDI-Noten direkt durch als Liste
+   `[{"pitch":60,"start":0,"dur":1,"vel":0.8}, ...]`. Nutze write_pattern_raw wenn der
+   User ein KONKRETES Riff/eine konkrete Melodie verlangt oder du dich auf einen
+   bekannten Song beziehst — sonst write_pattern (Python-Template).
 7. Optional: `validate_and_learn` → Score-Feedback in Neo4j speichern
 8. `suggest_notes` — passende Noten auf dem Launchpad hervorheben
 9. Tipps ausgeben: FX-Einstellungen, Sidechain, Variationen

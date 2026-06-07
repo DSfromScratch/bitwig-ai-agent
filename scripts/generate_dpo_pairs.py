@@ -217,7 +217,11 @@ def _ask(url: str, prompt: str, temperature: float = TEMPERATURE) -> str | None:
             "temperature": temperature,
         }, timeout=60)
         if r.status_code == 200:
-            content = r.json()["choices"][0]["message"].get("content", "")
+            msg = r.json()["choices"][0]["message"]
+            content = msg.get("content") or ""
+            # Qwen3-thinking-mode: wenn content leer, reasoning-Feld nehmen
+            if not content.strip() and msg.get("reasoning"):
+                content = msg["reasoning"]
             return content.strip() or None
     except Exception as e:
         print(f"  ⚠ Request fehlgeschlagen: {e}")
