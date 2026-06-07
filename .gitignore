@@ -86,3 +86,6 @@ training_data/raw/drums-with-llm/
 
 #claude memory
 .claude/
+
+# Live-Capture-Snapshots
+BitwigTracks/sessions/

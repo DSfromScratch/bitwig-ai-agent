@@ -5,6 +5,33 @@
 
 ---
 
+## 0 · Aktuelle Phase — Woche 2: Live-Härtung
+
+> **Woche 1 ✅ abgeschlossen** — Unit 250/250, Bridge 7/7, Neo4j 16/16 (Commits `20f32ec`, `3f398bb`).
+> Java-Extensions neu deployed: `BitwigStepPlugin.bwextension`, `LaunchpadController.bwextension`.
+
+### Vorgehen
+1. **Bitwig neu starten** → neue Extensions laden.
+2. Pro Session `./scripts/live_capture.sh "<kurztitel>"` ausführen — Snapshot landet in `BitwigTracks/sessions/`.
+3. Findings strukturiert in [`LIVE_LOG.md`](./LIVE_LOG.md) eintragen (Vorlage dort).
+4. Wiederkehrende Bugs → als P1/P2 in Abschnitt **G · Live-Findings** unten anhängen.
+5. Nach ca. 5 Sessions: Findings auswerten, Severity sortieren, Sprint planen.
+
+### Test-Szenarien (Mindest-Coverage Woche 2)
+- [ ] Rock-Song (Drums + Bass + Lead), 4 Patterns, 120 BPM
+- [ ] Jazz-Stück (Swing-Drums + Comping + Walking-Bass), 8 Bars
+- [ ] Elektronik (Kick-Pattern + Bass-Sequence + Pad), Grid-Modulation
+- [ ] Korrektur-Loop: bewusst kaputten Prompt → prüfen, ob Agent sich erholt
+- [ ] Lange Session (>10 Tool-Calls) → Context-Limit-Verhalten beobachten
+
+### Watchpoints (basierend auf Woche-1-Bugs)
+- Launchpad-Stabilität (war: `IOException → Crash`)
+- `write_notes`-Track-Targeting (war: Sprung auf Track 1)
+- Embedding-Server-Routing (war: Fallback auf Qwen-Port 8080)
+- Räumung zwischen Runden (war: 2. Runde startete, bevor Tracks gelöscht)
+
+---
+
 ## A · Tests reparieren — ✅ erledigt
 
 **Ergebnis des letzten Laufs** (`pytest -m unit`):
@@ -167,3 +194,15 @@ Diese Datei wird **manuell** aktualisiert:
 
 Quelle für Architektur-Findings: [`docs/diagrams/architecture_improvements.md`](docs/diagrams/architecture_improvements.md)
 Quelle für Roadmap: [`docs/diagrams/project_overview.md`](docs/diagrams/project_overview.md#nächste-roadmap-schritte)
+
+---
+
+## G · Live-Findings (Woche 2 ff.)
+
+> Anhang für reproduzierbare Bugs/UX-Probleme aus echten Sessions.
+> Roh-Notizen gehören in [`LIVE_LOG.md`](./LIVE_LOG.md); hier landen nur **konsolidierte, actionable Tasks**.
+
+| # | Datum | Symptom | Hypothese | Komponente | Severity | Status |
+|---|-------|---------|-----------|------------|----------|--------|
+| — | —     | _noch keine_ | — | — | — | — |
+
