@@ -18,6 +18,51 @@ from src.knowledge.neo4j_graph import is_available, session
 log = logging.getLogger("bitwig-agent.repositories")
 
 
+class BaseRepository:
+    """Basisklasse für Neo4j-Repositories.
+
+    Zentralisiert den an jeder Read-Methode wiederholten Boilerplate:
+    ``is_available()``-Guard, ``with session()``-Kontext und try/except mit
+    Logging. Komplexe Multi-Statement-Writes und Vektor-Queries bleiben in den
+    Subklassen, da sie Pre-Session-Embeddings oder dynamische Queries nutzen.
+    """
+
+    def _query_one(self, cypher: str, mapper, *, default=None, **params):
+        """Führt ``cypher`` aus, mappt die einzelne Ergebniszeile via ``mapper``.
+
+        Gibt ``default`` zurück wenn Neo4j nicht verfügbar ist, keine Zeile
+        gefunden wird oder ein Fehler auftritt.
+        """
+        if not is_available():
+            log.debug("Neo4j nicht verfügbar — %s gibt Default zurück", type(self).__name__)
+            return default
+        try:
+            with session() as s:
+                row = s.run(cypher, **params).single()
+            return mapper(row) if row is not None else default
+        except Exception as exc:
+            log.warning("%s-Query fehlgeschlagen: %s", type(self).__name__, exc)
+            return default
+
+    def _query_many(self, cypher: str, mapper, *, default=None, **params):
+        """Führt ``cypher`` aus, mappt jede Ergebniszeile via ``mapper``.
+
+        Gibt ``default`` (Standard: leere Liste) zurück bei Nichtverfügbarkeit
+        oder Fehler.
+        """
+        if default is None:
+            default = []
+        if not is_available():
+            log.debug("Neo4j nicht verfügbar — %s gibt Default zurück", type(self).__name__)
+            return default
+        try:
+            with session() as s:
+                return [mapper(row) for row in s.run(cypher, **params)]
+        except Exception as exc:
+            log.warning("%s-Query fehlgeschlagen: %s", type(self).__name__, exc)
+            return default
+
+
 # ── DrumPattern ───────────────────────────────────────────────────────────────
 
 @dataclass
@@ -33,7 +78,7 @@ class DrumPatternRecord:
     description: str
 
 
-class DrumPatternRepository:
+class DrumPatternRepository(BaseRepository):
     def find(
         self,
         genre: str,
@@ -42,45 +87,37 @@ class DrumPatternRepository:
         mood: str = "",
     ) -> DrumPatternRecord | None:
         """Gibt das passendste DrumPattern für genre + section zurück, oder None."""
-        if not is_available():
-            log.debug("Neo4j nicht verfügbar — DrumPatternRepository gibt None zurück")
-            return None
-        try:
-            with session() as s:
-                result = s.run(
-                    """
-                    MATCH (p:DrumPattern)
-                    WHERE toLower(p.genre)   = toLower($genre)
-                      AND toLower(p.section) = toLower($section)
-                      AND p.energy           <= $energy_max
-                      AND ($mood = '' OR toLower(p.mood) CONTAINS toLower($mood))
-                    RETURN p
-                    ORDER BY abs(p.energy - $energy_max)
-                    LIMIT 1
-                    """,
-                    genre=genre,
-                    section=section,
-                    energy_max=energy_max,
-                    mood=mood,
-                )
-                row = result.single()
-                if row is None:
-                    return None
-                p = row["p"]
-                return DrumPatternRecord(
-                    kick_beats=list(p["kick_beats"]) if isinstance(p["kick_beats"], list) else p["kick_beats"],
-                    snare_beats=list(p["snare_beats"]),
-                    hat_step=float(p["hat_step"]),
-                    hat_vel_on=float(p["hat_vel_on"]),
-                    hat_vel_off=float(p["hat_vel_off"]),
-                    kick_vel=float(p["kick_vel"]),
-                    snare_vel=float(p["snare_vel"]),
-                    energy=float(p["energy"]),
-                    description=str(p.get("description", "")),
-                )
-        except Exception as exc:
-            log.warning("DrumPatternRepository.find fehlgeschlagen: %s", exc)
-            return None
+        def _map(row) -> DrumPatternRecord:
+            p = row["p"]
+            return DrumPatternRecord(
+                kick_beats=list(p["kick_beats"]) if isinstance(p["kick_beats"], list) else p["kick_beats"],
+                snare_beats=list(p["snare_beats"]),
+                hat_step=float(p["hat_step"]),
+                hat_vel_on=float(p["hat_vel_on"]),
+                hat_vel_off=float(p["hat_vel_off"]),
+                kick_vel=float(p["kick_vel"]),
+                snare_vel=float(p["snare_vel"]),
+                energy=float(p["energy"]),
+                description=str(p.get("description", "")),
+            )
+
+        return self._query_one(
+            """
+            MATCH (p:DrumPattern)
+            WHERE toLower(p.genre)   = toLower($genre)
+              AND toLower(p.section) = toLower($section)
+              AND p.energy           <= $energy_max
+              AND ($mood = '' OR toLower(p.mood) CONTAINS toLower($mood))
+            RETURN p
+            ORDER BY abs(p.energy - $energy_max)
+            LIMIT 1
+            """,
+            _map,
+            genre=genre,
+            section=section,
+            energy_max=energy_max,
+            mood=mood,
+        )
 
 
 # ── DrumSound ─────────────────────────────────────────────────────────────────
@@ -91,7 +128,7 @@ _GM_FALLBACK: dict[str, int] = {
 }
 
 
-class DrumSoundRepository:
+class DrumSoundRepository(BaseRepository):
     _cache: dict[str, int] = {}
 
     def pitch(self, sound_name: str) -> int:
@@ -99,18 +136,14 @@ class DrumSoundRepository:
         if sound_name in self._cache:
             return self._cache[sound_name]
 
-        if is_available():
-            try:
-                with session() as s:
-                    row = s.run(
-                        "MATCH (d:DrumSound {name: $n}) RETURN d.gm_pitch AS p",
-                        n=sound_name,
-                    ).single()
-                    if row:
-                        self._cache[sound_name] = int(row["p"])
-                        return self._cache[sound_name]
-            except Exception as exc:
-                log.warning("DrumSoundRepository.pitch fehlgeschlagen: %s", exc)
+        pitch = self._query_one(
+            "MATCH (d:DrumSound {name: $n}) RETURN d.gm_pitch AS p",
+            lambda row: int(row["p"]),
+            n=sound_name,
+        )
+        if pitch is not None:
+            self._cache[sound_name] = pitch
+            return pitch
 
         return _GM_FALLBACK.get(sound_name, 38)
 
@@ -128,7 +161,7 @@ class InstrumentRecord:
     description:      str
 
 
-class InstrumentRepository:
+class InstrumentRepository(BaseRepository):
     def find(
         self,
         role: str,
@@ -137,43 +170,32 @@ class InstrumentRepository:
         limit: int = 3,
     ) -> list[InstrumentRecord]:
         """Gibt bis zu `limit` passende Devices für Rolle + Genre zurück."""
-        if not is_available():
-            log.debug("Neo4j nicht verfügbar — InstrumentRepository gibt [] zurück")
-            return []
-        try:
-            with session() as s:
-                result = s.run(
-                    """
-                    MATCH (t:InstrumentTemplate {role: $role})
-                    WHERE ($genre = '' OR $genre IN t.genres)
-                      AND NOT ($genre IN coalesce(t.not_for, []))
-                      AND ($mood = '' OR $mood IN coalesce(t.moods, []))
-                    RETURN t
-                    ORDER BY
-                        CASE WHEN $genre IN t.genres THEN 0 ELSE 1 END,
-                        t.default_velocity DESC
-                    LIMIT $limit
-                    """,
-                    role=role,
-                    genre=genre.lower(),
-                    mood=mood.lower(),
-                    limit=limit,
-                )
-                return [
-                    InstrumentRecord(
-                        role=str(row["t"]["role"]),
-                        device_name=str(row["t"]["device_name"]),
-                        uuid=row["t"].get("uuid"),
-                        midi_low=int(row["t"]["midi_low"]),
-                        midi_high=int(row["t"]["midi_high"]),
-                        default_velocity=float(row["t"]["default_velocity"]),
-                        description=str(row["t"].get("description", "")),
-                    )
-                    for row in result
-                ]
-        except Exception as exc:
-            log.warning("InstrumentRepository.find fehlgeschlagen: %s", exc)
-            return []
+        return self._query_many(
+            """
+            MATCH (t:InstrumentTemplate {role: $role})
+            WHERE ($genre = '' OR $genre IN t.genres)
+              AND NOT ($genre IN coalesce(t.not_for, []))
+              AND ($mood = '' OR $mood IN coalesce(t.moods, []))
+            RETURN t
+            ORDER BY
+                CASE WHEN $genre IN t.genres THEN 0 ELSE 1 END,
+                t.default_velocity DESC
+            LIMIT $limit
+            """,
+            lambda row: InstrumentRecord(
+                role=str(row["t"]["role"]),
+                device_name=str(row["t"]["device_name"]),
+                uuid=row["t"].get("uuid"),
+                midi_low=int(row["t"]["midi_low"]),
+                midi_high=int(row["t"]["midi_high"]),
+                default_velocity=float(row["t"]["default_velocity"]),
+                description=str(row["t"].get("description", "")),
+            ),
+            role=role,
+            genre=genre.lower(),
+            mood=mood.lower(),
+            limit=limit,
+        )
 
     def find_best(self, role: str, genre: str, mood: str = "") -> InstrumentRecord | None:
         results = self.find(role, genre, mood, limit=1)
@@ -182,7 +204,7 @@ class InstrumentRepository:
 
 # ── ProjectSnapshotRepository ─────────────────────────────────────────────────
 
-class ProjectSnapshotRepository:
+class ProjectSnapshotRepository(BaseRepository):
     """Persistiert BitwigProjectSnapshot als BitwigProject + Scene + TrackGroup Nodes."""
 
     def save(self, snap: "BitwigProjectSnapshot") -> None:  # noqa: F821
@@ -282,22 +304,17 @@ class ProjectSnapshotRepository:
             log.warning("ProjectSnapshotRepository.save fehlgeschlagen: %s", exc)
 
     def exists(self, name: str) -> bool:
-        if not is_available():
-            return False
-        try:
-            with session() as s:
-                row = s.run(
-                    "MATCH (p:BitwigProject {name: $n}) RETURN count(p) AS c",
-                    n=name,
-                ).single()
-                return bool(row and row["c"] > 0)
-        except Exception:
-            return False
+        return self._query_one(
+            "MATCH (p:BitwigProject {name: $n}) RETURN count(p) AS c",
+            lambda row: bool(row["c"] > 0),
+            default=False,
+            n=name,
+        )
 
 
 # ── ProjectTemplateRepository ─────────────────────────────────────────────────
 
-class ProjectTemplateRepository:
+class ProjectTemplateRepository(BaseRepository):
     """Persistiert ProjectTemplate in Neo4j; unterstützt HNSW-Vektorsuche."""
 
     def save(self, tmpl: "ProjectTemplate") -> None:  # noqa: F821
@@ -370,26 +387,18 @@ class ProjectTemplateRepository:
         return None
 
     def load(self, name: str) -> Optional["ProjectTemplate"]:  # noqa: F821
-        if not is_available():
-            return None
-        try:
-            import json as _json
-            from src.agent.models.project_template import ProjectTemplate
-            with session() as s:
-                row = s.run(
-                    "MATCH (pt:ProjectTemplate {name: $n}) RETURN pt.data_json AS j",
-                    n=name,
-                ).single()
-                if row and row["j"]:
-                    return ProjectTemplate.from_dict(_json.loads(row["j"]))
-        except Exception as exc:
-            log.warning("ProjectTemplateRepository.load: %s", exc)
-        return None
+        import json as _json
+        from src.agent.models.project_template import ProjectTemplate
+        return self._query_one(
+            "MATCH (pt:ProjectTemplate {name: $n}) RETURN pt.data_json AS j",
+            lambda row: ProjectTemplate.from_dict(_json.loads(row["j"])) if row["j"] else None,
+            n=name,
+        )
 
 
 # ── WorkflowRepository ────────────────────────────────────────────────────────
 
-class WorkflowRepository:
+class WorkflowRepository(BaseRepository):
     """Persistiert WorkflowPlan als Workflow + WorkflowStep Nodes in Neo4j."""
 
     def save(self, plan: "WorkflowPlan") -> str:  # noqa: F821
@@ -488,7 +497,7 @@ class GenrePatternRecord:
     analyzed_at: str         # ISO-Datum
 
 
-class GenrePatternRepository:
+class GenrePatternRepository(BaseRepository):
     """Cached GenrePattern-Nodes: BPM, Tonart, Onset-Steps aus Audio-Analyse."""
 
     _INDEX_CREATED = False
@@ -579,32 +588,25 @@ class GenrePatternRepository:
 
     def find(self, name: str) -> GenrePatternRecord | None:
         """Exakte Suche nach Genre-Name (case-insensitive)."""
-        if not is_available():
-            return None
-        try:
-            with session() as s:
-                result = s.run("""
-                    MATCH (g:GenrePattern)
-                    WHERE toLower(g.name) = toLower($name)
-                    RETURN g
-                    LIMIT 1
-                """, name=name).single()
-            if not result:
-                return None
-            g = result["g"]
-            return GenrePatternRecord(
-                name=g["name"],
-                bpm_avg=float(g.get("bpm_avg", 120)),
-                bpm_range=[float(g.get("bpm_min", 0)), float(g.get("bpm_max", 0))],
-                typical_keys=list(g.get("typical_keys", [])),
-                energy=float(g.get("energy", 0.5)),
-                onset_steps=list(g.get("onset_steps", [])),
-                sources=list(g.get("sources", [])),
-                analyzed_at=g.get("analyzed_at", ""),
-            )
-        except Exception as exc:
-            log.warning("GenrePatternRepository.find: %s", exc)
-            return None
+        return self._query_one(
+            """
+            MATCH (g:GenrePattern)
+            WHERE toLower(g.name) = toLower($name)
+            RETURN g
+            LIMIT 1
+            """,
+            lambda row: GenrePatternRecord(
+                name=row["g"]["name"],
+                bpm_avg=float(row["g"].get("bpm_avg", 120)),
+                bpm_range=[float(row["g"].get("bpm_min", 0)), float(row["g"].get("bpm_max", 0))],
+                typical_keys=list(row["g"].get("typical_keys", [])),
+                energy=float(row["g"].get("energy", 0.5)),
+                onset_steps=list(row["g"].get("onset_steps", [])),
+                sources=list(row["g"].get("sources", [])),
+                analyzed_at=row["g"].get("analyzed_at", ""),
+            ),
+            name=name,
+        )
 
     def find_similar(self, query_text: str, limit: int = 3) -> list[GenrePatternRecord]:
         """HNSW-Vektorsuche: findet ähnlichste Genre-Patterns."""
