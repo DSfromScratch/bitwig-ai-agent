@@ -3,18 +3,16 @@
 
 Erzeugt Trainingsbeispiele im selben ``{"messages": [...]}``-Format wie
 ``training_data/train.jsonl``. Jedes Pair demonstriert das *Retrieve-Then-Reason*-
-Muster aus den Prompt-Instruktionen (``RHYTHM_REASONING_INSTRUCTION`` /
-``INSTRUMENT_REASONING_INSTRUCTION``):
+Muster: KB-Ergebnis wird in den User-Kontext injiziert, der Assistant begründet
+im ``<think>``-Block und ruft das passende Tool auf.
 
-  1. Das KB-Tool-Ergebnis (``get_rhythm_pattern`` bzw. ``get_instruments_for_song``)
-     wird in den User-Kontext injiziert.
-  2. Der Assistant begründet im ``<think>``-Block und ruft dann ``write_pattern``
-     (Drums, **finit**) bzw. ``load_instrument`` auf.
+Typen:
+  1. Rhythm-Pairs — KB-Rhythm-Daten → ``write_pattern`` (Drums, finit)
+  2. Instrument-Pairs — KB-Instrument-Ranking → ``execute_setup`` mit load_instrument
 
 Wichtige Invarianten (vom Generator hart geprüft):
   * Jeder ``<think>`` wird **immer** mit ``</think>`` geschlossen — adressiert das
-    bekannte Qwen3-``</think>``-Problem (Modell soll das korrekte Muster lernen,
-    nicht das fehlerhafte verstärken).
+    bekannte Qwen3-``</think>``-Problem.
   * Drum-Pattern sind **finit** (1 Takt, Steps 0..15, Hats gecappt) — verhindert
     das beim DPO-Training beobachtete Runaway-Pattern.
   * Tool-Call ist valides JSON.
@@ -39,27 +37,35 @@ TRAIN_FILE = Path(__file__).resolve().parent.parent / "training_data" / "train.j
 KICK, SNARE, CLOSED_HAT, OPEN_HAT = 36, 38, 42, 46
 STEPS_PER_BEAT = 4  # 16tel-Grid, 1 Takt = 4 Beats = 16 Steps
 
-# System-Prompt-Varianten: spiegeln den dominanten train.jsonl-Prompt, ergänzt um
-# das jeweils demonstrierte KB-Tool, damit das injizierte Ergebnis konsistent ist.
-SYSTEM_RHYTHM = (
-    "/no_think\n"
-    "Du bist ein Bitwig Studio AI-Assistent. Verfügbare Tools:\n"
-    "- write_pattern(track_name, notes, length_beats, key)\n"
-    "- get_rhythm_pattern(genre, section, energy, mood)\n"
-    "- web_search(query)\n"
-    "- find_audio_example(genre_query)\n"
-    "- query_bitwig_docs(query)"
-)
+# Aktueller System-Prompt — identisch zur Produktionsumgebung (Version 4).
+# Enthält keine veralteten Tools (kein get_rhythm_pattern, kein load_instrument als Tool).
+SYSTEM_PROMPT = """/no_think
+Du bist ein erfahrener Bitwig Studio 6 Assistent und Musiker.
 
-SYSTEM_INSTRUMENT = (
-    "/no_think\n"
-    "Du bist ein Bitwig Studio AI-Assistent. Verfügbare Tools:\n"
-    "- load_instrument(track_name, device_name, uuid)\n"
-    "- get_instruments_for_song(genre, roles, mood, energy)\n"
-    "- write_pattern(track_name, notes, length_beats, key)\n"
-    "- web_search(query)\n"
-    "- query_bitwig_docs(query)"
-)
+## Verfügbare Tools
+
+- **query_bitwig_docs(query)** — Durchsucht die Bitwig-Wissensdatenbank (Neo4j).
+  Nutze für: Genre-Device-Empfehlungen, Parameter, Workflows, Genre-Merkmale.
+  IMMER aufrufen wenn User nach einem Genre, Device oder Workflow fragt.
+
+- **check_bitwig_connection()** — Prüft ob BitwigStepPlugin erreichbar ist.
+  Aufrufen VOR execute_setup.
+
+- **execute_setup(result)** — Legt Tracks, Instrumente, FX und Tempo in Bitwig an.
+
+- **get_bitwig_track_state()** — Liest aktuelle Track-Namen und Note-Counts.
+
+- **write_pattern(track_index, notes, bpm, key)** — Schreibt MIDI-Noten in einen Clip.
+
+- **suggest_notes(notes, r, g, b)** — Hebt Noten auf dem Launchpad hervor.
+
+- **validate_music(notes, genre, bpm, key)** — Bewertet Noten (Score 0–1).
+
+- **scan_and_learn_project()** — Scannt das aktuelle Bitwig-Projekt.
+
+## Grundregel
+Bei Genre-, Device- oder Workflow-Fragen: IMMER zuerst query_bitwig_docs aufrufen.
+Nie aus dem Gedächtnis antworten wenn die Datenbank bessere Infos liefern kann."""
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +182,7 @@ def _rhythm_pair(spec) -> dict:
         "<think>\n"
         f"[Genre: {genre}] [Section: {section}] [BPM: {bpm}] [Tonart: {key}] "
         f"[Energie: {energy}]\n"
-        f"1. get_rhythm_pattern liefert: {desc}.\n"
+        f"1. KB-Ergebnis: {desc}.\n"
         f"2. Kick-Steps {kick_steps} (aus kick_beats={kick_b}), "
         f"Snare-Steps {snare_steps} (backbeat), HiHat: {hat_label} → {hat_steps}.\n"
         f"3. Velocity aus KB skaliert mit Energie {energy}; alle Noten enden im Takt "
@@ -198,7 +204,7 @@ def _rhythm_pair(spec) -> dict:
     assistant = f"{think}\n{json.dumps(tool_call, ensure_ascii=False)}"
 
     return {"messages": [
-        {"role": "system", "content": SYSTEM_RHYTHM},
+        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
         {"role": "assistant", "content": assistant},
     ]}
@@ -349,11 +355,10 @@ def _instrument_pair(spec) -> dict:
 
     user = (
         "Kontext:\n"
-        f'get_instruments_for_song("{genre}", roles=["{role}"], mood="{mood}", '
-        f"energy={energy}):\n"
+        f"Instrument-KB für {genre}, Rolle={role}, Mood={mood}, Energie={energy}:\n"
         f"→ {json.dumps(tool_result, ensure_ascii=False)}\n\n"
-        f"Wähle das passende Instrument für die {role}-Spur in einem {genre}-Song. "
-        "Nutze die KB-Empfehlung, kein hardcodiertes Device."
+        f"Wähle das passende Instrument für die {role.capitalize()}-Spur in einem "
+        f"{genre}-Song. Nutze die KB-Empfehlung, kein hardcodiertes Device."
     )
 
     top = options[0]
@@ -361,27 +366,34 @@ def _instrument_pair(spec) -> dict:
     think = (
         "<think>\n"
         f"[Rolle: {role}] [Genre: {genre}] [Mood: {mood}] [Energie: {energy}]\n"
-        f"1. get_instruments_for_song liefert Ranking:\n"
+        f"1. KB-Ranking:\n"
         f"   - {top[0]} (Score {top[6]}) — {top[5]}\n"
         f"   - {second[0]} (Score {second[6]}) — {second[5]}\n"
         f"2. Entscheidung: {top[0]} → höchster KB-Score, genre-passend.\n"
         f"3. MIDI-Range {top[2]}–{top[3]}, default_velocity {top[4]}.\n"
         f"4. Fallback nur wenn KB leer: {second[0]}. Hier nicht nötig.\n"
+        f"5. Korrekter Workflow: execute_setup mit load_instrument-Step (kein direkter load_instrument-Call).\n"
         "</think>"
     )
 
+    # execute_setup ist das korrekte Tool — load_instrument ist nur ein Step-Typ darin.
     tool_call = {
-        "tool": "load_instrument",
+        "tool": "execute_setup",
         "args": {
-            "track_name": role.capitalize(),
-            "device_name": top[0],
-            "uuid": top[1],
+            "result": {
+                "context_type": "song",
+                "target": {"role": role, "genre": genre},
+                "steps": [
+                    {"type": "add_track", "args": {}},
+                    {"type": "load_instrument", "args": {"name": top[0], "uuid": top[1]}},
+                ],
+            }
         },
     }
     assistant = f"{think}\n{json.dumps(tool_call, ensure_ascii=False)}"
 
     return {"messages": [
-        {"role": "system", "content": SYSTEM_INSTRUMENT},
+        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
         {"role": "assistant", "content": assistant},
     ]}
@@ -446,6 +458,7 @@ def build_pairs() -> list[dict]:
 def _validate_pair(pair: dict) -> None:
     msgs = pair["messages"]
     assert [m["role"] for m in msgs] == ["system", "user", "assistant"], "Rollen-Reihenfolge"
+    assert msgs[0]["content"] == SYSTEM_PROMPT, "System-Prompt muss Version 4 sein"
     assistant = msgs[-1]["content"]
     # Closed-think Invariante (Qwen3 </think>-Problem)
     assert assistant.count("<think>") == 1, "genau ein <think>"
@@ -454,8 +467,9 @@ def _validate_pair(pair: dict) -> None:
     # Tool-Call ist valides JSON
     tool_json = assistant.split("</think>", 1)[1].strip()
     obj = json.loads(tool_json)
-    assert obj.get("tool") in {"write_pattern", "load_instrument"}, "bekanntes Tool"
-    # Finite Drum-Notes
+    assert obj.get("tool") in {"write_pattern", "execute_setup"}, \
+        f"bekanntes Tool (got: {obj.get('tool')})"
+    # Finite Drum-Notes bei write_pattern
     if obj["tool"] == "write_pattern":
         notes = json.loads(obj["args"]["notes"])
         assert notes, "nicht-leeres Pattern"
@@ -463,6 +477,11 @@ def _validate_pair(pair: dict) -> None:
             assert 0 <= n["step"] <= 15, f"Step im Takt: {n['step']}"
             assert n["duration"] >= 1, "Note hat Länge"
         assert len(notes) <= 24, "Pattern gecappt (kein Runaway)"
+    # execute_setup hat steps-Liste
+    elif obj["tool"] == "execute_setup":
+        result = obj["args"].get("result", {})
+        assert "steps" in result, "execute_setup result braucht steps"
+        assert len(result["steps"]) >= 1, "mindestens ein Step"
 
 
 def _existing_user_messages() -> set[str]:

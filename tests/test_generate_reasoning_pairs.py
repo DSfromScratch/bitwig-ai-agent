@@ -45,7 +45,7 @@ def test_tool_call_is_valid_json(pairs):
         a = p["messages"][-1]["content"]
         tool_json = a.split("</think>", 1)[1].strip()
         obj = json.loads(tool_json)
-        assert obj["tool"] in {"write_pattern", "load_instrument"}
+        assert obj["tool"] in {"write_pattern", "execute_setup"}
         assert isinstance(obj["args"], dict)
 
 
@@ -73,18 +73,20 @@ def test_rhythm_user_context_injects_kb_tool(pairs):
 
 def test_instrument_pairs_pick_top_ranked_device(pairs):
     instr = [p for p in pairs
-             if '"tool": "load_instrument"' in p["messages"][-1]["content"]]
+             if '"tool": "execute_setup"' in p["messages"][-1]["content"]]
     all_instr_specs = gen._all_instrument_specs()
     assert len(instr) == len(all_instr_specs)
     for p, spec in zip(instr, all_instr_specs):
         top_device = spec[4][0][0]
         obj = json.loads(p["messages"][-1]["content"].split("</think>", 1)[1].strip())
-        assert obj["args"]["device_name"] == top_device
+        steps = obj["args"]["result"]["steps"]
+        load_step = next(s for s in steps if s["type"] == "load_instrument")
+        assert load_step["args"]["name"] == top_device
 
 
 def test_validate_pair_rejects_unclosed_think():
     bad = {"messages": [
-        {"role": "system", "content": "s"},
+        {"role": "system", "content": gen.SYSTEM_PROMPT},
         {"role": "user", "content": "u"},
         {"role": "assistant", "content": '<think>\nkein Close\n{"tool": "write_pattern", "args": {}}'},
     ]}
