@@ -72,7 +72,7 @@ def _patch_langchain_tool_call_parser() -> None:
         log.debug("LangChain Tool-Parser Patch nicht angewendet: %s", exc)
 
 
-def _get_llm(max_tokens: int = 3000) -> BaseChatModel:
+def _get_llm(max_tokens: int = 1500) -> BaseChatModel:
     if os.getenv("BITWIG_TEST_MODE", "").lower() == "mock":
         log.info("TEST_MODE: Verwende Mock-LLM statt vLLM-Backend")
         return MockLLM()

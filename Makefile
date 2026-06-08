@@ -311,7 +311,7 @@ mlx-test: ## Fine-tuned Modell lokal testen (MLX-Server muss laufen auf Port 808
 	@echo "Teste Modell auf http://localhost:8080 ..."
 	curl -s http://localhost:8080/v1/chat/completions \
 	  -H "Content-Type: application/json" \
-	  -d '{"model":"","messages":[{"role":"system","content":"/no_think\nDu bist ein Bitwig Studio AI-Assistent."},{"role":"user","content":"Erstelle ein Techno Drum-Pattern, 130 BPM, C minor."}],"max_tokens":300}' \
+	  -d '{"model":"mlx-community/Qwen3-8B-4bit","messages":[{"role":"system","content":"/no_think\nDu bist ein Bitwig Studio AI-Assistent."},{"role":"user","content":"Erstelle ein Techno Drum-Pattern, 130 BPM, C minor."}],"max_tokens":300}' \
 	  | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['choices'][0]['message']['content'])"
 
 mlx-ingest-scales: ## Alle 24 Tonarten + Akkorde in Neo4j ingesten
