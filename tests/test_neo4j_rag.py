@@ -34,24 +34,53 @@ import pytest
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _make_neo4j_run(results_by_call: list[list[dict]]):
-    """Gibt ein Mock-`s`-Objekt zurück dessen .run().data() die Ergebnisse
-    der Reihe nach zurückgibt. Jeder Eintrag in results_by_call entspricht
-    einem s.run(...).data()-Aufruf.
-    """
-    call_count = [0]
+def _make_neo4j_run(*, docs=None, neighbor=None, qa=None, qa_count: int = 0):
+    """Query-aware Neo4j-Session-Mock.
 
-    def _run(*args, **kwargs):
-        idx = call_count[0]
-        call_count[0] += 1
+    Dispatch erfolgt anhand des Query-Inhalts statt über eine starre
+    Aufruf-Reihenfolge — robust gegenüber den zahlreichen `count()`-Guards
+    für optionale Node-Typen (SoundRecipe, AudioSample, GridModule, Artist,
+    Song, GenrePattern …), die `query_bitwig_docs` der Reihe nach abfragt.
+
+      - count(k:KnowledgeQA)  → qa_count  (steuert, ob die KQ-HNSW-Query läuft)
+      - sonstige count(...)   → 0         (optionale Node-Typen deaktiviert)
+      - document_embedding    → docs
+      - NEXT_CHUNK            → neighbor  (None ⇒ kein Nachbar-Chunk)
+      - knowledgeqa_embedding → qa
+
+    Das zurückgegebene Mock trägt `_counters` mit der Anzahl der jeweils
+    semantisch relevanten Aufrufe (doc_hnsw, neighbor, kq_hnsw).
+    """
+    docs = docs or []
+    qa = qa or []
+    counters = {"doc_hnsw": 0, "neighbor": 0, "kq_hnsw": 0}
+
+    def _run(query="", *args, **kwargs):
+        q = " ".join(str(query).split())
+        ql = q.lower()
         result_mock = MagicMock()
-        data = results_by_call[idx] if idx < len(results_by_call) else []
+        data: list[dict] = []
+        single = None
+        if "count(" in ql:
+            single = {"c": qa_count if "KnowledgeQA" in q else 0}
+        elif "document_embedding" in q:
+            counters["doc_hnsw"] += 1
+            data = docs
+        elif "NEXT_CHUNK" in q:
+            counters["neighbor"] += 1
+            single = neighbor
+        elif "knowledgeqa_embedding" in q:
+            counters["kq_hnsw"] += 1
+            data = qa
         result_mock.data.return_value = data
-        result_mock.single.return_value = data[0] if data else None
+        result_mock.single.return_value = (
+            single if single is not None else (data[0] if data else None)
+        )
         return result_mock
 
     s = MagicMock()
     s.run.side_effect = _run
+    s._counters = counters
     return s
 
 
@@ -130,24 +159,17 @@ class TestScoreThreshold:
     def _invoke(self, raw_docs: list[dict], qa_count: int = 0) -> str:
         """Ruft query_bitwig_docs mit gemockten Neo4j-Ergebnissen auf.
 
-        Aufruf-Reihenfolge in query_bitwig_docs:
-          1. db.index.vector.queryNodes → Document-Ergebnisse
-          2. NEXT_CHUNK-Traversal (NUR wenn ein YT-Chunk die Schwelle passiert)
-          3. COUNT KnowledgeQA
-          4. (optional) KnowledgeQA HNSW-Query
+        Der Session-Mock ist query-aware: Document-HNSW liefert ``raw_docs``,
+        ein NEXT_CHUNK-Treffer liefert einen Nachbar-Chunk, KnowledgeQA-Count
+        wird über ``qa_count`` gesteuert.
         """
-        # Prüfen ob nach Score-Filter ein YT-Chunk übrig bleibt → NEXT_CHUNK-Call
-        yt_passes_threshold = any(
-            d.get("doc_type") == "youtube_transcript" and d.get("score", 0) >= 0.75
-            for d in raw_docs
+        session_mock = _make_neo4j_run(
+            docs=raw_docs,
+            neighbor={"content": "Neighbor content", "source": "YouTube:Test#99",
+                      "doc_type": "youtube_transcript",
+                      "video_url": "https://youtu.be/x", "score": 0.0},
+            qa_count=qa_count,
         )
-        calls: list[list[dict]] = [raw_docs]
-        if yt_passes_threshold:
-            calls.append([{"content": "Neighbor content", "source": "YouTube:Test#99",
-                           "doc_type": "youtube_transcript", "video_url": "https://youtu.be/x"}])
-        calls.append([{"c": qa_count}])
-
-        session_mock = _make_neo4j_run(calls)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             # _query_neo4j (Graph-Suche) mocken damit nur Vektor-Teil getestet wird
@@ -224,11 +246,7 @@ class TestContextChunk:
                     "doc_type": "youtube_transcript", "video_url": "https://youtu.be/v",
                     "score": 0.0}
 
-        session_mock = _make_neo4j_run([
-            [yt_doc],       # HNSW Document-Query
-            [neighbor],     # NEXT_CHUNK-Query
-            [{"c": 0}],     # KnowledgeQA count
-        ])
+        session_mock = _make_neo4j_run(docs=[yt_doc], neighbor=neighbor)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
@@ -245,12 +263,12 @@ class TestContextChunk:
                   "doc_type": "youtube_transcript", "video_url": "https://youtu.be/v",
                   "kind": "doc", "score": 0.90}
         # Nachbar-Chunk mit identischer source wie einer der Treffer
-        session_mock = _make_neo4j_run([
-            [yt_doc],
-            [{"content": "Main chunk", "source": "YouTube:Vid#0",   # same source
-              "doc_type": "youtube_transcript", "video_url": "https://youtu.be/v", "score": 0.0}],
-            [{"c": 0}],
-        ])
+        session_mock = _make_neo4j_run(
+            docs=[yt_doc],
+            neighbor={"content": "Main chunk", "source": "YouTube:Vid#0",   # same source
+                      "doc_type": "youtube_transcript",
+                      "video_url": "https://youtu.be/v", "score": 0.0},
+        )
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
@@ -266,10 +284,7 @@ class TestContextChunk:
                       "doc_type": None, "video_url": None,
                       "kind": "doc", "score": 0.88}
 
-        session_mock = _make_neo4j_run([
-            [struct_doc],   # HNSW Document-Query
-            [{"c": 0}],     # KnowledgeQA count — kein NEXT_CHUNK-Aufruf dazwischen
-        ])
+        session_mock = _make_neo4j_run(docs=[struct_doc])
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
@@ -278,10 +293,8 @@ class TestContextChunk:
 
         assert "Device doc" in result
         # NEXT_CHUNK-Query darf bei rein strukturierten Docs nicht aufgerufen werden
-        # (3 Aufrufe: HNSW-Doc, KnowledgeQA-count — kein dritter Neighbor-Aufruf)
-        assert session_mock.run.call_count == 2, (
-            f"Zu viele Session-Aufrufe: {session_mock.run.call_count} — "
-            "NEXT_CHUNK-Query bei nicht-YouTube-Treffer?"
+        assert session_mock._counters["neighbor"] == 0, (
+            "NEXT_CHUNK-Query bei nicht-YouTube-Treffer ausgeführt"
         )
 
 
@@ -296,11 +309,7 @@ class TestVideoUrlLinks:
                   "video_url": "https://www.youtube.com/watch?v=ABC123",
                   "kind": "doc", "score": 0.85}
 
-        session_mock = _make_neo4j_run([
-            [yt_doc],
-            [],          # kein Nachbar
-            [{"c": 0}],
-        ])
+        session_mock = _make_neo4j_run(docs=[yt_doc], neighbor=None)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
@@ -318,10 +327,7 @@ class TestVideoUrlLinks:
                       "doc_type": None, "video_url": None,
                       "kind": "doc", "score": 0.80}
 
-        session_mock = _make_neo4j_run([
-            [struct_doc],
-            [{"c": 0}],
-        ])
+        session_mock = _make_neo4j_run(docs=[struct_doc])
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
@@ -341,20 +347,16 @@ class TestKnowledgeQAGuard:
                       "doc_type": None, "video_url": None,
                       "kind": "doc", "score": 0.80}
 
-        session_mock = _make_neo4j_run([
-            [struct_doc],   # HNSW-Doc
-            [{"c": 0}],     # qa_count = 0
-            # kein weiterer Aufruf!
-        ])
+        session_mock = _make_neo4j_run(docs=[struct_doc], qa_count=0)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
                 from src.agent.tools.knowledge_tool import query_bitwig_docs
                 query_bitwig_docs.invoke({"query": "test"})
 
-        # Genau 2 Aufrufe: HNSW-Doc + KQ-count
-        assert session_mock.run.call_count == 2, (
-            f"Erwartet 2 DB-Aufrufe (HNSW+count), bekommen: {session_mock.run.call_count}"
+        # Bei qa_count=0 darf die KnowledgeQA-HNSW-Query nicht laufen
+        assert session_mock._counters["kq_hnsw"] == 0, (
+            "KnowledgeQA-HNSW-Query trotz qa_count=0 ausgeführt"
         )
 
     @pytest.mark.unit
@@ -364,19 +366,16 @@ class TestKnowledgeQAGuard:
                       "doc_type": None, "video_url": None,
                       "kind": "doc", "score": 0.80}
 
-        session_mock = _make_neo4j_run([
-            [struct_doc],   # HNSW-Doc
-            [{"c": 5}],     # qa_count = 5
-            [],             # KnowledgeQA HNSW-Query (leer, aber ausgeführt)
-        ])
+        session_mock = _make_neo4j_run(docs=[struct_doc], qa_count=5)
 
         with _patch_neo4j(session_mock), _patch_embeddings():
             with patch("src.agent.tools.knowledge_tool._query_neo4j", return_value=""):
                 from src.agent.tools.knowledge_tool import query_bitwig_docs
                 query_bitwig_docs.invoke({"query": "test"})
 
-        assert session_mock.run.call_count == 3, (
-            f"Erwartet 3 DB-Aufrufe (HNSW+count+KQ-HNSW), bekommen: {session_mock.run.call_count}"
+        # Bei qa_count>0 wird die KnowledgeQA-HNSW-Query genau einmal ausgeführt
+        assert session_mock._counters["kq_hnsw"] == 1, (
+            "KnowledgeQA-HNSW-Query trotz qa_count>0 nicht ausgeführt"
         )
 
 
