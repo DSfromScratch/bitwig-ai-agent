@@ -1197,10 +1197,36 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         int idx = Math.max(1, (int) JsonStepParser.extractNumField(args, "track_index", 1));
         if (idx <= TRACK_BANK_SIZE) {
             Channel ch = (Channel) trackBank.getItemAt(idx - 1);
-            if (ch.exists().get())
+            if (ch.exists().get()) {
                 ch.selectInMixer();
+                String targetName = ch.name().get();
+                waitForCursorTrack(src, targetName, "select_track", 5);
+                return;
+            }
         }
-        host.scheduleTask(() -> stepDone(src, "select_track"), 40);
+        stepDone(src, "error:select_track:track_not_found");
+    }
+
+    /**
+     * Wartet bis cursorTrack.name() mit expectedName übereinstimmt, dann stepDone.
+     * Bitwig verarbeitet selectInMixer() asynchron — cursorTrack folgt erst nach
+     * mehreren UI-Frames. Ohne diese Verifikation würde /step/done zu früh kommen
+     * und das nachfolgende load_instrument auf dem falschen cursorDevice operieren.
+     */
+    private void waitForCursorTrack(OscConnection src, String expectedName,
+                                    String stepType, int retriesLeft) {
+        host.scheduleTask(() -> {
+            String current = cursorTrack.name().get();
+            if (expectedName != null && expectedName.equals(current)) {
+                stepDone(src, stepType);
+            } else if (retriesLeft > 0) {
+                waitForCursorTrack(src, expectedName, stepType, retriesLeft - 1);
+            } else {
+                host.println("[BitwigStep] waitForCursorTrack timeout: expected="
+                        + expectedName + " got=" + current);
+                stepDone(src, stepType);  // weiter um Deadlock zu vermeiden
+            }
+        }, 40);
     }
 
     private void execLoadInstrument(OscConnection src, String args) {
