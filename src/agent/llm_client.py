@@ -72,10 +72,46 @@ def _patch_langchain_tool_call_parser() -> None:
         log.debug("LangChain Tool-Parser Patch nicht angewendet: %s", exc)
 
 
+def _github_token() -> str | None:
+    """GitHub-Token aus Env oder `gh auth token` (für GitHub-Models-Backend)."""
+    tok = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    if tok:
+        return tok
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, timeout=10
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception as exc:
+        log.debug("gh auth token nicht verfügbar: %s", exc)
+    return None
+
+
 def _get_llm(max_tokens: int = 3000) -> BaseChatModel:
     if os.getenv("BITWIG_TEST_MODE", "").lower() == "mock":
         log.info("TEST_MODE: Verwende Mock-LLM statt vLLM-Backend")
         return MockLLM()
+
+    # Optionaler Referenz-/Vergleichs-Backend: GitHub Models (Modelle hinter
+    # Copilot, z.B. GPT-4o). OpenAI-kompatibel inkl. Tool-Calling. Aktivierung
+    # via LLM_BACKEND=github. Token aus GITHUB_TOKEN/GH_TOKEN oder `gh auth token`.
+    if os.getenv("LLM_BACKEND", "").lower() in ("github", "github-models", "copilot"):
+        token = _github_token()
+        if not token:
+            raise RuntimeError(
+                "LLM_BACKEND=github gesetzt, aber kein GitHub-Token gefunden "
+                "(GITHUB_TOKEN/GH_TOKEN oder `gh auth login`)."
+            )
+        base  = os.getenv("GITHUB_MODELS_BASE_URL", "https://models.github.ai/inference")
+        model = os.getenv("GITHUB_MODEL", "openai/gpt-4o")
+        log.info("LLM_BACKEND=github: Verwende GitHub Models (%s)", model)
+        return ChatOpenAI(
+            base_url=base, api_key=token, model=model,
+            temperature=0.6, max_tokens=max_tokens, timeout=120,
+        )
+
     base  = os.getenv("VLLM_BASE_URL", "http://192.168.0.3:8100") + "/v1"
     model = os.getenv("VLLM_MODEL", "./models/Qwen3-14B-AWQ")
     return ChatOpenAI(
