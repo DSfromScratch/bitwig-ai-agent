@@ -193,15 +193,25 @@ def melody_notes(root: str, scale_type: str, onset_steps: list[int],
     pitches = scale_pitches(root, scale_type, octave=4)
     if not onset_steps:
         onset_steps = [0, 4, 8, 12]
-    # Mindestens 8 Melodie-Noten durch Wiederholung
-    active_steps = onset_steps
+    # Fülle auf min. 8 Noten durch zyklische Wiederholung der onset_steps
+    active_steps = list(onset_steps)
+    offset = 16
     while len(active_steps) < 8:
-        extra = [s + 8 for s in onset_steps if s + 8 < 16 and s + 8 not in active_steps]
-        active_steps = sorted(set(active_steps + extra))
-        if len(active_steps) >= 8 or not extra:
+        new_steps = [s % 16 for s in onset_steps]
+        for s in sorted(new_steps):
+            candidate = (s + offset) % 16
+            if candidate not in active_steps:
+                active_steps.append(candidate)
+        # Fallback: direkte Verdopplung wenn keine neuen Steps gefunden
+        if len(active_steps) < 8:
+            active_steps = sorted(set(active_steps + [s + 2 for s in active_steps
+                                                       if s + 2 < 16 and s + 2 not in active_steps]))
+        offset += 2
+        if offset > 30:
             break
+    active_steps = sorted(set(active_steps))[:16]
     notes = []
-    melody_seq = [0, 2, 4, 3, 5, 1, 6, 0, 2, 4, 5, 3, 1, 6, 4, 2]  # erweiterte diatonische Sequenz
+    melody_seq = [0, 2, 4, 3, 5, 1, 6, 0, 2, 4, 5, 3, 1, 6, 4, 2]
     for i, s in enumerate(active_steps):
         p = pitches[melody_seq[i % len(melody_seq)] % len(pitches)]
         dur = 3 if section_energy >= 0.7 else 5
