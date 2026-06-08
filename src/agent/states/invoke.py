@@ -33,14 +33,30 @@ def _trim_tool_descriptions(tools: list, max_chars: int = 80) -> list:
     return trimmed
 
 
+def _trim_messages(messages: list, max_messages: int = 6, max_tool_result_chars: int = 800) -> list:
+    """Begrenzt History und kürzt lange Tool-Ergebnisse (OOM-Schutz)."""
+    from langchain_core.messages import ToolMessage
+    recent = messages[-max_messages:]
+    trimmed = []
+    for m in recent:
+        if isinstance(m, ToolMessage) and len(m.content or "") > max_tool_result_chars:
+            m = ToolMessage(
+                content=m.content[:max_tool_result_chars] + "\n…[gekürzt]",
+                tool_call_id=m.tool_call_id,
+            )
+        trimmed.append(m)
+    return trimmed
+
+
 def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: list):
     from src.agent.tools import ALL_TOOLS
     slim_tools = _trim_tool_descriptions(selected_tools) if selected_tools else []
+    slim_msgs  = _trim_messages(messages)
     llm = _get_llm().bind_tools(slim_tools) if slim_tools else _get_llm()
     # Retry bei ConnectError (Server-OOM-Crash → LaunchAgent startet ihn neu)
     for attempt in range(3):
         try:
-            response = llm.invoke([system] + messages)
+            response = llm.invoke([system] + slim_msgs)
             _log_token_usage(response, label="main")
             return response
         except (ConnectError, APIConnectionError) as exc:
