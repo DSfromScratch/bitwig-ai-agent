@@ -18,9 +18,25 @@ class InvokeState(AgentPhaseState):
         return ctx
 
 
+def _trim_tool_descriptions(tools: list, max_chars: int = 80) -> list:
+    """Kürzt Tool-Beschreibungen um Token-Verbrauch zu reduzieren (OOM-Schutz)."""
+    import copy
+    trimmed = []
+    for t in tools:
+        t2 = copy.copy(t)
+        desc = getattr(t2, "description", "") or ""
+        if len(desc) > max_chars:
+            # Erste Zeile oder erste max_chars Zeichen
+            first_line = desc.split("\n")[0].strip()
+            t2.description = first_line[:max_chars] if first_line else desc[:max_chars]
+        trimmed.append(t2)
+    return trimmed
+
+
 def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: list):
     from src.agent.tools import ALL_TOOLS
-    llm = _get_llm().bind_tools(selected_tools) if selected_tools else _get_llm()
+    slim_tools = _trim_tool_descriptions(selected_tools) if selected_tools else []
+    llm = _get_llm().bind_tools(slim_tools) if slim_tools else _get_llm()
     # Retry bei ConnectError (Server-OOM-Crash → LaunchAgent startet ihn neu)
     for attempt in range(3):
         try:
