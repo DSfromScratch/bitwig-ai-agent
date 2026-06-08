@@ -20,7 +20,7 @@ load_dotenv()
 import requests
 
 # ── Konfiguration ─────────────────────────────────────────────────────────────
-MAC_HOST          = "192.168.0.4"
+MAC_HOST          = os.getenv("MAC_HOST", "192.168.0.4")  # nur für Remote (SSH/rsync)
 MAC_USER          = "sija"
 MAC_DATA_DIR      = os.getenv("MLX_DATA_DIR", "/Users/sija/mlx-dpo-data")
 MAC_ADAPTER_DIR   = os.getenv("MLX_ADAPTER_DIR", "/Users/sija/mlx-server/models/adapter")
@@ -28,7 +28,11 @@ MODEL_PATH        = os.getenv("MLX_BASE_MODEL", "/Users/sija/mlx-server/models/b
 MLX_PYTHON        = os.getenv("MLX_PYTHON", "/Users/sija/.venv-mlx/bin/python")
 
 LOCAL_DATA_DIR    = "./training_data"
-MLX_URL           = f"http://{MAC_HOST}:8080/v1/chat/completions"  # immer Fine-tuned (LaunchAgent)
+# Der MLX-Server läuft als lokaler LaunchAgent. Standardmäßig über localhost
+# verbinden (Loopback ist stabil; die LAN-IP kann nach DHCP-Wechsel/Restart
+# unerreichbar sein). Für echtes Remote-Training via MLX_CONNECT_HOST override.
+MLX_CONNECT_HOST  = os.getenv("MLX_CONNECT_HOST", "localhost")
+MLX_URL           = f"http://{MLX_CONNECT_HOST}:8080/v1/chat/completions"  # Fine-tuned (LaunchAgent)
 MODEL_ID          = "mlx-community/Qwen3-8B-4bit"
 
 REWARD_THRESHOLD  = 0.82    # Stoppt wenn avg_reward hier
@@ -99,34 +103,50 @@ def _eval_prompts_with_neo4j(extra_anchors: int = 8,
 # ── Evaluierung ───────────────────────────────────────────────────────────────
 
 def evaluate(model_url: str, temperature: float = 0.0,
-             prompts: list[str] | None = None) -> float:
-    """Berechnet avg_reward auf den Eval-Prompts."""
+             prompts: list[str] | None = None,
+             threshold: float = REWARD_THRESHOLD,
+             max_retries: int = 3) -> float:
+    """Berechnet avg_reward auf den Eval-Prompts.
+
+    Robust gegen Server-Crashes: Auf dem 16-GB-Mac kann der MLX-Server bei
+    langen Generierungen abstürzen (OOM) und wird vom LaunchAgent neu
+    gestartet. Timeouts/Connection-Fehler werden daher mit Backoff bis zu
+    `max_retries` mal wiederholt, statt den Prompt mit 0.0 zu werten.
+    """
     from src.agent.tools.music.reward import score_completion
 
     eval_set = prompts if prompts is not None else _eval_prompts_with_neo4j()
     scores = []
     for prompt in eval_set:
-        try:
-            r = requests.post(model_url, json={
-                "model":       MODEL_ID,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": prompt},
-                ],
-                "max_tokens":  600,
-                "temperature": temperature,
-            }, timeout=60)
-            if r.status_code == 200:
-                content = r.json()["choices"][0]["message"].get("content", "")
-                s, _ = score_completion(prompt, content)
-                scores.append(s)
-                print(f"  {s:.2f}  {prompt[:55]}…")
-        except Exception as e:
-            print(f"  ⚠ {e}")
-            scores.append(0.0)
+        score: float | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                r = requests.post(model_url, json={
+                    "model":       MODEL_ID,
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    "max_tokens":  1200,
+                    "temperature": temperature,
+                }, timeout=120)
+                if r.status_code == 200:
+                    content = r.json()["choices"][0]["message"].get("content", "")
+                    score, _ = score_completion(prompt, content)
+                    break
+                print(f"  ⚠ HTTP {r.status_code} (Versuch {attempt}/{max_retries})")
+            except Exception as e:
+                print(f"  ⚠ {type(e).__name__} (Versuch {attempt}/{max_retries}): {str(e)[:80]}")
+            if attempt < max_retries:
+                # Server-Restart abwarten (LaunchAgent braucht ein paar Sekunden)
+                time.sleep(8 * attempt)
+
+        s = score if score is not None else 0.0
+        scores.append(s)
+        print(f"  {s:.2f}  {prompt[:55]}…")
 
     avg = sum(scores) / len(scores) if scores else 0.0
-    print(f"  ─── avg_reward = {avg:.3f} ({'✅ Ziel erreicht!' if avg >= REWARD_THRESHOLD else '🔄 weiter trainieren'})")
+    print(f"  ─── avg_reward = {avg:.3f} ({'✅ Ziel erreicht!' if avg >= threshold else '🔄 weiter trainieren'})")
     return avg
 
 
@@ -145,7 +165,22 @@ def _local_ips() -> set[str]:
     return ips
 
 
-_LOCAL_MODE = MAC_HOST in _local_ips() or os.getenv("RL_LOCAL_MODE") == "1"
+# LOCAL_MODE: kein SSH/rsync, alles lokal. True wenn MAC_HOST eine lokale IP
+# ist, explizit per RL_LOCAL_MODE=1 erzwungen, ODER der MLX-Server lokal auf
+# localhost:8080 erreichbar ist (robust gegen DHCP-IP-Wechsel).
+def _mlx_local_reachable() -> bool:
+    try:
+        requests.get("http://localhost:8080/v1/models", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
+_LOCAL_MODE = (
+    MAC_HOST in _local_ips()
+    or os.getenv("RL_LOCAL_MODE") == "1"
+    or _mlx_local_reachable()
+)
 
 
 def _ssh(cmd: str) -> int:
@@ -376,7 +411,7 @@ def rl_loop(max_rounds: int = MAX_ROUNDS, reward_threshold: float = REWARD_THRES
 
         # ── Schritt 3: Evaluieren ─────────────────────────────────────────────
         print(f"\n③ Evaluierung (Fine-tuned, Runde {rnd})…")
-        avg_reward = evaluate(MLX_URL)
+        avg_reward = evaluate(MLX_URL, threshold=reward_threshold)
 
         history.append({
             "round":        rnd,

@@ -25,11 +25,14 @@ import requests
 
 from src.agent.tools.music.reward import score_completion
 
-MLX_URL      = "http://192.168.0.4:8080/v1/chat/completions"
+MLX_URL      = os.getenv(
+    "MLX_URL",
+    f"http://{os.getenv('MLX_CONNECT_HOST', 'localhost')}:8080/v1/chat/completions",
+)
 MODEL_ID     = "mlx-community/Qwen3-8B-4bit"
 COMPLETIONS  = 2        # Antworten pro Prompt (Strategie B)
 TEMPERATURE  = 0.7
-MAX_TOKENS   = 600
+MAX_TOKENS   = 1200     # 600 schnitt lange notes-Arrays mitten im JSON ab → unparsbar
 MIN_CONTRAST = 0.20     # Mindestunterschied für Strategie B
 
 SYSTEM_PROMPT = """/no_think
