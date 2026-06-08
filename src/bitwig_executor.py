@@ -14,18 +14,11 @@ Zwei-Phasen-Workflow:
 from __future__ import annotations
 
 import os
-import sys
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# bitwigbridge aus lokalem Entwicklungs-Repo nutzen (editable install)
-_BRIDGE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                             "..", "bitwig-agent")
-if os.path.isdir(_BRIDGE_PATH) and _BRIDGE_PATH not in sys.path:
-    sys.path.insert(0, _BRIDGE_PATH)
-
-from bitwigbridge.executor import (  # noqa: E402
+from bitwigbridge.executor import (
     execute_setup as _bb_execute_setup,
     compose_notes as _bb_compose_notes,
     execute_result as _bb_execute_result,
@@ -34,6 +27,7 @@ from bitwigbridge.executor import (  # noqa: E402
     _exec_step_and_wait, # noqa: F401  re-export (für Tests + MCP-Server)
 )
 from bitwigbridge.connection import BitwigConnection  # noqa: E402
+from src.agent.error_handler import log_error, ErrorDomain
 
 # ── Agent-spezifische Interfaces ──────────────────────────────────────────────
 
@@ -101,8 +95,8 @@ def _track_count_status() -> str:
         count = _get_current_track_count()
         if count > 0:
             return f"\nBitwig-Status: {count} Track(s)"
-    except Exception:
-        pass
+    except Exception as _e:
+        log_error(ErrorDomain.OSC, _e, "bitwig_executor._track_count_status")
     return ""
 
 
@@ -144,8 +138,8 @@ def execute_setup(result: dict) -> str:
                 try:
                     from src.agent.tools.bitwig.suggest_tools import set_drum_profile
                     set_drum_profile(name)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    log_error(ErrorDomain.TOOL, _e, "bitwig_executor.set_drum_profile")
 
     result_str = _bb_execute_setup(result, connection=conn, on_step_done=_on_step_done)
     result_str += _track_count_status()

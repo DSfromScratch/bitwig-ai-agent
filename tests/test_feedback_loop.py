@@ -105,6 +105,40 @@ class TestJazzPattern:
         assert "Beat 1" in prompt or "Beat 2" in prompt, \
             "Rock-Prompt muss Beat-Kriterien enthalten"
 
+    @pytest.mark.unit
+    def test_jazz_rhythmic_ok_uses_ride_not_kick(self):
+        """rhythmic_ok-Kriterium nennt Ride (MIDI51), nicht Kick+Snare, bei Jazz."""
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
+        notes = _drums("jazz", 2, "basic")
+        prompt = _build_validation_prompt(notes, "VD-Jazz", "jazz", "C", "minor", 2, 120)
+        # Finde den rhythmic_ok-Wert im JSON-Template
+        rhythmic_ok_line = ""
+        for line in prompt.splitlines():
+            if '"rhythmic_ok"' in line:
+                rhythmic_ok_line = line
+                break
+        assert rhythmic_ok_line, "rhythmic_ok-Zeile nicht im Prompt gefunden"
+        assert "Ride" in rhythmic_ok_line or "MIDI51" in rhythmic_ok_line, \
+            f"Jazz rhythmic_ok muss Ride erwähnen: {rhythmic_ok_line}"
+        assert "Kick" not in rhythmic_ok_line, \
+            f"Jazz rhythmic_ok darf Kick nicht erwähnen: {rhythmic_ok_line}"
+
+    @pytest.mark.unit
+    def test_rock_rhythmic_ok_uses_kick_snare(self):
+        """rhythmic_ok-Kriterium nennt Kick+Snare bei Rock."""
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.music.music_validator import _build_validation_prompt
+        notes = _drums("rock", 2, "basic")
+        prompt = _build_validation_prompt(notes, "VD-HEAVY", "rock", "A", "minor", 2, 120)
+        rhythmic_ok_line = ""
+        for line in prompt.splitlines():
+            if '"rhythmic_ok"' in line:
+                rhythmic_ok_line = line
+                break
+        assert "Kick" in rhythmic_ok_line or "Snare" in rhythmic_ok_line, \
+            f"Rock rhythmic_ok muss Kick+Snare erwähnen: {rhythmic_ok_line}"
+
 
 # ── E2E Feedback-Loop ──────────────────────────────────────────────────────────
 
@@ -289,3 +323,169 @@ class TestFeedbackLoopE2E:
         all_queries = " ".join(str(c) for c in session.run.call_args_list)
         assert "VD-HEAVY" in all_queries or "instrument" in all_queries.lower(), \
             f"Neo4j-Query sollte Instrument enthalten. Calls: {session.run.call_args_list}"
+
+
+# ── E2E Feedback-Loop mit echtem Neo4j ────────────────────────────────────────
+
+@pytest.mark.neo4j
+class TestFeedbackLoopNeo4j:
+    """Real-Neo4j-E2E: score_and_learn schreibt ProductionPattern + PatternAttempt."""
+
+    _INSTRUMENT = "TestDrums_E2E"
+
+    @pytest.fixture(autouse=True)
+    def _cleanup_test_nodes(self, neo4j_available):
+        if not neo4j_available:
+            pytest.skip("Neo4j nicht erreichbar")
+        import os
+        from neo4j import GraphDatabase
+        driver = GraphDatabase.driver(
+            os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+            auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "neo4jllm")),
+        )
+
+        def _clean():
+            with driver.session() as s:
+                s.run(
+                    "MATCH (a:PatternAttempt {instrument: $i}) DETACH DELETE a",
+                    i=self._INSTRUMENT,
+                )
+                s.run(
+                    "MATCH (p:ProductionPattern {instrument: $i}) DETACH DELETE p",
+                    i=self._INSTRUMENT,
+                )
+
+        _clean()
+        yield
+        _clean()
+        driver.close()
+
+    def _call_score_and_learn(self, notes, score: float):
+        """Ruft score_and_learn mit gemocktem LLM auf."""
+        mock_resp = _llm_response(score)
+        with patch("src.agent.tools.music.music_validator._is_available", return_value=True), \
+             patch("src.agent.tools.music.music_validator._call_llm", return_value=mock_resp):
+            from src.agent.tools.knowledge.music_learning import score_and_learn
+            return score_and_learn(
+                notes, self._INSTRUMENT, genre="rock", key="A",
+                scale="minor", bars=2, bpm=120, store_to_neo4j=True,
+            )
+
+    def _query_pattern(self):
+        """Liest ProductionPattern aus Neo4j."""
+        import os
+        from neo4j import GraphDatabase
+        driver = GraphDatabase.driver(
+            os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+            auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "neo4jllm")),
+        )
+        with driver.session() as s:
+            result = s.run(
+                "MATCH (p:ProductionPattern {instrument: $i, genre: 'rock'}) "
+                "RETURN p.iteration AS iteration, p.last_score AS last_score, "
+                "       p.avg_score AS avg_score, p.notes_json AS notes_json",
+                i=self._INSTRUMENT,
+            ).single()
+        driver.close()
+        return dict(result) if result else None
+
+    def _count_attempts(self):
+        """Zählt PatternAttempt-Nodes für dieses Instrument."""
+        import os
+        from neo4j import GraphDatabase
+        driver = GraphDatabase.driver(
+            os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+            auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "neo4jllm")),
+        )
+        with driver.session() as s:
+            result = s.run(
+                "MATCH (a:PatternAttempt {instrument: $i}) RETURN count(a) AS n",
+                i=self._INSTRUMENT,
+            ).single()
+        driver.close()
+        return result["n"] if result else 0
+
+    @pytest.mark.neo4j
+    def test_score_and_learn_creates_production_pattern(self):
+        """score_and_learn legt ProductionPattern mit korrekten Feldern an."""
+        from src.agent.tools.music.pattern_generators import _drums
+        notes = _drums("rock", 2, "basic")
+
+        result = self._call_score_and_learn(notes, 0.82)
+
+        assert result["learned"] is True
+        assert result["score"] == pytest.approx(0.82, abs=0.01)
+
+        node = self._query_pattern()
+        assert node is not None, "ProductionPattern wurde nicht in Neo4j gespeichert"
+        assert node["iteration"] == 1, f"Erster Call → iteration=1, got {node['iteration']}"
+        assert node["last_score"] == pytest.approx(0.82, abs=0.01), \
+            f"last_score sollte 0.82 sein, got {node['last_score']}"
+        assert node["avg_score"] is not None and 0 < node["avg_score"] <= 1.0, \
+            f"avg_score out of range: {node['avg_score']}"
+
+    @pytest.mark.neo4j
+    def test_second_call_increments_iteration(self):
+        """Zweiter score_and_learn-Call erhöht iteration auf 2."""
+        from src.agent.tools.music.pattern_generators import _drums
+        notes = _drums("rock", 2, "basic")
+
+        self._call_score_and_learn(notes, 0.80)
+        self._call_score_and_learn(notes, 0.60)
+
+        node = self._query_pattern()
+        assert node is not None
+        assert node["iteration"] == 2, f"Zwei Calls → iteration=2, got {node['iteration']}"
+        assert node["last_score"] == pytest.approx(0.60, abs=0.01), \
+            f"last_score sollte letzten Score (0.60) enthalten, got {node['last_score']}"
+
+    @pytest.mark.neo4j
+    def test_pattern_attempt_nodes_created(self):
+        """Jeder score_and_learn-Call legt einen PatternAttempt-Node an."""
+        from src.agent.tools.music.pattern_generators import _drums
+        notes1 = _drums("rock", 2, "basic")
+        notes2 = _drums("rock", 2, "complex") if hasattr(
+            __import__("src.agent.tools.music.pattern_generators", fromlist=["_drums"]),
+            "_drums"
+        ) else notes1
+
+        self._call_score_and_learn(notes1, 0.80)
+
+        attempts_after_first = self._count_attempts()
+        assert attempts_after_first >= 1, "Erster Call sollte PatternAttempt anlegen"
+
+    @pytest.mark.neo4j
+    def test_get_pattern_history_reads_back_stored_data(self):
+        """get_pattern_history liest korrekte Daten aus Neo4j."""
+        from src.agent.tools.music.pattern_generators import _drums
+        from src.agent.tools.knowledge.music_learning import get_pattern_history
+
+        notes = _drums("rock", 2, "basic")
+        self._call_score_and_learn(notes, 0.82)
+
+        history = get_pattern_history(self._INSTRUMENT, "rock")
+
+        assert history, "get_pattern_history soll non-empty dict zurückgeben"
+        assert "iterations" in history, f"Fehlende 'iterations'-Key: {history}"
+        assert history["iterations"] == 1, f"iterations=1 erwartet, got {history['iterations']}"
+        assert "avg_score" in history, f"Fehlende 'avg_score'-Key: {history}"
+        assert 0 < history["avg_score"] <= 1.0, f"avg_score out of range: {history['avg_score']}"
+
+    @pytest.mark.neo4j
+    def test_notes_json_quality_gate(self):
+        """notes_json wird nur gespeichert wenn score >= 0.7."""
+        from src.agent.tools.music.pattern_generators import _drums
+        notes = _drums("rock", 2, "basic")
+
+        # Erster Call mit Score unter Gate
+        self._call_score_and_learn(notes, 0.65)
+        node = self._query_pattern()
+        assert node is not None
+        assert node["notes_json"] is None, \
+            f"Score 0.65 < 0.7 → notes_json sollte null sein, got: {node['notes_json'][:50] if node['notes_json'] else None}"
+
+        # Zweiter Call mit Score über Gate
+        self._call_score_and_learn(notes, 0.80)
+        node = self._query_pattern()
+        assert node["notes_json"] is not None, \
+            "Score 0.80 >= 0.7 → notes_json sollte gespeichert sein"

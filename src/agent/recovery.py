@@ -16,12 +16,10 @@ log = logging.getLogger("bitwig-agent")
 
 InvalidOutputCategory = str  # "xml_fragment" | "truncated_json" | "empty_args" | ...
 
-_KNOWN_TOOL_NAMES: frozenset[str] = frozenset([
-    "query_bitwig_docs", "control_bitwig",
-    "check_bitwig_connection", "bitwig_check_connection", "get_bitwig_track_state",
-    "execute_setup", "suggest_notes", "get_launchpad_mode",
-    "listen_played_notes", "play_notes", "arm_track",
-])
+
+def _get_known_tool_names() -> frozenset[str]:
+    from src.agent.tools.registry import registry
+    return frozenset(registry.names())
 
 
 def _recover_tool_calls(response: AIMessage, state: "AgentState | None" = None) -> AIMessage:
@@ -44,7 +42,7 @@ def _classify_invalid_output(response: AIMessage) -> InvalidOutputCategory:
         if not tc.get("args"):
             return "empty_args"
         name = tc.get("name", "")
-        if name and name not in _KNOWN_TOOL_NAMES:
+        if name and name not in _get_known_tool_names():
             return "unknown_tool_schema"
     return "unknown"
 

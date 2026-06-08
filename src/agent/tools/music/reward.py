@@ -322,7 +322,7 @@ def score_completion(prompt: str, completion: str) -> tuple[float, dict]:
             # neo4j_ok = notes strukturell korrekt + musikalisch > 0.5
             neo4j_ok = mus_score >= 0.5
             # Anteiligen Score addieren (ersetzt fixe 0.25)
-            score += 0.25 * mus_score
+            score += 0.35 * mus_score
             breakdown["musical_score"] = mus_score
             # früh rückgeben — Score schon inkl. musikalischem Anteil
             return round(min(1.0, score), 3), breakdown

@@ -35,7 +35,7 @@ MLX_CONNECT_HOST  = os.getenv("MLX_CONNECT_HOST", "localhost")
 MLX_URL           = f"http://{MLX_CONNECT_HOST}:8080/v1/chat/completions"  # Fine-tuned (LaunchAgent)
 MODEL_ID          = "mlx-community/Qwen3-8B-4bit"
 
-REWARD_THRESHOLD  = 0.82    # Stoppt wenn avg_reward hier
+REWARD_THRESHOLD  = 0.72    # Stoppt wenn avg_reward hier
 DPO_ITERS_PER_ROUND = 100   # DPO-Steps pro Runde (klein halten)
 MAX_ROUNDS        = 10
 

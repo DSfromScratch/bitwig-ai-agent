@@ -5,6 +5,8 @@ Daten: music_data.py | Generatoren: pattern_generators.py
 from __future__ import annotations
 from langchain_core.tools import tool
 
+from src.agent.error_handler import log_error, ErrorDomain
+
 from src.agent.tools.music.music_data import (  # noqa: F401
     _CHORDS, _SCALES, _NOTE_NAMES, _DEFAULT_PROGRESSIONS, _root_midi,
 )
@@ -28,8 +30,8 @@ def _get_feedback_style(instrument: str, genre: str, default_style: str) -> str:
             return escalation.get(default_style, default_style)
         if avg_score < 0.7:
             return "full" if default_style == "basic" else default_style
-    except Exception:
-        pass
+    except Exception as _e:
+        log_error(ErrorDomain.NEO4J, _e, "pattern_tools._get_feedback_style")
     return default_style
 
 

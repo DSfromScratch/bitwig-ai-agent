@@ -13,6 +13,8 @@ Der Agent ruft dieses Tool auf wenn:
 """
 from __future__ import annotations
 
+from src.agent.error_handler import log_error, ErrorDomain
+
 import os
 import time
 from langchain_core.tools import tool
@@ -68,8 +70,8 @@ def scan_and_learn_project(project_name: str = "") -> str:
     try:
         from src.knowledge.repositories import ProjectSnapshotRepository
         ProjectSnapshotRepository().save(snapshot)
-    except Exception:
-        pass
+    except Exception as _e:
+        log_error(ErrorDomain.NEO4J, _e, "project_learning_tool.scan.snapshot_save")
 
     # ── 2. Tracks + Parameter scannen ────────────────────────────────────
     from scripts.ingest_live_project import _build_recipe, _store_recipes
@@ -114,8 +116,8 @@ def scan_and_learn_project(project_name: str = "") -> str:
         tmpl = ProjectTemplate.from_snapshot(snapshot)
         ProjectTemplateRepository().save(tmpl)
         lines.append(f"   📋 ProjectTemplate '{project_name}' in Neo4j gespeichert")
-    except Exception:
-        pass
+    except Exception as _e:
+        log_error(ErrorDomain.NEO4J, _e, "project_learning_tool.scan.template_save")
 
     # ── 4. Audio-Samples analysieren (falls vorhanden) ───────────────────
     from pathlib import Path

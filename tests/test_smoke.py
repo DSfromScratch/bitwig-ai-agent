@@ -4,7 +4,7 @@ Smoke-Test: Feedback-Loop-Validierung + Projekt-Gesamtcheck.
 Prüft:
   1. execute_result hängt nach erfolgreicher Ausführung "Bitwig-Status" an
   2. Prompt enthält Verbotsliste halluzinierter Tools
-  3. _KNOWN_TOOL_NAMES deckt alle erwarteten Tools ab
+  3. Registry deckt alle kritischen Tools ab
   4. Tool-Whitelist schließt halluzinierte Tools aus
   5. Alle Kern-Module importierbar + MCP-Server-Struktur
   6. Tool-Call-Parser (QwenXML, Truncated, Composite)
@@ -153,12 +153,12 @@ class TestProjectSmoke:
 
     @pytest.mark.unit
     def test_known_tool_names_covers_whitelist_essentials(self):
-        """_KNOWN_TOOL_NAMES enthält alle kritischen Tools (Launchpad-Workflow)."""
-        from src.agent.core import _KNOWN_TOOL_NAMES
+        """Alle kritischen Tools sind in der Registry (Launchpad-Workflow)."""
+        from src.agent.recovery import _get_known_tool_names
 
         required = {"execute_setup", "check_bitwig_connection", "get_bitwig_track_state"}
-        missing = required - _KNOWN_TOOL_NAMES
-        assert not missing, f"Fehlende Tools in _KNOWN_TOOL_NAMES: {missing}"
+        missing = required - _get_known_tool_names()
+        assert not missing, f"Fehlende Tools in der Registry: {missing}"
 
     @pytest.mark.unit
     def test_execute_result_returns_string(self):

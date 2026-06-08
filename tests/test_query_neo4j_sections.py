@@ -1,12 +1,16 @@
-"""Unit-Tests für die in C.6 extrahierten _query_neo4j-Sektions-Helper.
+"""Unit-Tests für die in C.6 extrahierten Neo4j-Command-Klassen.
 
 Verifiziert die reine Refaktorierung von `_query_neo4j` (372 Zeilen) in
-fokussierte, einzeln testbare Sektions-Funktionen — ohne laufendes Neo4j.
+fokussierte Command-Klassen (neo4j_commands.py) — ohne laufendes Neo4j.
 """
 from unittest.mock import MagicMock
 
 import pytest
 
+from src.agent.tools.knowledge.extractors import _extract_keywords
+from src.agent.tools.knowledge.neo4j_commands import (
+    ConceptQuery, DeviceQuery, WorkflowQuery, ArtistQuery,
+)
 from src.agent.tools.knowledge import knowledge_tool as kt
 
 pytestmark = pytest.mark.unit
@@ -21,11 +25,11 @@ def _result(rows):
 
 
 def test_extract_keywords_filters_stopwords_and_short_words():
-    assert kt._extract_keywords("Was ist ein Polysynth für Techno?") == [
+    assert _extract_keywords("Was ist ein Polysynth für Techno?") == [
         "ist", "ein", "polysynth", "techno",
     ]
     # nur Stopwörter / zu kurze Wörter → leer
-    assert kt._extract_keywords("was wie der die") == []
+    assert _extract_keywords("was wie der die") == []
 
 
 def test_section_concepts_formats_and_traverses_devices():
@@ -35,7 +39,7 @@ def test_section_concepts_formats_and_traverses_devices():
                   "category": "mixing"}]),
         _result([{"n": "Compressor+"}]),
     ]
-    parts = kt._section_concepts(s, ["sidechain"])
+    parts = ConceptQuery(["sidechain"]).execute(s)
     assert len(parts) == 1
     assert "**Bitwig-Konzepte:**" in parts[0]
     assert "**Sidechain**" in parts[0]
@@ -46,7 +50,7 @@ def test_section_concepts_formats_and_traverses_devices():
 def test_section_concepts_empty_returns_empty_list():
     s = MagicMock()
     s.run.return_value = _result([])
-    assert kt._section_concepts(s, ["nichts"]) == []
+    assert ConceptQuery(["nichts"]).execute(s) == []
 
 
 def test_section_devices_includes_usage_traversals():
@@ -62,7 +66,7 @@ def test_section_devices_includes_usage_traversals():
         _result([{"tab": "Instruments", "path": "Grid", "panel": None,
                   "uuid": None, "load_cmd": None}]),  # nav
     ]
-    parts = kt._section_devices(s, ["poly"])
+    parts = DeviceQuery(["poly"]).execute(s)
     assert len(parts) == 1
     assert "**Poly Grid**" in parts[0]
     assert "Benutzt in: MyProj/Lead ★" in parts[0]
@@ -72,10 +76,10 @@ def test_section_workflows_recording_priority(monkeypatch):
     s = MagicMock()
     s.run.side_effect = [
         _result([{"name": "Audio aufnehmen", "desc": "Arm + Rec",
-                  "steps": "Track wählen\nArm\nPlay"}]),  # 4a recording
-        _result([]),                                       # 4 general workflows
+                  "steps": "Track wählen\nArm\nPlay"}]),  # recording
+        _result([]),                                       # general workflows
     ]
-    parts = kt._section_workflows(s, ["aufnehmen"], "wie kann ich aufnehmen")
+    parts = WorkflowQuery(["aufnehmen"], "wie kann ich aufnehmen").execute(s)
     assert any("Audio aufnehmen" in p for p in parts)
 
 
@@ -88,7 +92,7 @@ def test_section_artists_handles_missing_json_without_unbound_error():
          "style": "Filtered synths", "devices_json": '["Polysynth", "Filter"]',
          "note_plan": None, "score": 1.0},
     ])
-    parts = kt._section_artists(s, ["daft"])
+    parts = ArtistQuery(["daft"]).execute(s)
     assert len(parts) == 1
     assert "**Künstler: Daft Punk**" in parts[0]
     assert "Devices: Polysynth, Filter" in parts[0]

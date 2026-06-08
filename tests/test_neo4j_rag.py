@@ -164,13 +164,13 @@ def _patch_embeddings(dim: int = 768):
 # ── Teil 1: Unit-Tests (kein Neo4j) ───────────────────────────────────────────
 
 class TestCypherQueries:
-    """Prüft den Quellcode von knowledge_tool.py auf korrekte Query-Muster."""
+    """Prüft den Quellcode des knowledge-Pakets auf korrekte Query-Muster."""
 
     @pytest.mark.unit
     def test_hnsw_index_call_present(self):
-        """knowledge_tool.py muss db.index.vector.queryNodes verwenden."""
-        import src.agent.tools.knowledge.knowledge_tool as kt
-        src_code = inspect.getsource(kt)
+        """vector_search.py muss db.index.vector.queryNodes verwenden."""
+        import src.agent.tools.knowledge.vector_search as vs
+        src_code = inspect.getsource(vs)
         assert "db.index.vector.queryNodes" in src_code, (
             "HNSW-Index-Query 'db.index.vector.queryNodes' nicht gefunden — "
             "Brute-Force-Scan statt Index?"
@@ -179,8 +179,8 @@ class TestCypherQueries:
     @pytest.mark.unit
     def test_brute_force_scan_removed(self):
         """Der alte Brute-Force-Pattern darf nicht mehr im Code sein."""
-        import src.agent.tools.knowledge.knowledge_tool as kt
-        src_code = inspect.getsource(kt)
+        import src.agent.tools.knowledge.vector_search as vs
+        src_code = inspect.getsource(vs)
         assert "MATCH (d:Document) WHERE d.embedding IS NOT NULL" not in src_code, (
             "Alter Brute-Force-Scan noch im Code: "
             "'MATCH (d:Document) WHERE d.embedding IS NOT NULL'"
@@ -188,24 +188,24 @@ class TestCypherQueries:
 
     @pytest.mark.unit
     def test_score_constants_defined(self):
-        """Score-Threshold-Konstanten müssen im query_bitwig_docs-Body definiert sein."""
-        import src.agent.tools.knowledge.knowledge_tool as kt
-        src_code = inspect.getsource(kt.query_bitwig_docs.func)
-        assert "_SCORE_MIN_DOC" in src_code, "_SCORE_MIN_DOC nicht in query_bitwig_docs"
-        assert "_SCORE_MIN_YT"  in src_code, "_SCORE_MIN_YT nicht in query_bitwig_docs"
+        """Score-Threshold-Konstanten müssen in vector_search.py definiert sein."""
+        import src.agent.tools.knowledge.vector_search as vs
+        src_code = inspect.getsource(vs)
+        assert "_SCORE_MIN_DOC" in src_code, "_SCORE_MIN_DOC nicht in vector_search"
+        assert "_SCORE_MIN_YT"  in src_code, "_SCORE_MIN_YT nicht in vector_search"
 
     @pytest.mark.unit
     def test_next_chunk_query_present(self):
-        """NEXT_CHUNK-Traversal-Query muss im Code vorhanden sein."""
-        import src.agent.tools.knowledge.knowledge_tool as kt
-        src_code = inspect.getsource(kt.query_bitwig_docs.func)
-        assert "NEXT_CHUNK" in src_code, "NEXT_CHUNK-Traversal fehlt in query_bitwig_docs"
+        """NEXT_CHUNK-Traversal-Query muss in vector_search.py vorhanden sein."""
+        import src.agent.tools.knowledge.vector_search as vs
+        src_code = inspect.getsource(vs)
+        assert "NEXT_CHUNK" in src_code, "NEXT_CHUNK-Traversal fehlt in vector_search"
 
     @pytest.mark.unit
     def test_kq_count_guard_present(self):
         """KnowledgeQA-Query muss einen count()-Guard haben."""
-        import src.agent.tools.knowledge.knowledge_tool as kt
-        src_code = inspect.getsource(kt.query_bitwig_docs.func)
+        import src.agent.tools.knowledge.vector_search as vs
+        src_code = inspect.getsource(vs)
         assert "qa_count" in src_code, (
             "qa_count-Guard fehlt — KnowledgeQA-Query wird immer ausgeführt"
         )
@@ -462,11 +462,13 @@ class TestAgentIntegration:
 
     @pytest.mark.unit
     def test_query_bitwig_docs_in_song_router(self):
-        """Router muss query_bitwig_docs für Song-Modus freigeben."""
-        from src.agent.router import _SONG_TOOL_NAMES
-        assert "query_bitwig_docs" in _SONG_TOOL_NAMES, (
-            "query_bitwig_docs nicht in _SONG_TOOL_NAMES — "
-            "Agent kann Tool im Song-Modus nicht aufrufen"
+        """Song-Modus gibt alle registrierten Tools frei — query_bitwig_docs inklusive."""
+        from src.agent.router import _filter_tools_for_mode
+        from src.agent.tools import ALL_TOOLS
+        names = [getattr(t, "name", "") for t in _filter_tools_for_mode("song", ALL_TOOLS)]
+        assert "query_bitwig_docs" in names, (
+            "query_bitwig_docs nicht im Song-Modus verfügbar — "
+            "Agent kann Tool nicht aufrufen"
         )
 
     @pytest.mark.unit
@@ -518,9 +520,9 @@ class TestAgentIntegration:
     @pytest.mark.unit
     def test_recovery_knows_query_bitwig_docs(self):
         """Recovery-Mechanismus muss query_bitwig_docs als bekanntes Tool kennen."""
-        from src.agent.recovery import _KNOWN_TOOL_NAMES
-        assert "query_bitwig_docs" in _KNOWN_TOOL_NAMES, (
-            "query_bitwig_docs nicht in _KNOWN_TOOL_NAMES (recovery.py) — "
+        from src.agent.recovery import _get_known_tool_names
+        assert "query_bitwig_docs" in _get_known_tool_names(), (
+            "query_bitwig_docs nicht in der Tool-Registry — "
             "wird bei Recovery-Fallback u.U. blockiert"
         )
 

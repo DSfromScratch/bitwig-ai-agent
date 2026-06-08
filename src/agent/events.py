@@ -38,6 +38,10 @@ EventType = Literal[
     "result_step_done", # Ein Step erfolgreich ausgeführt: {type, args, index}
     "result_step_error",# Step fehlgeschlagen: {type, args, index, error}
     "result_done",      # Alle Steps abgearbeitet: {context_type, target, done, errors}
+    # ── Domain-Error Events (via error_handler.log_error) ─────────────────────
+    "neo4j_error",      # Neo4j-Verbindungs- oder Abfragefehler
+    "osc_error",        # OSC/Bitwig-Kommunikationsfehler
+    "tool_error",       # Tool-Ausführungsfehler
 ]
 
 

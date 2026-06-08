@@ -10,6 +10,8 @@ import re
 from dotenv import load_dotenv
 load_dotenv()
 
+from src.agent.error_handler import log_error, ErrorDomain
+
 OSC_HOST            = os.getenv("BITWIG_HOST", "127.0.0.1")
 OSC_STEP_PORT       = int(os.getenv("BITWIG_STEP_PORT",       "8002"))
 OSC_STEP_REPLY_PORT = int(os.getenv("BITWIG_STEP_REPLY_PORT", "9002"))
@@ -71,8 +73,8 @@ def _sync_device_uuids_from_extension(timeout: float = 3.0) -> bool:
             _DEVICE_UUID_CACHE = cache
             _write_uuids_to_neo4j(cache)
             return True
-    except Exception:
-        pass
+    except Exception as _e:
+        log_error(ErrorDomain.OSC, _e, "device_uuid._sync_device_uuids_from_extension")
     finally:
         sock.close()
     return False
@@ -92,8 +94,8 @@ def _write_uuids_to_neo4j(uuid_map: dict[str, str]) -> None:
                     name=name, uuid=uuid,
                 )
         driver.close()
-    except Exception:
-        pass
+    except Exception as _e:
+        log_error(ErrorDomain.NEO4J, _e, "device_uuid._write_uuids_to_neo4j")
 
 
 def _get_device_uuid_map() -> dict[str, str]:
@@ -118,7 +120,8 @@ def _get_device_uuid_map() -> dict[str, str]:
             cache = {rec["name"].lower().strip(): rec["uuid"] for rec in result}
         driver.close()
         _DEVICE_UUID_CACHE = cache
-    except Exception:
+    except Exception as _e:
+        log_error(ErrorDomain.NEO4J, _e, "device_uuid._get_device_uuid_map")
         _DEVICE_UUID_CACHE = {}
     return _DEVICE_UUID_CACHE
 

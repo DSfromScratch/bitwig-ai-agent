@@ -38,23 +38,15 @@ from src.agent.events import get_event_bus
 from src.agent.policy import enforce_policy_on_response
 
 
-# ── Re-exports für Backward-Kompatibilität ──────────────────────────────────
-from src.agent.osc_listener import (  # noqa: F401
-    _LATEST_UI_CONFIG, _LATEST_UI_CONFIG_LOCK,
-    _set_latest_ui_config, _consume_latest_ui_config,
+from src.agent.llm_client import (
+    _patch_langchain_tool_call_parser, _get_llm, _log_token_usage,
+    _THINK_RE, _THINK_OPEN,
 )
-from src.agent.llm_client import (  # noqa: F401
-    MockLLM, _patch_langchain_tool_call_parser, _get_llm, _log_token_usage,
+from src.agent.router import (
+    _route_request, _get_prompt_for_mode, _latest_user_text, _latest_human_is_nudge,
 )
-from src.agent.router import (  # noqa: F401
-    _CONTROL_COMMANDS, _SONG_TOOL_NAMES, _CONTROL_TOOL_NAMES, _CONFIRMATIONS,
-    _route_request, _get_prompt_for_mode, _filter_tools_for_mode,
-    _latest_user_text, _latest_human_is_nudge, _is_knowledge_question,
-)
-from src.agent.recovery import (  # noqa: F401
-    _KNOWN_TOOL_NAMES, InvalidOutputCategory,
-    _recover_tool_calls, _classify_invalid_output,
-    _has_invalid_tool_output,
+from src.agent.recovery import (
+    _recover_tool_calls, _classify_invalid_output, _has_invalid_tool_output,
 )
 
 
@@ -83,7 +75,6 @@ def _phase_from_reasoning(reasoning: str, current) -> str | None:
 _patch_langchain_tool_call_parser()
 
 # ── Konstanten ────────────────────────────────────────────────────────────────
-from src.agent.llm_client import _THINK_RE, _THINK_OPEN  # noqa: F401
 
 MAX_MESSAGES = 30
 
@@ -389,17 +380,6 @@ def _default_state() -> "AgentState":
         "pending_sections":  [],
         "retry_count":       0,
         "ui_song_config":    None,
-        # Multi-Agent Slave-State
-        "slave_plan":        None,
-        "slave_results":     [],
-        "assembled_json":    None,
-        "build_result":      None,
-        "slave_retry_counts": {},
-        # Observer / Retry-Loop
-        "retry_budget":       {"instrument": 2, "harmony": 2, "note": 2},
-        "phase_quality_score": 1.0,
-        "quality_thresholds":  {"overall": 0.75, "notes": 0.70},
-        "retry_signal":        None,
     }
 
 
@@ -454,8 +434,8 @@ def chat(message: str, history: list | None = None) -> str:
                 "error": type(e).__name__,
                 "message": str(e),
             })
-        except Exception:
-            pass
+        except Exception as _e:
+            log.debug("EventBus agent_error emit fehlgeschlagen: %s", _e)
         return f"[Fehler] {type(e).__name__}: {e}"
 
 

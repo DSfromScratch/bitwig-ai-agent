@@ -12,18 +12,6 @@ _CONTROL_COMMANDS = frozenset([
     "/volume", "/status", "/record", "/loop", "/undo",
 ])
 
-_SONG_TOOL_NAMES = frozenset([
-    "check_bitwig_connection", "execute_setup",
-    "get_bitwig_track_state", "query_bitwig_docs",
-    "write_pattern", "write_pattern_raw", "compose_notes", "scan_vst_plugins",
-    "validate_music", "validate_and_learn", "analyze_song", "export_mlx_training_data",
-    "suggest_notes", "get_launchpad_mode", "listen_played_notes",
-    "play_notes", "arm_track",
-    "scan_and_learn_project",
-    "reconstruct_project",
-    "create_track_from_recipe",
-])
-
 _CONTROL_TOOL_NAMES = frozenset([
     "check_bitwig_connection", "control_bitwig",
     "bitwig_play", "bitwig_stop", "bitwig_set_tempo",
@@ -59,11 +47,10 @@ def _get_prompt_for_mode(mode: str) -> str:
 
 
 def _filter_tools_for_mode(mode: str, all_tools: list) -> list:
-    allowed  = _CONTROL_TOOL_NAMES if mode == "control" else _SONG_TOOL_NAMES
-    filtered = [t for t in all_tools if getattr(t, "name", "") in allowed]
-    if not filtered:
-        return [t for t in all_tools if getattr(t, "name", "") == "check_bitwig_connection"] or all_tools
-    return filtered
+    if mode != "control":
+        return all_tools
+    filtered = [t for t in all_tools if getattr(t, "name", "") in _CONTROL_TOOL_NAMES]
+    return filtered or [t for t in all_tools if getattr(t, "name", "") == "check_bitwig_connection"] or all_tools
 
 
 def _latest_user_text(messages: list) -> str:

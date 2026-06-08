@@ -125,6 +125,6 @@ def _log_token_usage(response: AIMessage, label: str = "") -> dict:
     }
     try:
         get_event_bus().emit("token_usage", usage)
-    except Exception:
-        pass
+    except Exception as _e:
+        log.debug("EventBus token_usage emit fehlgeschlagen: %s", _e)
     return usage

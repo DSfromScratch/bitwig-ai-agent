@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from src.agent.error_handler import log_error, ErrorDomain
+
 from src.knowledge.neo4j_graph import is_available, session
 
 log = logging.getLogger("bitwig-agent.repositories")
@@ -579,8 +581,8 @@ class GenrePatternRepository(BaseRepository):
                                 MATCH (g:GenrePattern {name: $name})
                                 MERGE (g)-[:SIMILAR_PATTERN]->(mc)
                             """, src=src, name=record.name)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    log_error(ErrorDomain.NEO4J, _e, "GenrePatternRepository.save.similar_pattern")
 
             log.info("GenrePatternRepository.save: %s gespeichert", record.name)
         except Exception as exc:

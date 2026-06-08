@@ -39,6 +39,7 @@ bitsandbytes>=0.43
 kernels
 
 # Bitwig / OSC
+-e ../bitwig-osc-bridge
 python-osc>=1.8
 
 # YouTube Transcript Ingest

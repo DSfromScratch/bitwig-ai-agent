@@ -168,6 +168,13 @@ def _build_validation_prompt(
             f"- Atonale oder chromatische Passagen können bewusst eingesetzt sein"
         )
 
+    if is_jazz:
+        rhythmic_ok_hint = "<true wenn Ride-Cymbal (MIDI51) als Hauptrhythmus erkennbar>"
+    elif is_drum:
+        rhythmic_ok_hint = "<true wenn Kick+Snare-Struktur erkennbar>"
+    else:
+        rhythmic_ok_hint = "<true wenn rhythmische Grundstruktur (regelmäßige Beats) erkennbar>"
+
     return f"""Du bist ein erfahrener Musik-Produzent. Bewerte dieses {bars}-Takt MIDI-Pattern objektiv.
 
 WICHTIG für die Bewertung:
@@ -191,7 +198,7 @@ Steps (erste 12): {steps[:12]}
 Antworte NUR als JSON:
 {{
   "score": <0.0-1.0>,
-  "rhythmic_ok": <true wenn Kick+Snare-Struktur erkennbar>,
+  "rhythmic_ok": {rhythmic_ok_hint},
   "harmonic_ok": <true/false>,
   "genre_fit": <true/false>,
   "issues": ["<nur echte Probleme, max 2>"],

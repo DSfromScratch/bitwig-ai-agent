@@ -259,6 +259,10 @@ def _strategy_A_ground_truth(
             # Ground truth schlechter als Modell → übersprungen
             continue
 
+        if gt_score < 0.70:
+            print(f"  A✗ gt_score={gt_score:.2f} (zu niedrig)  {prompt[:50]}…")
+            continue
+
         examples.append({
             "prompt":        SYSTEM_PROMPT + "\n\n" + prompt,
             "chosen":        ground_truth,
@@ -299,6 +303,10 @@ def _strategy_B_contrast(
 
         if contrast < MIN_CONTRAST:
             print(f"  B✗ Δ={contrast:.2f} (zu gering)  {prompt[:50]}…")
+            continue
+
+        if best_s < 0.65:
+            print(f"  B✗ best={best_s:.2f} (zu niedrig)  {prompt[:50]}…")
             continue
 
         examples.append({

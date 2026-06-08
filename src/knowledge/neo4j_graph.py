@@ -16,9 +16,12 @@ Schema-Überblick:
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from neo4j import GraphDatabase
+
+log = logging.getLogger("bitwig-agent")
 
 from src.knowledge.bitwig_catalog import (  # noqa: F401  (re-export für externe Aufrufer)
     SCHEMA_CONSTRAINTS, DEVICES, GENRES, SOUNDS, GENRE_DEVICES,
@@ -86,8 +89,8 @@ def create_schema():
         for c in SCHEMA_CONSTRAINTS:
             try:
                 s.run(c)
-            except Exception:
-                pass
+            except Exception as _e:
+                log.debug("Schema-Constraint bereits vorhanden oder fehlgeschlagen: %s", _e)
     print("✓ Schema-Constraints erstellt")
 
 
