@@ -174,15 +174,17 @@ def drum_notes(g: dict, section_energy: float) -> list[dict]:
 def bass_notes(g: dict, root: str, scale_type: str, section_energy: float) -> list[dict]:
     pitches = scale_pitches(root, scale_type, octave=2)
     rhythm = g["bass_rhythm"]
-    # bei geringer Energie nur jeden 2. Step
-    if section_energy < 0.5:
-        rhythm = rhythm[::2] or rhythm[:1]
+    # Fülle 16 Steps durch Wiederholung des Bass-Rhythmus (min 8 Noten)
+    while len(rhythm) < 8:
+        rhythm = rhythm + [s + 16 for s in rhythm if s + 16 < 16]
+        if len(rhythm) < 8:
+            rhythm = (rhythm * 3)[:8]
     notes = []
     for i, s in enumerate(rhythm):
-        p = pitches[i % len(pitches)] if i % 2 == 0 else pitches[0]  # root-dominant
-        dur = 8 if section_energy < 0.6 else 4
+        p = pitches[i % len(pitches)] if i % 2 == 0 else pitches[0]
+        dur = 4 if section_energy < 0.6 else 2
         notes.append(make_note(p, s % 16, duration=dur,
-                               velocity=round(0.75 * section_energy, 2), channel=0))
+                               velocity=round(max(0.35, 0.75 * section_energy), 2), channel=0))
     return sorted(notes, key=lambda n: n["step"])
 
 
@@ -191,14 +193,20 @@ def melody_notes(root: str, scale_type: str, onset_steps: list[int],
     pitches = scale_pitches(root, scale_type, octave=4)
     if not onset_steps:
         onset_steps = [0, 4, 8, 12]
-    active_steps = onset_steps if section_energy >= 0.7 else onset_steps[:len(onset_steps)//2 or 1]
+    # Mindestens 8 Melodie-Noten durch Wiederholung
+    active_steps = onset_steps
+    while len(active_steps) < 8:
+        extra = [s + 8 for s in onset_steps if s + 8 < 16 and s + 8 not in active_steps]
+        active_steps = sorted(set(active_steps + extra))
+        if len(active_steps) >= 8 or not extra:
+            break
     notes = []
-    melody_seq = [0, 2, 4, 3, 5, 1, 6, 0]  # diatonischer Melodie-Typ
+    melody_seq = [0, 2, 4, 3, 5, 1, 6, 0, 2, 4, 5, 3, 1, 6, 4, 2]  # erweiterte diatonische Sequenz
     for i, s in enumerate(active_steps):
         p = pitches[melody_seq[i % len(melody_seq)] % len(pitches)]
-        dur = 4 if section_energy >= 0.7 else 8
+        dur = 3 if section_energy >= 0.7 else 5
         notes.append(make_note(p, s % 16, duration=dur,
-                               velocity=round(0.65 * section_energy, 2), channel=0))
+                               velocity=round(max(0.35, 0.65 * section_energy), 2), channel=0))
     return sorted(notes, key=lambda n: n["step"])
 
 

@@ -62,8 +62,32 @@ def load_chords_per_scale(s) -> dict[str, list[dict]]:
     return result
 
 
+def arpeggio_over_bar(notes: list[int], velocity: float = 0.8,
+                       steps_per_note: int = 2) -> list[dict]:
+    """Arpeggiert Akkord-Noten zyklisch über 16 Steps (füllt den Takt).
+
+    Für ein Triad (3 Noten): 16 // 2 = 8 Slots → ~8 Noten (2-3 Zyklen).
+    Für einen 4-Noten-Akkord: 16 // 2 = 8 Slots → 8 Noten (2 Zyklen).
+    Jede Note hat definierte Länge → kein Runaway.
+    """
+    result = []
+    step = 0
+    i = 0
+    while step < 16:
+        result.append({
+            "pitch":    notes[i % len(notes)],
+            "step":     step,
+            "duration": steps_per_note,
+            "velocity": round(velocity, 2),
+            "channel":  0,
+        })
+        step += steps_per_note
+        i += 1
+    return result
+
+
 def generate_single_chord_pairs(scales: dict) -> list[dict]:
-    """Einzelner Akkord → MIDI-Noten + write_pattern."""
+    """Einzelner Akkord → arpeggiertes write_pattern über 1 Takt (≥8 Noten)."""
     pairs = []
     VOICINGS = [
         (3, "mittleres Voicing (3. Oktave)"),
@@ -76,23 +100,25 @@ def generate_single_chord_pairs(scales: dict) -> list[dict]:
             base = c["base_notes"]
             for octave, voicing_label in VOICINGS:
                 notes = transpose_to_octave(base, octave)
-                nj = chord_to_notes_json(notes)
+                # Arpeggio über Bar — steps_per_note=1: 16 Noten (füllt jeden 16tel-Step)
+                nj = arpeggio_over_bar(notes, velocity=0.8, steps_per_note=1)
                 notes_str = format_notes_compact(nj)
 
-                # Q: Schreibe Akkord als MIDI
                 pairs.append({
-                    "prompt": f"Schreibe {c['chord_de']} als MIDI ({voicing_label}, 1/16 Quantisierung, 1 Takt)",
+                    "prompt": (
+                        f"Schreibe {c['chord_de']} als MIDI-Arpeggio "
+                        f"({voicing_label}, 1/16 Quantisierung, 1 Takt)"
+                    ),
                     "completion": json.dumps({
                         "tool": "write_pattern",
                         "notes": json.dumps(nj),
-                        "description": f"{c['chord_de']} ({c['dn']} in {scale_name}, {c['quality']})",
+                        "description": f"{c['chord_de']} ({c['dn']} in {scale_name}, {c['quality']}) — Arpeggio",
                     }, ensure_ascii=False),
                     "source": "format_chord_midi",
                 })
 
-                # Kompaktere Notation für Übersicht
                 pairs.append({
-                    "prompt": f"Wie lautet {c['chord_de']} in MIDI-Noten ({voicing_label})?",
+                    "prompt": f"Wie lautet {c['chord_de']} als Arpeggio-Sequenz ({voicing_label})?",
                     "completion": notes_str,
                     "source": "format_chord_notes",
                 })
@@ -148,7 +174,7 @@ def generate_progression_write_pattern(scales: dict) -> list[dict]:
 
 
 def generate_scale_melody_pairs(s) -> list[dict]:
-    """Tonleiter-Melodien (aufsteigend/absteigend) → write_pattern."""
+    """Tonleiter-Melodien auf+ab in 2 Steps → 14-16 Noten pro Pair."""
     pairs = []
 
     scale_notes = s.run("""
@@ -161,17 +187,32 @@ def generate_scale_melody_pairs(s) -> list[dict]:
         if not base_notes:
             continue
 
-        # C-Basis ist 0–11 (Pitch-Klassen), auf Oktave 4 bringen
         notes_oct4 = [n + 60 - base_notes[0] for n in base_notes]
-        notes_oct4_up = notes_oct4 + [notes_oct4[0] + 12]  # Oktave Schluss
+        notes_oct4_up = notes_oct4 + [notes_oct4[0] + 12]  # Oktave-Schluss (8 Noten)
 
-        # Aufsteigende Melodie
+        # Aufsteigend + absteigend in 2-Step-Abständen (16 Noten)
+        combined = notes_oct4_up + list(reversed(notes_oct4_up[:-1]))  # 8 + 7 = 15 Noten
+        combined_json = [
+            {"pitch": p, "step": i * 2, "duration": 2, "velocity": 0.75, "channel": 0}
+            for i, p in enumerate(combined)
+        ]
+        pairs.append({
+            "prompt": f"Schreibe eine {row['scale']}-Tonleiter auf und ab als MIDI (je 2 Steps)",
+            "completion": json.dumps({
+                "tool": "write_pattern",
+                "notes": json.dumps(combined_json),
+                "description": f"{row['scale']}-Tonleiter auf+ab",
+            }, ensure_ascii=False),
+            "source": "format_scale_melody",
+        })
+
+        # Aufsteigende Melodie (7 Steps für 7-Ton-Skalen, 4 Steps Abstand)
         asc_json = [
-            {"pitch": p, "step": i * 4, "duration": 4, "velocity": 0.75, "channel": 0}
+            {"pitch": p, "step": i * 2, "duration": 2, "velocity": 0.75, "channel": 0}
             for i, p in enumerate(notes_oct4_up)
         ]
         pairs.append({
-            "prompt": f"Schreibe eine aufsteigende {row['scale']}-Tonleiter als MIDI (je 4 Steps)",
+            "prompt": f"Schreibe eine aufsteigende {row['scale']}-Tonleiter als MIDI (je 2 Steps)",
             "completion": json.dumps({
                 "tool": "write_pattern",
                 "notes": json.dumps(asc_json),
@@ -180,33 +221,19 @@ def generate_scale_melody_pairs(s) -> list[dict]:
             "source": "format_scale_melody",
         })
 
-        # Absteigende Melodie
-        desc_json = [
-            {"pitch": p, "step": i * 4, "duration": 4, "velocity": 0.75, "channel": 0}
-            for i, p in enumerate(reversed(notes_oct4_up))
-        ]
-        pairs.append({
-            "prompt": f"Schreibe eine absteigende {row['scale']}-Tonleiter als MIDI (je 4 Steps)",
-            "completion": json.dumps({
-                "tool": "write_pattern",
-                "notes": json.dumps(desc_json),
-                "description": f"Absteigende {row['scale']}-Tonleiter",
-            }, ensure_ascii=False),
-            "source": "format_scale_melody",
-        })
-
     return pairs
 
 
 def generate_rhythm_variations(scales: dict) -> list[dict]:
-    """Gleicher Akkord mit verschiedenen Rhythmen."""
+    """Gleicher Akkord mit verschiedenen Rhythmen — je mind. 12 Noten."""
     pairs = []
 
     RHYTHMS = [
         ("gerade Viertelnoten (je 4 Steps)", [0, 4, 8, 12], 4),
-        ("punktierte Achtel + Sechzehntel (3+1 Steps)", [0, 3, 6, 9], 3),
+        ("punktierte Achtel + Sechzehntel (3+1 Steps)", [0, 3, 6, 9, 12], 3),
         ("Synkopen (Offbeat, Achtel)", [2, 6, 10, 14], 2),
-        ("ganze Note (16 Steps)", [0], 16),
+        # "ganze Note" → 4× Akkordwechsel je 4 Steps (statt 1× mit 16 Steps)
+        ("Akkordwechsel alle 4 Beats (4×)", [0, 4, 8, 12], 4),
     ]
 
     for scale_name, chords in scales.items():
@@ -239,7 +266,7 @@ def generate_rhythm_variations(scales: dict) -> list[dict]:
 
 
 def generate_arp_pairs(scales: dict) -> list[dict]:
-    """Arpeggio-Muster → einzelne Noten sequenziell."""
+    """Arpeggio-Muster → 2 Zyklen über 1 Takt (16 Steps, ≥ 6 Noten)."""
     pairs = []
 
     ARP_PATTERNS = [
@@ -261,22 +288,24 @@ def generate_arp_pairs(scales: dict) -> list[dict]:
 
             for arp_name, arp_fn in ARP_PATTERNS:
                 arp_order = arp_fn(base_notes)
-                steps_per_note = 4
-                nj = [
-                    {"pitch": p, "step": i * steps_per_note,
-                     "duration": steps_per_note, "velocity": 0.75, "channel": 0}
-                    for i, p in enumerate(arp_order)
-                ]
+                # 1 Step pro Note → exakt 16 Noten (füllt alle 16tel-Steps)
+                nj = []
+                for step in range(16):
+                    p = arp_order[step % len(arp_order)]
+                    nj.append({
+                        "pitch": p, "step": step,
+                        "duration": 1, "velocity": 0.75, "channel": 0,
+                    })
 
                 pairs.append({
                     "prompt": (
                         f"Schreibe ein {arp_name} von {chord['chord_de']} "
-                        f"(je 4 Steps, 1/16)"
+                        f"(16 Steps, je 1 Step, 1/16)"
                     ),
                     "completion": json.dumps({
                         "tool": "write_pattern",
                         "notes": json.dumps(nj),
-                        "description": f"{chord['chord_de']} {arp_name}",
+                        "description": f"{chord['chord_de']} {arp_name} — 16 Steps",
                     }, ensure_ascii=False),
                     "source": "format_arp",
                 })
