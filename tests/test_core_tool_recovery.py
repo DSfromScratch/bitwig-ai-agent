@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from src.agent.core import _recover_tool_calls, _has_invalid_tool_output, _classify_invalid_output
+from src.agent.recovery import _recover_tool_calls, _has_invalid_tool_output, _classify_invalid_output
 
 
 @pytest.mark.unit

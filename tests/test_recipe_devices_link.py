@@ -16,7 +16,7 @@ MIGRATION = ROOT / "src/knowledge/migrations/link_recipe_devices.cypher"
 RUNNER = ROOT / "scripts/link_recipe_devices.py"
 INGEST_LIVE = ROOT / "scripts/ingest_live_project.py"
 INGEST_ARR = ROOT / "scripts/ingest_arranger_tracks.py"
-KNOWLEDGE = ROOT / "src/agent/tools/knowledge/knowledge_tool.py"
+KNOWLEDGE = ROOT / "src/agent/tools/knowledge/neo4j_commands.py"
 
 
 def test_migration_creates_uses_device_with_canonical_node():
