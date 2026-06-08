@@ -298,27 +298,21 @@ mlx-setup: ## MLX + mlx-lm auf Mac installieren (Anleitung)
 	@echo ""
 	@echo "Danach Trainingsdaten übertragen: make mlx-sync-data"
 
-mlx-train: ## MLX LoRA Fine-Tuning Anleitung (auf Mac ausführen)
-	@echo ">>> Führe auf dem Mac Terminal aus:"
-	@echo ""
-	@echo "  source ~/.venv-mlx/bin/activate"
-	@echo "  python -m mlx_lm lora \\"
-	@echo "    --model $(MLX_OUT)/base --train --data ~/mlx-training \\"
-	@echo "    --iters 1000 --batch-size 1 --num-layers 16 \\"
-	@echo "    --learning-rate 1e-5 --save-every 200 --grad-checkpoint \\"
-	@echo "    --max-seq-length 512 --adapter-path $(MLX_OUT)/bitwig-adapter"
-	@echo ""
-	@echo "  python -m mlx_lm.fuse --model $(MLX_OUT)/base \\"
-	@echo "    --adapter-path $(MLX_OUT)/bitwig-adapter \\"
-	@echo "    --save-path $(MLX_OUT)/bitwig-finetuned"
+MLX_TRAIN_SH ?= $(HOME)/mlx-server/train.sh
+MLX_ITERS    ?= 1000
+MLX_SEQ_LEN  ?= 1024
 
-mlx-test: ## Fine-tuned Modell auf Mac testen (Anleitung)
-	@echo ">>> Führe auf dem Mac Terminal aus:"
-	@echo ""
-	@echo "  source ~/.venv-mlx/bin/activate"
-	@echo "  python -m mlx_lm.generate --model $(MLX_OUT)/bitwig-finetuned \\"
-	@echo "    --max-tokens 300 \\"
-	@echo "    --prompt 'Erstelle ein 4-taktiges Pattern für Synth Lead in C-Dur, Techno, 128 BPM'"
+mlx-train: ## LoRA Fine-Tuning via ~/mlx-server/train.sh starten (lokal auf Mac)
+	@[ -f "$(MLX_DATA)/train.jsonl" ] || { echo "✗ train.jsonl fehlt — make mlx-export zuerst"; exit 1; }
+	@[ -f "$(MLX_TRAIN_SH)" ] || { echo "✗ $(MLX_TRAIN_SH) nicht gefunden"; exit 1; }
+	MLX_DATA_DIR="$(abspath $(MLX_DATA))" bash "$(MLX_TRAIN_SH)" $(MLX_ITERS) $(MLX_SEQ_LEN)
+
+mlx-test: ## Fine-tuned Modell lokal testen (MLX-Server muss laufen auf Port 8080)
+	@echo "Teste Modell auf http://localhost:8080 ..."
+	curl -s http://localhost:8080/v1/chat/completions \
+	  -H "Content-Type: application/json" \
+	  -d '{"model":"","messages":[{"role":"system","content":"/no_think\nDu bist ein Bitwig Studio AI-Assistent."},{"role":"user","content":"Erstelle ein Techno Drum-Pattern, 130 BPM, C minor."}],"max_tokens":300}' \
+	  | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['choices'][0]['message']['content'])"
 
 mlx-ingest-scales: ## Alle 24 Tonarten + Akkorde in Neo4j ingesten
 	source .venv/bin/activate && python scripts/ingest_scales.py
