@@ -20,6 +20,43 @@ _CONTROL_TOOL_NAMES = frozenset([
     "bitwig_eq_band",
 ])
 
+# Tool-Sets nach Anfrage-Typ (max ~10 Tools pro Aufruf)
+_TOOLS_KNOWLEDGE = frozenset([
+    "query_bitwig_docs", "web_search", "find_audio_example",
+    "get_song_context", "get_artist_context", "search_artist_song",
+    "learn_song_from_youtube", "store_result_in_kb",
+])
+
+_TOOLS_PRODUCTION = frozenset([
+    "query_bitwig_docs", "web_search", "find_audio_example",
+    "check_bitwig_connection", "execute_setup", "compose_notes",
+    "write_pattern", "write_pattern_raw", "get_bitwig_track_state",
+    "validate_and_learn",
+])
+
+_TOOLS_PROJECT = frozenset([
+    "scan_and_learn_project", "get_song_context", "get_bitwig_track_state",
+    "reconstruct_project", "create_track_from_recipe", "store_result_in_kb",
+])
+
+_TOOLS_LAUNCHPAD = frozenset([
+    "suggest_notes", "get_launchpad_mode", "listen_played_notes",
+    "play_notes", "arm_track", "check_bitwig_connection",
+])
+
+# Schlüsselwörter → Tool-Set
+_KEYWORD_SETS = [
+    (_TOOLS_LAUNCHPAD,   ["launchpad", "spielen", "aufnehmen", "einspielen",
+                          "arm", "suggest", "play notes"]),
+    (_TOOLS_PROJECT,     ["projekt", "project", "scan", "rekonstruier", "lern das projekt"]),
+    (_TOOLS_PRODUCTION,  ["erstelle", "schreibe", "baue", "mach", "pattern",
+                          "drum", "bass", "lead", "setup", "track anlegen",
+                          "komponiere", "erzeuge", "generiere"]),
+    (_TOOLS_KNOWLEDGE,   ["kennst du", "welche songs", "welche genres", "erkläre",
+                          "was ist", "wie klingt", "stil von", "wer ist",
+                          "tonart", "bpm", "akkorde", "bassline", "melodie"]),
+]
+
 _CONFIRMATIONS = frozenset([
     "ja", "ja bitte", "ja!", "ok", "klar", "gut", "los",
     "mach das", "mach es", "alles klar", "bitte", "mach",
@@ -41,16 +78,32 @@ def _route_request(text: str) -> str:
     return "song"
 
 
+def _select_tool_set(text: str) -> frozenset | None:
+    """Wählt passendes Tool-Set anhand von Schlüsselwörtern."""
+    lower = text.lower()
+    for tool_set, keywords in _KEYWORD_SETS:
+        if any(kw in lower for kw in keywords):
+            return tool_set
+    return None  # → alle Tools
+
+
 def _get_prompt_for_mode(mode: str) -> str:
     from src.agent.prompts import PROMPT_CONTROL, PROMPT_SONG
     return PROMPT_CONTROL if mode == "control" else PROMPT_SONG
 
 
-def _filter_tools_for_mode(mode: str, all_tools: list) -> list:
-    if mode != "control":
-        return all_tools
-    filtered = [t for t in all_tools if getattr(t, "name", "") in _CONTROL_TOOL_NAMES]
-    return filtered or [t for t in all_tools if getattr(t, "name", "") == "check_bitwig_connection"] or all_tools
+def _filter_tools_for_mode(mode: str, all_tools: list, user_text: str = "") -> list:
+    if mode == "control":
+        filtered = [t for t in all_tools if getattr(t, "name", "") in _CONTROL_TOOL_NAMES]
+        return filtered or all_tools
+
+    # Song-Modus: Tool-Set nach Schlüsselwörtern wählen
+    tool_set = _select_tool_set(user_text)
+    if tool_set:
+        filtered = [t for t in all_tools if getattr(t, "name", "") in tool_set]
+        if filtered:
+            return filtered
+    return all_tools
 
 
 def _latest_user_text(messages: list) -> str:
@@ -88,7 +141,7 @@ def _select_tools_for_context(all_messages: list, get_tools_fn) -> list:
     user_text = _latest_user_text(all_messages)
     mode      = _route_request(user_text)
     all_tools = get_tools_fn()
-    tools     = _filter_tools_for_mode(mode, all_tools)
+    tools     = _filter_tools_for_mode(mode, all_tools, user_text)
     log.info("Router: mode=%s → %d Tools: %s", mode, len(tools),
              [getattr(t, "name", "?") for t in tools])
     return tools
