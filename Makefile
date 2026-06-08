@@ -317,16 +317,18 @@ mlx-test: ## Fine-tuned Modell lokal testen (MLX-Server muss laufen auf Port 808
 mlx-ingest-scales: ## Alle 24 Tonarten + Akkorde in Neo4j ingesten
 	source .venv/bin/activate && python scripts/ingest_scales.py
 
+MLX_SERVER_URL ?= http://localhost:8080
+
 mlx-rl-pairs: ## DPO-Paare generieren (Fine-tuned Modell, Port 8080)
 	source .venv/bin/activate && python scripts/generate_dpo_pairs.py \
-			--model-url http://$(MAC_HOST):8080/v1/chat/completions \
+			--model-url $(MLX_SERVER_URL)/v1/chat/completions \
 			--data-dir ./training_data \
 			--max-prompts 60
 
 mlx-rl-eval: ## Reward-Score des Fine-tuned Modells messen (Port 8080)
 	source .venv/bin/activate && python3 -c "\
 	from scripts.rl_train_loop import evaluate; \
-	score = evaluate('http://$(MAC_HOST):8080/v1/chat/completions'); \
+	score = evaluate('$(MLX_SERVER_URL)/v1/chat/completions'); \
 	print(f'avg_reward = {score:.3f}')"
 
 mlx-rl-train: ## RL-Trainingsschleife starten (generieren → SFT → evaluieren)
