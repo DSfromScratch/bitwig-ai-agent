@@ -278,7 +278,7 @@ def _start_mlx_server_local() -> bool:
         subprocess.run(["launchctl", "load", _LAUNCH_AGENT], check=False)
         for _ in range(30):
             try:
-                r = requests.get(f"http://{MAC_HOST}:8080/v1/models", timeout=3)
+                r = requests.get(f"http://{MLX_CONNECT_HOST}:8080/v1/models", timeout=3)
                 if r.status_code == 200:
                     print("  ✅ Server bereit")
                     return True
