@@ -21,7 +21,7 @@ def pairs():
 
 
 def test_builds_expected_count(pairs):
-    assert len(pairs) == len(gen.RHYTHM_SPECS) + len(gen.INSTRUMENT_SPECS)
+    assert len(pairs) == len(gen._all_rhythm_specs()) + len(gen._all_instrument_specs())
     assert len(pairs) >= 20
 
 
@@ -68,14 +68,15 @@ def test_drum_patterns_are_finite(pairs):
 def test_rhythm_user_context_injects_kb_tool(pairs):
     rhythm = [p for p in pairs
               if "get_rhythm_pattern(" in p["messages"][1]["content"]]
-    assert len(rhythm) == len(gen.RHYTHM_SPECS)
+    assert len(rhythm) == len(gen._all_rhythm_specs())
 
 
 def test_instrument_pairs_pick_top_ranked_device(pairs):
     instr = [p for p in pairs
              if '"tool": "load_instrument"' in p["messages"][-1]["content"]]
-    assert len(instr) == len(gen.INSTRUMENT_SPECS)
-    for p, spec in zip(instr, gen.INSTRUMENT_SPECS):
+    all_instr_specs = gen._all_instrument_specs()
+    assert len(instr) == len(all_instr_specs)
+    for p, spec in zip(instr, all_instr_specs):
         top_device = spec[4][0][0]
         obj = json.loads(p["messages"][-1]["content"].split("</think>", 1)[1].strip())
         assert obj["args"]["device_name"] == top_device
