@@ -16,7 +16,7 @@ LOCAL_EXT_DIR := $(HOME)/Bitwig Studio/Extensions
 LINUX_IP     := $(shell ip route get 1 2>/dev/null | awk '{print $$7; exit}')
 EXT_DIST     := bitwig-extension/dist
 
-.PHONY: help install download-mf dashboard embed-server agent start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status mlx-export mlx-setup mlx-sync-data mlx-train mlx-test mlx-ingest-scales mlx-rl-pairs mlx-rl-eval mlx-rl-train ingest-arranger
+.PHONY: help install download-mf dashboard embed-server agent agent-copilot start analyse validate test clean neo4j-import build-extension deploy-local deploy-mac deploy-mac-http deploy ssh-setup-mac test-integration test-neo4j test-all agent-service-install agent-service-start agent-service-stop agent-service-status agent-service-logs container-neo4j-start container-neo4j-stop container-neo4j-logs container-vllm-start container-vllm-stop container-vllm-logs container-vllm-build container-status mlx-export mlx-setup mlx-sync-data mlx-train mlx-test mlx-ingest-scales mlx-rl-pairs mlx-rl-eval mlx-rl-train ingest-arranger
 
 help: ## Verfügbare Befehle anzeigen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -86,6 +86,9 @@ embed-server: ## Lokalen Embedding-Server starten (Port 8080, kein HF-Netzwerk)
 
 agent: ## Interaktiven CLI-Agent starten (vLLM nötig)
 	@LD_LIBRARY_PATH=.cuda_compat:$(LD_LIBRARY_PATH) $(PYTHON) -m src.agent.core
+
+agent-copilot: ## Interaktiven CLI-Agent mit Copilot-Max-Backend starten (kein vLLM nötig)
+	@LLM_BACKEND=copilot $(PYTHON) -m src.agent.core
 
 start: ## 🚀 MCP Server + Agent starten (vollständiger Stack)
 	$(PYTHON) start_agent.py

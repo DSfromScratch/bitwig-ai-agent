@@ -6,7 +6,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import logging
+from pathlib import Path
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -89,15 +91,91 @@ def _github_token() -> str | None:
     return None
 
 
+# --- Copilot (Max) Backend -------------------------------------------------
+# Im Gegensatz zu GitHub Models (Free-Tier: 8000-Token-Input-Cap) nutzt dieser
+# Pfad die echte Copilot-API (api.individual.githubcopilot.com) und ist damit
+# für die volle Song-Komposition (>8k Tokens) geeignet. Ablauf:
+#   1. Langlebiges OAuth-Token (ghu_) aus Env oder Datei.
+#   2. Eintausch gegen kurzlebiges Copilot-API-Token (~30 min), gecacht.
+_COPILOT_OAUTH_PATH = Path.home() / ".config" / "bitwig-agent" / "copilot_oauth.txt"
+_COPILOT_CLIENT_ID  = "Iv1.b507a08c87ecfe98"  # offizielle Copilot-Client-ID
+_copilot_cache: dict[str, Any] = {"token": None, "base": None, "exp": 0.0}
+
+
+def _copilot_oauth_token() -> str | None:
+    """Langlebiges Copilot-OAuth-Token (ghu_) aus Env oder gespeicherter Datei."""
+    tok = os.getenv("COPILOT_OAUTH_TOKEN")
+    if tok:
+        return tok.strip()
+    try:
+        if _COPILOT_OAUTH_PATH.exists():
+            return _COPILOT_OAUTH_PATH.read_text().strip()
+    except Exception as exc:
+        log.debug("Copilot-OAuth-Datei nicht lesbar: %s", exc)
+    return None
+
+
+def _copilot_api_token() -> tuple[str, str]:
+    """Kurzlebiges Copilot-API-Token + Base-URL (mit Auto-Refresh, gecacht)."""
+    now = time.time()
+    if _copilot_cache["token"] and now < _copilot_cache["exp"] - 300:
+        return _copilot_cache["token"], _copilot_cache["base"]
+
+    oauth = _copilot_oauth_token()
+    if not oauth:
+        raise RuntimeError(
+            "LLM_BACKEND=copilot gesetzt, aber kein Copilot-OAuth-Token gefunden "
+            f"(COPILOT_OAUTH_TOKEN oder {_COPILOT_OAUTH_PATH})."
+        )
+    import urllib.request
+    req = urllib.request.Request(
+        "https://api.github.com/copilot_internal/v2/token",
+        headers={
+            "Authorization": f"token {oauth}",
+            "Editor-Version": "vscode/1.95.0",
+            "Editor-Plugin-Version": "copilot-chat/0.20.0",
+            "User-Agent": "GithubCopilot/1.0.0",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode())
+    token = data.get("token")
+    if not token:
+        raise RuntimeError("Copilot-Token-Exchange fehlgeschlagen (keine Copilot-Lizenz?).")
+    base = (data.get("endpoints", {}) or {}).get("api", "https://api.githubcopilot.com")
+    _copilot_cache.update(token=token, base=base, exp=float(data.get("expires_at", now + 1500)))
+    log.info("Copilot-API-Token erneuert (sku=%s)", data.get("sku", "?"))
+    return token, base
+
+
 def _get_llm(max_tokens: int = 3000) -> BaseChatModel:
     if os.getenv("BITWIG_TEST_MODE", "").lower() == "mock":
         log.info("TEST_MODE: Verwende Mock-LLM statt vLLM-Backend")
         return MockLLM()
 
+    # Copilot (Max) – echte Copilot-API ohne 8k-Token-Cap. Geeignet für die
+    # volle Song-Komposition. Aktivierung via LLM_BACKEND=copilot.
+    if os.getenv("LLM_BACKEND", "").lower() in ("copilot", "copilot-max"):
+        token, base = _copilot_api_token()
+        model = os.getenv("COPILOT_MODEL", "gpt-4o")
+        log.info("LLM_BACKEND=copilot: Verwende Copilot-API (%s) @ %s", model, base)
+        return ChatOpenAI(
+            base_url=base.rstrip("/"),
+            api_key=token, model=model,
+            temperature=0.6, max_tokens=max_tokens, timeout=120,
+            default_headers={
+                "Editor-Version": "vscode/1.95.0",
+                "Copilot-Integration-Id": "vscode-chat",
+                "User-Agent": "GithubCopilot/1.0.0",
+            },
+        )
+
     # Optionaler Referenz-/Vergleichs-Backend: GitHub Models (Modelle hinter
     # Copilot, z.B. GPT-4o). OpenAI-kompatibel inkl. Tool-Calling. Aktivierung
-    # via LLM_BACKEND=github. Token aus GITHUB_TOKEN/GH_TOKEN oder `gh auth token`.
-    if os.getenv("LLM_BACKEND", "").lower() in ("github", "github-models", "copilot"):
+    # via LLM_BACKEND=github. Hinweis: Free-Tier mit 8000-Token-Input-Cap.
+    # Token aus GITHUB_TOKEN/GH_TOKEN oder `gh auth token`.
+    if os.getenv("LLM_BACKEND", "").lower() in ("github", "github-models"):
         token = _github_token()
         if not token:
             raise RuntimeError(
@@ -123,15 +201,15 @@ def _get_llm(max_tokens: int = 3000) -> BaseChatModel:
 def _log_token_usage(response: AIMessage, label: str = "") -> dict:
     from src.agent.events import get_event_bus
     meta       = getattr(response, "usage_metadata", None) or {}
-    input_tok  = meta.get("input_tokens", 0)
-    output_tok = meta.get("output_tokens", 0)
-    total_tok  = meta.get("total_tokens", input_tok + output_tok)
+    input_tok  = meta.get("input_tokens") or 0
+    output_tok = meta.get("output_tokens") or 0
+    total_tok  = meta.get("total_tokens") or (input_tok + output_tok)
 
     think_tok = 0
     resp_meta = getattr(response, "response_metadata", None) or {}
     usage_raw = resp_meta.get("usage", resp_meta.get("token_usage", {})) or {}
     details   = usage_raw.get("completion_tokens_details") or {}
-    think_tok = details.get("reasoning_tokens", 0) if isinstance(details, dict) else 0
+    think_tok = (details.get("reasoning_tokens") or 0) if isinstance(details, dict) else 0
 
     think_estimated = False
     if think_tok == 0:
