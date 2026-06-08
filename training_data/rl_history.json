@@ -1,8 +1,8 @@
 [
   {
     "round": 1,
-    "pairs": 45,
-    "avg_reward": 0.84375,
+    "pairs": 11,
+    "avg_reward": 0.9525454545454547,
     "dpo_iters": 100
   }
 ]
