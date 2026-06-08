@@ -261,6 +261,79 @@ INSTRUMENT_SPECS = [
     ]),
 ]
 
+# ---------------------------------------------------------------------------
+# Extended specs — additional genres not covered in the base specs above
+# ---------------------------------------------------------------------------
+
+RHYTHM_SPECS_EXT: list = [
+    ("ambient", "verse", 0.30, 80, "D minor",
+     "Sparsames Ambient-Pattern, langer Decay",
+     [0.0, 2.0], [2.0], "offbeat", "melancholic"),
+    ("afrobeat", "verse", 0.75, 105, "F minor",
+     "Synkopierter Afrobeat-Groove, komplexe Kick-Struktur",
+     [0.0, 0.75, 2.0, 3.0], [1.0, 3.0], "16th", "groovy"),
+    ("swing", "verse", 0.60, 140, "Bb major",
+     "Jazz-Swing mit shufflendem HiHat-Feel",
+     [0.0, 2.5], [1.0, 3.0], "offbeat", "playful"),
+    ("blues", "verse", 0.65, 90, "E minor",
+     "Langsamer Blues-Groove, schleppender Pocket",
+     [0.0, 2.0], [1.0, 3.0], "8th", "soulful"),
+    ("latin", "chorus", 0.80, 95, "D minor",
+     "Salsa/Latin-Clave, treibend und festlich",
+     [0.0, 0.5, 2.0, 2.5], [1.0, 3.0], "8th", "festive"),
+    ("dubstep", "drop", 0.90, 140, "G minor",
+     "Dubstep Half-Time Drop, wuchtiger Kick",
+     [0.0, 2.0, 3.0], [1.0, 3.0], "16th", "dark"),
+    ("breakbeat", "chorus", 0.85, 132, "E minor",
+     "Breakbeat-Pattern mit verschobenem Kick",
+     [0.0, 1.5, 2.5, 3.5], [1.0, 2.5], "16th", "energetic"),
+    ("cumbia", "verse", 0.70, 100, "A minor",
+     "Cumbia-Groove mit Maracas-artigem HiHat",
+     [0.0, 1.5, 2.0, 3.5], [1.0, 3.0], "8th", "festive"),
+    ("uk garage", "chorus", 0.80, 130, "C minor",
+     "2-Step UK-Garage-Rhythmus mit Synkope",
+     [0.0, 1.75, 2.5], [1.0, 3.0], "offbeat", "energetic"),
+]
+
+INSTRUMENT_SPECS_EXT: list = [
+    ("pad", "ambient", "melancholic", 0.30, [
+        ("Polymer", "f4d2a1b0-0001-4000-8000-000000000003", 48, 84, 0.45,
+         "Sanfter atmosphärischer Pad — ideal für Ambient-Texturen", 0.93),
+        ("Phase-4", "f4d2a1b0-0001-4000-8000-000000000002", 48, 84, 0.42,
+         "Phase-Distortion-Pad, etwas bewegter", 0.72),
+    ]),
+    ("pad", "techno", "driving", 0.80, [
+        ("Phase-4", "f4d2a1b0-0001-4000-8000-000000000002", 55, 84, 0.72,
+         "Harter, modulierter Techno-Pad mit Bewegung", 0.88),
+        ("Polymer", "f4d2a1b0-0001-4000-8000-000000000003", 55, 84, 0.68,
+         "Subtraktiver Synth-Pad, breiter", 0.74),
+    ]),
+    ("arp", "house", "uplifting", 0.75, [
+        ("Polymer", "f4d2a1b0-0001-4000-8000-000000000003", 60, 96, 0.75,
+         "Heller, pulsierender House-Arpeggiator — klassisch", 0.91),
+        ("Phase-4", "f4d2a1b0-0001-4000-8000-000000000002", 60, 96, 0.72,
+         "Phase-Arp, leicht metallisch", 0.70),
+    ]),
+    ("arp", "trance", "uplifting", 0.85, [
+        ("Polymer", "f4d2a1b0-0001-4000-8000-000000000003", 60, 96, 0.80,
+         "Supersaw-Arpeggio — Trance-typisch und euphorisch", 0.93),
+        ("Phase-4", "f4d2a1b0-0001-4000-8000-000000000002", 60, 96, 0.75,
+         "Phase-Arp, alternativ", 0.71),
+    ]),
+    ("chords", "pop", "bright", 0.65, [
+        ("Polymer", "f4d2a1b0-0001-4000-8000-000000000003", 48, 84, 0.65,
+         "Klarer, heller Pop-Synth-Chord-Stack", 0.87),
+        ("Phase-4", "f4d2a1b0-0001-4000-8000-000000000002", 48, 84, 0.60,
+         "Phase-4-Chords, etwas dunkler", 0.70),
+    ]),
+    ("lead", "blues", "soulful", 0.70, [
+        ("FM-4", "f4d2a1b0-0001-4000-8000-000000000001", 55, 91, 0.75,
+         "Expressiver Blues-Lead mit FM-Overdriven-Charakter", 0.89),
+        ("Polymer", "f4d2a1b0-0001-4000-8000-000000000003", 55, 91, 0.70,
+         "Subtraktiver Lead, weniger gebogen", 0.68),
+    ]),
+]
+
 
 def _instrument_pair(spec) -> dict:
     role, genre, mood, energy, options = spec
@@ -315,12 +388,56 @@ def _instrument_pair(spec) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Section-variant augmentation — deterministic, no LLM calls
+# ---------------------------------------------------------------------------
+
+# For each base section, derive additional section variants by shifting energy.
+# Format: base_section -> [(new_section, energy_delta, description_suffix)]
+_SECTION_DERIVE: dict[str, list[tuple[str, float, str]]] = {
+    "verse":  [("chorus", +0.18, "— gesteigerte Energie im Chorus")],
+    "chorus": [("verse",  -0.18, "— reduzierte Energie im Verse"),
+               ("break",  +0.10, "— maximale Energie im Break")],
+    "drop":   [("verse",  -0.40, "— aufbauender Intro/Verse")],
+}
+
+
+def _derive_section_variants(base_specs: list) -> list:
+    """Generate section variants from base specs by adjusting section label and energy.
+
+    Kick/snare/hat structure is kept identical — ``_energy_scale()`` in
+    ``_build_drum_notes()`` already produces the velocity difference from the
+    changed energy value, so the model learns the section→energy→velocity mapping
+    without requiring hand-crafted per-section note lists.
+    """
+    variants = []
+    for spec in base_specs:
+        genre, section, energy, bpm, key, desc, kick_b, snare_b, hat, mood = spec
+        for new_section, delta, suffix in _SECTION_DERIVE.get(section, []):
+            new_energy = round(max(0.25, min(0.98, energy + delta)), 2)
+            variants.append((
+                genre, new_section, new_energy, bpm, key,
+                f"{desc} {suffix}",
+                kick_b, snare_b, hat, mood,
+            ))
+    return variants
+
+
+def _all_rhythm_specs() -> list:
+    base = RHYTHM_SPECS + RHYTHM_SPECS_EXT
+    return base + _derive_section_variants(base)
+
+
+def _all_instrument_specs() -> list:
+    return INSTRUMENT_SPECS + INSTRUMENT_SPECS_EXT
+
+
+# ---------------------------------------------------------------------------
 # Build + validate + write
 # ---------------------------------------------------------------------------
 
 def build_pairs() -> list[dict]:
-    pairs = [_rhythm_pair(s) for s in RHYTHM_SPECS]
-    pairs += [_instrument_pair(s) for s in INSTRUMENT_SPECS]
+    pairs = [_rhythm_pair(s) for s in _all_rhythm_specs()]
+    pairs += [_instrument_pair(s) for s in _all_instrument_specs()]
     for p in pairs:
         _validate_pair(p)
     return pairs
@@ -374,8 +491,12 @@ def main() -> None:
     args = ap.parse_args()
 
     pairs = build_pairs()
+    n_base_r  = len(RHYTHM_SPECS) + len(RHYTHM_SPECS_EXT)
+    n_derived = len(_derive_section_variants(RHYTHM_SPECS + RHYTHM_SPECS_EXT))
+    n_instr   = len(INSTRUMENT_SPECS) + len(INSTRUMENT_SPECS_EXT)
     print(f"✓ {len(pairs)} Pairs gebaut & validiert "
-          f"({len(RHYTHM_SPECS)} Rhythm, {len(INSTRUMENT_SPECS)} Instrument), "
+          f"({n_base_r} Rhythm-Basis, +{n_derived} Abgeleitet, "
+          f"{n_instr} Instrument), "
           "alle <think> geschlossen, Drums finit.")
 
     if args.print:
