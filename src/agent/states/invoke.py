@@ -1,6 +1,7 @@
-"""InvokeState — ruft das LLM auf (mit Kontext-Overflow-Fallback)."""
+"""InvokeState — ruft das LLM auf (mit Backend-Fallback und Kontext-Overflow-Fallback)."""
 from __future__ import annotations
 import logging
+import os
 import time
 from httpx import ConnectError
 from openai import APIConnectionError, BadRequestError
@@ -71,7 +72,8 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
                 log.warning("LLM nicht erreichbar (Versuch %d/3) — warte %ds: %s", attempt + 1, wait, exc)
                 time.sleep(wait)
                 continue
-            raise
+            # Alle Retries erschöpft → MLX-Fallback wenn vLLM primär war
+            return _backend_fallback(system, slim_msgs, slim_tools, exc)
         except BadRequestError as exc:
             msg = str(exc)
             if "maximum context length" not in msg and "input_tokens" not in msg:
@@ -101,3 +103,23 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
         raise RuntimeError(
             f"LLM nicht erreichbar — Kontext zu groß, Fallback fehlgeschlagen: {fallback_exc}"
         ) from fallback_exc
+
+
+def _backend_fallback(system: SystemMessage, messages: list, tools: list, original_exc: Exception):
+    """Fällt auf MLX zurück wenn das primäre Backend (vLLM) nach 3 Versuchen nicht erreichbar ist."""
+    primary = os.getenv("LLM_BACKEND", "mlx").lower()
+    if primary == "mlx":
+        raise RuntimeError(f"MLX-Backend nicht erreichbar: {original_exc}") from original_exc
+
+    log.warning("vLLM nicht erreichbar nach 3 Versuchen — MLX-Fallback: %s", original_exc)
+    try:
+        fallback_llm = _get_llm(max_tokens=800, backend="mlx")
+        if tools:
+            fallback_llm = fallback_llm.bind_tools(tools)
+        response = fallback_llm.invoke([system] + messages)
+        _log_token_usage(response, label="mlx-fallback")
+        return response
+    except Exception as mlx_exc:
+        raise RuntimeError(
+            f"vLLM nicht erreichbar ({original_exc}) und MLX-Fallback fehlgeschlagen: {mlx_exc}"
+        ) from mlx_exc
