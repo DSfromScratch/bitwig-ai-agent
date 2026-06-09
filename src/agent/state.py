@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Annotated, Literal, Optional  # noqa: F401
+from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
 
@@ -49,13 +49,34 @@ class BitwigResult(TypedDict):
     summary:        Optional[str]    # Kurzbeschreibung was das Result darstellt
 
 
+# ── Song-Kompositionsplan (wird vor erster OSC-Nachricht erstellt) ─────────────
+
+class SongBlueprint(TypedDict):
+    """Kompositionsplan: wird einmal geplant, dann Schritt für Schritt ausgeführt."""
+    genre:       str
+    bpm:         float
+    sections:    list[str]            # Reihenfolge: ["intro", "verse", "chorus", ...]
+    section_bars: dict[str, int]      # Länge je Section in Takten
+    chord_map:   dict[str, list[str]] # Section → Akkordliste
+    instrument_roles: list[str]       # Aktive Rollen (z.B. ["kick","bass","lead"])
+
+
+class SectionResult(TypedDict):
+    """Ergebnis einer fertig generierten Section."""
+    section:     str
+    slot_base:   int    # Clip-Slot-Startindex
+    note_count:  int    # Gesamt-Noten dieser Section
+    bpm:         float
+
+
 # ── LangGraph Agent-State ─────────────────────────────────────────────────────
 
 GenerationPhase = Literal[
     "idle",         # Noch nichts gestartet
-    "planning",     # Planung
+    "planning",     # Blueprint wird erstellt
     "setup",        # Tracks + Instrumente werden angelegt
-    "verifying",    # Projekt wird geprüft
+    "generating",   # Sections werden generiert
+    "verifying",    # verify_song läuft
     "done",         # Fertig
     "error",        # Nicht behebbar
 ]
@@ -70,7 +91,11 @@ class AgentState(TypedDict):
     bridge_ok:     bool
     # Result-Objekt: aktueller Ausführungsplan (None wenn kein aktives Result)
     bitwig_result: Optional[BitwigResult]
+    # Song-Generierungs-Kontext
     generation_phase:   GenerationPhase
-    quality_report:     Optional[dict]
+    song_blueprint:     Optional[SongBlueprint]
+    section_timeline:   list[SectionResult]    # bereits fertige Sections
+    quality_report:     Optional[dict]          # letztes verify_song JSON
+    pending_sections:   list[str]              # noch zu generierende Sections
     retry_count:        int
     ui_song_config:     Optional[dict]         # Strukturierte Song-Config aus Bitwig UI (OSC)

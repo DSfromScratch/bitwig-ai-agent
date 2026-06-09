@@ -34,8 +34,17 @@ _TOOLS_SETUP = frozenset([
     "scan_vst_plugins", "create_track_from_recipe",
 ])
 
+_TOOLS_STATUS = frozenset([
+    "check_bitwig_connection", "get_bitwig_track_state",
+])
+
+_TOOLS_GENERATING = frozenset([
+    "play_notes", "get_bitwig_track_state", "validate_music", "validate_and_learn",
+])
+
 _TOOLS_VERIFYING = frozenset([
-    "get_bitwig_track_state", "analyze_song", "store_result_in_kb",
+    "get_bitwig_track_state", "validate_music", "validate_and_learn",
+    "analyze_song", "store_result_in_kb",
 ])
 
 _TOOLS_PROJECT = frozenset([
@@ -49,23 +58,30 @@ _TOOLS_LAUNCHPAD = frozenset([
 ])
 
 _TOOLS_SONG_DEFAULT = _TOOLS_PLANNING
-_TOOLS_PRODUCTION = _TOOLS_PLANNING | _TOOLS_SETUP
+_TOOLS_PRODUCTION = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING
 
 _WORKFLOW_TOOLS = {
     "idle": _TOOLS_PLANNING,
     "planning": _TOOLS_PLANNING,
     "setup": _TOOLS_SETUP,
+    "generating": _TOOLS_GENERATING,
     "verifying": _TOOLS_VERIFYING,
     "done": _TOOLS_PLANNING,
     "error": _TOOLS_PLANNING,
 }
 
 _LAUNCHPAD_KEYWORDS = frozenset([
-    "launchpad", "spielen", "aufnehmen", "einspielen", "arm", "suggest", "play notes",
+    "launchpad", "spielen", "spiele", "aufnehmen", "einspielen", "arm", "suggest", "play notes",
 ])
 _PROJECT_KEYWORDS = frozenset([
     "projekt", "project", "scan", "rekonstruier", "rekonstruiere",
     "lern das projekt", "rezept", "recipe",
+])
+_STATUS_KEYWORDS = frozenset([
+    "wie viele tracks", "wieviele tracks", "anzahl tracks", "tracks vorhanden",
+    "tracks sind", "track status", "track-status", "track zustand",
+    "track-zustand", "spuren vorhanden", "wie viele spuren", "anzahl spuren",
+    "status in bitwig", "bitwig status",
 ])
 _PRODUCTION_KEYWORDS = frozenset([
     "erstelle", "schreibe", "baue", "mach", "pattern", "drum", "bass",
@@ -100,10 +116,16 @@ _NUDGE_PREFIXES = (
     "Deine Antwort war leer.",
     "Dein Tool-Call war ungültig",
     "Deine Antwort war nur ein Plan.",
+    "Der Nutzer will einen Beat hören.",
+    "Der Nutzer will das Launchpad benutzen.",
+    "Der Nutzer fragt, welche Songs du kennst.",
+    "Der Nutzer fragt nach dem Bitwig-Status.",
+    "Die Notengenerierung braucht jetzt",
 )
 
 _SETUP_DONE_TOOLS = frozenset(["execute_setup", "create_track_from_recipe", "reconstruct_project"])
-_VERIFY_DONE_TOOLS = frozenset(["analyze_song", "store_result_in_kb"])
+_NOTES_DONE_TOOLS = frozenset(["play_notes"])
+_VERIFY_DONE_TOOLS = frozenset(["validate_music", "validate_and_learn", "analyze_song"])
 
 
 def _route_request(text: str) -> str:
@@ -151,6 +173,8 @@ def _classify_task(text: str) -> str:
     lower = text.lower()
     if _contains_any(lower, _LAUNCHPAD_KEYWORDS):
         return "launchpad"
+    if _contains_any(lower, _STATUS_KEYWORDS):
+        return "status"
     if _contains_any(lower, _PROJECT_KEYWORDS):
         return "project"
     if _is_song_creation_request(text):
@@ -165,6 +189,8 @@ def _select_tool_set(text: str) -> frozenset | None:
     task = _classify_task(text)
     if task == "launchpad":
         return _TOOLS_LAUNCHPAD
+    if task == "status":
+        return _TOOLS_STATUS
     if task == "project":
         return _TOOLS_PROJECT
     if task == "song_creation":
@@ -184,6 +210,8 @@ def _tool_names_for_context(mode: str, phase: str, task: str) -> frozenset:
         return _CONTROL_TOOL_NAMES
     if task == "launchpad":
         return _TOOLS_LAUNCHPAD
+    if task == "status":
+        return _TOOLS_STATUS
     if task == "project":
         return _TOOLS_PROJECT
     if task == "knowledge":
@@ -236,11 +264,14 @@ def _tool_call_names(messages: list) -> list[str]:
 
 
 def _phase_after_recent_tools(messages: list, current_phase: str) -> str:
-    tool_names = set(_tool_call_names(messages))
-    if tool_names & _SETUP_DONE_TOOLS:
-        return "verifying"
-    if tool_names & _VERIFY_DONE_TOOLS:
-        return "done"
+    for message in reversed(messages):
+        tool_names = {str(tc.get("name", "")) for tc in (getattr(message, "tool_calls", None) or [])}
+        if tool_names & _VERIFY_DONE_TOOLS:
+            return "done"
+        if tool_names & _NOTES_DONE_TOOLS:
+            return "verifying"
+        if tool_names & _SETUP_DONE_TOOLS:
+            return "generating"
     return current_phase
 
 
@@ -250,6 +281,8 @@ def _phase_after_confirmation(text: str, current_phase: str) -> str:
     if current_phase in ("idle", "planning"):
         return "planning"
     if current_phase == "setup":
+        return "generating"
+    if current_phase == "generating":
         return "verifying"
     return current_phase
 

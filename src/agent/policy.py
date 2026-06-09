@@ -5,13 +5,16 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 from src.agent.router import (
+    _classify_task,
     _CONTROL_TOOL_NAMES,
+    _latest_user_text,
+    _TOOLS_GENERATING,
+    _TOOLS_LAUNCHPAD,
     _TOOLS_PLANNING,
     _TOOLS_SETUP,
+    _TOOLS_STATUS,
     _TOOLS_VERIFYING,
 )
-
-_NUDGE_PREFIX = "Deine Antwort war leer."
 
 _FX_NAMES = {
     "distortion", "amp", "compressor", "compressor+", "eq-5", "eq+",
@@ -29,6 +32,7 @@ _PHASE_ALLOWED_TOOLS = {
     "idle": _TOOLS_PLANNING,
     "planning": _TOOLS_PLANNING,
     "setup": _TOOLS_SETUP,
+    "generating": _TOOLS_GENERATING,
     "verifying": _TOOLS_VERIFYING,
     "done": _TOOLS_PLANNING,
     "error": _TOOLS_PLANNING,
@@ -51,15 +55,6 @@ def _is_strict_fx_request(text: str) -> bool:
     lower = text.lower()
     markers = ["nur", "exakt", "genau", "fx-chain", "fx chain", "fx-kette", "kette"]
     return any(m in lower for m in markers)
-
-
-def _latest_user_text(messages: list[Any]) -> str:
-    for m in reversed(messages):
-        if isinstance(m, HumanMessage):
-            text = (m.content or "").strip()
-            if text and not text.startswith(_NUDGE_PREFIX):
-                return text
-    return ""
 
 
 def _parse_float(value: Any, default: float) -> float:
@@ -147,6 +142,11 @@ def enforce_policy_on_response(state: dict[str, Any], response: AIMessage) -> tu
 
     phase = state.get("generation_phase", "idle")
     allowed = _PHASE_ALLOWED_TOOLS.get(phase)
+    task = _classify_task(user_text)
+    if task == "launchpad":
+        allowed = _TOOLS_LAUNCHPAD
+    elif task == "status":
+        allowed = _TOOLS_STATUS
     if allowed:
         phase_violations = [tc["name"] for tc in calls if tc.get("name") not in allowed]
         if phase_violations:

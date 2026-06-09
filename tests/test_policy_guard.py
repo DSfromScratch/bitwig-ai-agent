@@ -106,6 +106,26 @@ def test_blocks_setup_tool_during_planning_phase():
 
 
 @pytest.mark.unit
+def test_allows_launchpad_tools_during_planning_phase():
+    state = {
+        "messages": [HumanMessage(content="spiele einen Beat auf dem Launchpad")],
+        "generation_phase": "planning",
+    }
+    response = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "check_bitwig_connection", "args": {}, "id": "c1", "type": "tool_call"},
+            {"name": "get_launchpad_mode", "args": {}, "id": "c2", "type": "tool_call"},
+        ],
+    )
+
+    out, meta = enforce_policy_on_response(state, response)
+
+    assert meta["action"] == "allow"
+    assert [tc["name"] for tc in out.tool_calls] == ["check_bitwig_connection", "get_launchpad_mode"]
+
+
+@pytest.mark.unit
 def test_blocks_project_tool_during_generating_phase():
     state = {
         "messages": [HumanMessage(content="ja")],
@@ -115,7 +135,7 @@ def test_blocks_project_tool_during_generating_phase():
         content="",
         tool_calls=[
             {"name": "scan_and_learn_project", "args": {}, "id": "c1", "type": "tool_call"},
-            {"name": "compose_notes", "args": {"result": {}}, "id": "c2", "type": "tool_call"},
+            {"name": "play_notes", "args": {"notes": [{"note": 36}]}, "id": "c2", "type": "tool_call"},
         ],
     )
 
@@ -123,7 +143,7 @@ def test_blocks_project_tool_during_generating_phase():
 
     assert meta["action"] == "rewrite"
     assert "phase:generating:scan_and_learn_project" in meta["violations"]
-    assert [tc["name"] for tc in out.tool_calls] == ["compose_notes"]
+    assert [tc["name"] for tc in out.tool_calls] == ["play_notes"]
 
 
 @pytest.mark.unit

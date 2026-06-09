@@ -8,8 +8,10 @@ from src.agent.states.empty_response import (
     EmptyResponseState,
     _call_copilot_note_fallback,
     _needs_known_songs_nudge,
+    _needs_launchpad_tool_nudge,
     _needs_note_generation_fallback,
     _needs_setup_tool_nudge,
+    _needs_status_tool_nudge,
 )
 
 pytestmark = pytest.mark.unit
@@ -97,6 +99,102 @@ def test_known_songs_nudge_does_not_repeat_after_tool_call():
     assert _needs_known_songs_nudge(response, state) is False
 
 
+def test_status_text_response_needs_tool_nudge():
+    response = AIMessage(content="Ich prüfe Verbindung und Track-Zustand.")
+    state = {
+        "messages": [HumanMessage(content="Wie viele Tracks sind in Bitwig vorhanden?")],
+        "generation_phase": "planning",
+    }
+
+    assert _needs_status_tool_nudge(response, state) is True
+
+
+def test_status_nudge_does_not_repeat_after_track_state_tool():
+    response = AIMessage(content="Es sind 5 Tracks vorhanden.")
+    state = {
+        "messages": [
+            HumanMessage(content="Wie viele Tracks sind in Bitwig vorhanden?"),
+            AIMessage(content="", tool_calls=[{
+                "name": "get_bitwig_track_state",
+                "args": {},
+                "id": "state-1",
+                "type": "tool_call",
+            }]),
+            ToolMessage(content="5 tracks", tool_call_id="state-1"),
+        ],
+        "generation_phase": "planning",
+    }
+
+    assert _needs_status_tool_nudge(response, state) is False
+
+
+def test_launchpad_text_response_needs_tool_nudge():
+    response = AIMessage(content="Lass mich zuerst Verbindung und Launchpad-Modus prüfen.")
+    state = {
+        "messages": [HumanMessage(content="spiele einen Beat mit dem Launchpad")],
+        "generation_phase": "verifying",
+    }
+
+    assert _needs_launchpad_tool_nudge(response, state) is True
+
+
+def test_launchpad_mode_nudge_does_not_repeat_after_tool_call():
+    response = AIMessage(content="Ich prüfe den Launchpad-Modus.")
+    state = {
+        "messages": [
+            HumanMessage(content="prüfe den Launchpad Modus"),
+            AIMessage(content="", tool_calls=[{
+                "name": "get_launchpad_mode",
+                "args": {},
+                "id": "launchpad-1",
+                "type": "tool_call",
+            }]),
+            ToolMessage(content="mode=drum", tool_call_id="launchpad-1"),
+        ],
+        "generation_phase": "verifying",
+    }
+
+    assert _needs_launchpad_tool_nudge(response, state) is False
+
+
+def test_launchpad_play_request_still_needs_play_notes_after_mode_check():
+    response = AIMessage(content="Bitwig ist verbunden, ich lege einen Beat auf.")
+    state = {
+        "messages": [
+            HumanMessage(content="spiele einen Beat auf dem Launchpad"),
+            AIMessage(content="", tool_calls=[{
+                "name": "get_launchpad_mode",
+                "args": {},
+                "id": "launchpad-1",
+                "type": "tool_call",
+            }]),
+            ToolMessage(content="Timeout", tool_call_id="launchpad-1"),
+        ],
+        "generation_phase": "planning",
+    }
+
+    assert _needs_launchpad_tool_nudge(response, state) is True
+
+
+def test_launchpad_play_request_does_not_repeat_after_play_notes():
+    response = AIMessage(content="Der Beat läuft.")
+    state = {
+        "messages": [
+            HumanMessage(content="spiele einen Beat auf dem Launchpad"),
+            AIMessage(content="", tool_calls=[{
+                "name": "play_notes",
+                "args": {"notes": []},
+                "id": "launchpad-1",
+                "type": "tool_call",
+            }]),
+            ToolMessage(content="ok", tool_call_id="launchpad-1"),
+        ],
+        "generation_phase": "planning",
+    }
+
+    assert _needs_launchpad_tool_nudge(response, state) is False
+
+
 def test_generating_text_response_needs_note_fallback():
     response = AIMessage(content="Ich würde jetzt Noten schreiben.")
     state = {
@@ -112,11 +210,10 @@ def test_empty_response_state_uses_copilot_note_fallback(monkeypatch):
         content="",
         tool_calls=[
             {
-                "name": "write_pattern_raw",
+                "name": "play_notes",
                 "args": {
-                    "track_index": 1,
-                    "length_beats": 8,
-                    "notes": [{"pitch": 36, "start": 0, "dur": 1, "vel": 0.8}],
+                    "notes": [{"note": 36, "dur": 1, "vel": 100}],
+                    "bpm": 120,
                 },
                 "id": "fallback-1",
                 "type": "tool_call",
@@ -145,7 +242,7 @@ def test_copilot_note_fallback_uses_music_model(monkeypatch):
     calls = {}
 
     class FakeTool:
-        name = "write_pattern_raw"
+        name = "play_notes"
 
     class FakeLLM:
         def bind_tools(self, tools):
@@ -157,11 +254,10 @@ def test_copilot_note_fallback_uses_music_model(monkeypatch):
                 content="",
                 tool_calls=[
                     {
-                        "name": "write_pattern_raw",
+                        "name": "play_notes",
                         "args": {
-                            "track_index": 1,
-                            "length_beats": 8,
-                            "notes": [{"pitch": 36, "start": 0, "dur": 1, "vel": 0.8}],
+                            "notes": [{"note": 36, "dur": 1, "vel": 100}],
+                            "bpm": 120,
                         },
                         "id": "fallback-1",
                         "type": "tool_call",
@@ -189,4 +285,4 @@ def test_copilot_note_fallback_uses_music_model(monkeypatch):
     assert calls["model"] == "gpt-5.5"
     assert calls["max_tokens"] == 1600
     assert calls["temperature"] == 0.45
-    assert calls["tools"] == ["write_pattern_raw"]
+    assert calls["tools"] == ["play_notes"]

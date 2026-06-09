@@ -53,6 +53,22 @@ def test_phase_transition_summary_drops_obsolete_history():
     assert "alter Smalltalk" not in prepared[0].content
 
 
+def test_history_summary_drops_internal_nudges():
+    messages = [
+        HumanMessage(content="spiele einen Beat auf dem Launchpad"),
+        AIMessage(content="Ich prüfe das."),
+        HumanMessage(content="Die Notengenerierung braucht jetzt einen ausführbaren Tool-Call. Rufe `play_notes` auf."),
+        HumanMessage(content="Der Nutzer will einen Beat hören. Rufe jetzt direkt `play_notes` auf."),
+        HumanMessage(content="weiter"),
+    ]
+
+    prepared = PreparationState._prepare_messages(messages, "planning", "planning")
+
+    assert isinstance(prepared[0], SystemMessage)
+    assert "Notengenerierung braucht" not in prepared[0].content
+    assert "Der Nutzer will einen Beat hören" not in prepared[0].content
+
+
 def test_invoke_trim_preserves_compact_context_plus_recent_window():
     messages = [SystemMessage(content="Kompakter Verlauf")] + [
         HumanMessage(content=f"Nachricht {i}") for i in range(8)

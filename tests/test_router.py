@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 from src.agent.router import (
     _CONTROL_TOOL_NAMES,
@@ -8,9 +9,11 @@ from src.agent.router import (
     _TOOLS_KNOWLEDGE,
     _TOOLS_PLANNING,
     _TOOLS_SETUP,
+    _TOOLS_STATUS,
     _TOOLS_VERIFYING,
     _effective_generation_phase,
     _filter_tools_for_mode,
+    _latest_user_text,
     _phase_after_recent_tools,
 )
 
@@ -100,6 +103,39 @@ def test_known_songs_query_includes_song_list_tool():
     assert "list_known_songs" in _names(selected)
 
 
+def test_track_count_query_uses_status_tools_not_setup():
+    all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_STATUS
+    selected = _filter_tools_for_mode("song", _tools(all_names), "Wie viele Tracks sind in Bitwig vorhanden?")
+
+    assert _names(selected) == set(_TOOLS_STATUS)
+    assert "execute_setup" not in _names(selected)
+
+
+def test_launchpad_play_request_gets_launchpad_tools():
+    all_names = _TOOLS_PLANNING | {
+        "check_bitwig_connection", "suggest_notes", "get_launchpad_mode",
+        "listen_played_notes", "play_notes", "arm_track",
+    }
+    selected = _filter_tools_for_mode("song", _tools(all_names), "spiele einen Beat mit dem Launchpad")
+
+    assert "get_launchpad_mode" in _names(selected)
+    assert "play_notes" in _names(selected)
+    assert "query_bitwig_docs" not in _names(selected)
+
+
+def test_latest_user_text_ignores_launchpad_tool_nudge():
+    messages = [
+        HumanMessage(content="spiele einen Beat auf dem Launchpad"),
+        HumanMessage(content=(
+            "Der Nutzer will einen Beat hören. "
+            "Rufe jetzt direkt `play_notes` mit einem einfachen Drum-Beat auf. "
+            "Kein Freitext, keine Absichtserklärung, nur Tool-Call."
+        )),
+    ]
+
+    assert _latest_user_text(messages) == "spiele einen Beat auf dem Launchpad"
+
+
 def test_confirmation_keeps_incomplete_workflow_in_planning():
     assert _effective_generation_phase([], "planning", "ja") == "planning"
     assert _effective_generation_phase([], "idle", "ja") == "planning"
@@ -119,6 +155,16 @@ def test_recent_setup_tool_advances_to_generating_phase():
     messages = [FakeAIMessage()]
 
     assert _phase_after_recent_tools(messages, "setup") == "generating"
+
+
+def test_neutral_tool_after_setup_keeps_generating_phase():
+    class SetupMessage:
+        tool_calls = [{"name": "execute_setup", "args": {}, "id": "1"}]
+
+    class NeutralMessage:
+        tool_calls = [{"name": "get_bitwig_track_state", "args": {}, "id": "2"}]
+
+    assert _phase_after_recent_tools([SetupMessage(), NeutralMessage()], "idle") == "generating"
 
 
 def test_effective_phase_drives_next_tool_selection_after_setup():

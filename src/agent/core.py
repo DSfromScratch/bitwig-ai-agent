@@ -98,10 +98,31 @@ def _default_state() -> "AgentState":
         "bitwig_result":     None,
         # Song-Generierungs-Kontext
         "generation_phase":  "idle",
+        "song_blueprint":    None,
+        "section_timeline":  [],
         "quality_report":    None,
+        "pending_sections":  [],
         "retry_count":       0,
         "ui_song_config":    None,
     }
+
+
+def _state_for_user_turn(session_state: "AgentState", user: str, ui_cfg: dict | None = None) -> "AgentState":
+    """Build the next graph input while preserving workflow state across turns."""
+    state = dict(session_state)
+    state["messages"] = list(session_state.get("messages", [])) + [HumanMessage(content=user)]
+    state["retry_count"] = 0
+    if ui_cfg is not None:
+        state["ui_song_config"] = ui_cfg
+    return state  # type: ignore[return-value]
+
+
+def _merge_session_state(previous_state: "AgentState", graph_result: dict) -> "AgentState":
+    """Persist all graph-updated fields, not only messages."""
+    merged = dict(previous_state)
+    for key, value in graph_result.items():
+        merged[key] = value
+    return merged  # type: ignore[return-value]
 
 
 GRAPH = None
@@ -172,27 +193,19 @@ def execute_plan(result: "BitwigResult") -> str:  # type: ignore[name-defined]
 
 if __name__ == "__main__":
     from src.agent.osc_listener import _start_agent_ui_osc_listener, _consume_latest_ui_config
-    history = []
+    session_state_box = {"state": _default_state()}
     history_lock = threading.Lock()
 
     def _run_request(user: str) -> str:
-        nonlocal_history = history
         ui_cfg = _consume_latest_ui_config()
-        nonlocal_history.append(HumanMessage(content=user))
         graph = get_graph()
-        state = _default_state()
-        state["messages"] = nonlocal_history
-        if ui_cfg:
-            state["ui_song_config"] = ui_cfg
+        state = _state_for_user_turn(session_state_box["state"], user, ui_cfg)
         try:
             result = graph.invoke(state)
-            nonlocal_history[:] = result["messages"]
-            reply_local = nonlocal_history[-1].content
+            session_state_box["state"] = _merge_session_state(state, result)
+            reply_local = session_state_box["state"]["messages"][-1].content
             return reply_local
         except Exception as e:
-            # History-Rollback: User-Message entfernen damit der State konsistent bleibt
-            if nonlocal_history and isinstance(nonlocal_history[-1], HumanMessage):
-                nonlocal_history.pop()
             log.error("graph.invoke fehlgeschlagen: %s", e, exc_info=True)
             get_event_bus().emit("agent_error", {
                 "source": "_run_request",

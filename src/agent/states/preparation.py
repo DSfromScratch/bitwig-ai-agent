@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from langchain_core.messages import SystemMessage, ToolMessage
 from src.agent.router import (
+    _NUDGE_PREFIXES,
     _effective_generation_phase,
     _get_prompt_for_mode,
     _is_confirmation,
@@ -111,17 +112,15 @@ def _message_summary_line(message) -> str | None:
     text = _message_text(message)
     if not text:
         return None
+    if cls_name == "HumanMessage" and _is_nudge_text(text):
+        return None
     if len(text) > MAX_SUMMARY_ITEM_CHARS:
         text = text[:MAX_SUMMARY_ITEM_CHARS] + " …"
     return f"{prefix}: {text}"
 
 
 def _is_nudge_text(text: str) -> bool:
-    return text.startswith((
-        "Deine Antwort war leer.",
-        "Dein Tool-Call war ungültig",
-        "Deine Antwort war nur ein Plan.",
-    ))
+    return text.startswith(_NUDGE_PREFIXES)
 
 
 def _latest_substantial_user_line(messages: list) -> str | None:
