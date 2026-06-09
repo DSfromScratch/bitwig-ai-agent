@@ -1,4 +1,4 @@
-"""Request-Router: bestimmt Modus, Workflow-Phase und passende Tool-Auswahl."""
+"""Request-Router: bestimmt Modus, Workflow-Phase und System-Prompt."""
 from __future__ import annotations
 
 import logging
@@ -11,68 +11,6 @@ _CONTROL_COMMANDS = frozenset([
     "/play", "/stop", "/tempo", "/select", "/mute", "/solo",
     "/volume", "/status", "/record", "/loop", "/undo",
 ])
-
-# ── Tool-Name-Sets pro Domäne / Phase ────────────────────────────────────────
-
-_CONTROL_TOOL_NAMES = frozenset([
-    "check_bitwig_connection", "control_bitwig",
-    "bitwig_play", "bitwig_stop", "bitwig_set_tempo",
-    "bitwig_select_track", "bitwig_set_track_volume",
-    "bitwig_pan_track", "bitwig_solo_track", "bitwig_mute_track",
-    "bitwig_eq_band",
-])
-
-_TOOLS_KNOWLEDGE = frozenset([
-    "query_bitwig_docs", "web_search", "find_audio_example",
-    "get_song_context", "get_artist_context", "search_artist_song",
-    "learn_song_from_youtube", "store_result_in_kb", "list_known_songs",
-])
-
-_TOOLS_PLANNING = frozenset([
-    "query_bitwig_docs", "get_song_context", "get_artist_context",
-    "search_artist_song", "web_search", "find_audio_example", "list_known_songs",
-])
-
-_TOOLS_SETUP = frozenset([
-    "check_bitwig_connection", "execute_setup", "get_bitwig_track_state",
-    "scan_vst_plugins", "create_track_from_recipe",
-])
-
-_TOOLS_STATUS = frozenset([
-    "check_bitwig_connection", "get_bitwig_track_state",
-])
-
-_TOOLS_GENERATING = frozenset([
-    "play_notes", "get_bitwig_track_state", "validate_music", "validate_and_learn",
-])
-
-_TOOLS_VERIFYING = frozenset([
-    "get_bitwig_track_state", "validate_music", "validate_and_learn",
-    "analyze_song", "store_result_in_kb",
-])
-
-_TOOLS_PROJECT = frozenset([
-    "scan_and_learn_project", "get_song_context", "get_bitwig_track_state",
-    "reconstruct_project", "create_track_from_recipe", "store_result_in_kb",
-])
-
-_TOOLS_LAUNCHPAD = frozenset([
-    "suggest_notes", "get_launchpad_mode", "listen_played_notes",
-    "play_notes", "arm_track", "check_bitwig_connection",
-])
-
-_TOOLS_SONG_DEFAULT = _TOOLS_PLANNING
-_TOOLS_PRODUCTION   = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING
-
-_WORKFLOW_TOOLS = {
-    "idle":      _TOOLS_PLANNING,
-    "planning":  _TOOLS_PLANNING,
-    "setup":     _TOOLS_SETUP,
-    "generating": _TOOLS_GENERATING,
-    "verifying": _TOOLS_VERIFYING,
-    "done":      _TOOLS_PLANNING,
-    "error":     _TOOLS_PLANNING,
-}
 
 # ── Sonstige Konstanten ───────────────────────────────────────────────────────
 
@@ -93,7 +31,7 @@ _NUDGE_PREFIXES = (
 )
 
 _SETUP_DONE_TOOLS  = frozenset(["execute_setup", "create_track_from_recipe", "reconstruct_project"])
-_NOTES_DONE_TOOLS  = frozenset(["play_notes"])
+_NOTES_DONE_TOOLS  = frozenset(["write_pattern_raw"])
 _VERIFY_DONE_TOOLS = frozenset(["validate_music", "validate_and_learn", "analyze_song"])
 
 # ── LLM-Intent-Klassifikation ─────────────────────────────────────────────────
@@ -174,34 +112,6 @@ def _is_confirmation(text: str) -> bool:
     ))
 
 
-def _tool_names_for_context(mode: str, phase: str, intent: str) -> frozenset:
-    if mode == "control":
-        return _CONTROL_TOOL_NAMES
-    if intent == "launchpad":
-        return _TOOLS_LAUNCHPAD
-    if intent == "status":
-        return _TOOLS_STATUS
-    if intent == "project":
-        return _TOOLS_PROJECT
-    if intent == "knowledge":
-        return _TOOLS_KNOWLEDGE
-    return _WORKFLOW_TOOLS.get(phase, _TOOLS_SONG_DEFAULT)
-
-
-def _filter_tools_for_mode(
-    mode: str,
-    all_tools: list,
-    intent: str = "song_default",
-    phase: str = "idle",
-) -> list:
-    tool_names = _tool_names_for_context(mode, phase, intent)
-    filtered = [t for t in all_tools if getattr(t, "name", "") in tool_names]
-    if filtered:
-        return filtered
-    log.warning("Router: kein Tool aus Set %s gefunden — fallback auf alle Tools", sorted(tool_names))
-    return all_tools
-
-
 def _get_prompt_for_mode(mode: str) -> str:
     from src.agent.prompts import PROMPT_CONTROL, PROMPT_SONG
     return PROMPT_CONTROL if mode == "control" else PROMPT_SONG
@@ -273,14 +183,12 @@ def _select_tools_for_context(
     generation_phase: str = "idle",
     intent: str | None = None,
 ) -> list:
+    """Gibt alle Tools zurück — kein Filtering, das Modell entscheidet."""
     user_text = _latest_user_text(all_messages)
-    mode = _route_request(user_text)
     phase = _effective_generation_phase(all_messages, generation_phase, user_text)
-    resolved_intent = intent or _classify_task(user_text)
     all_tools = get_tools_fn()
-    tools = _filter_tools_for_mode(mode, all_tools, intent=resolved_intent, phase=phase)
     log.info(
-        "Router: mode=%s phase=%s intent=%s -> %d Tools: %s",
-        mode, phase, resolved_intent, len(tools), [getattr(t, "name", "?") for t in tools],
+        "Router: phase=%s intent=%s -> %d Tools (alle sichtbar)",
+        phase, intent or "none", len(all_tools),
     )
-    return tools
+    return all_tools

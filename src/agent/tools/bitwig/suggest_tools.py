@@ -1,6 +1,8 @@
+from __future__ import annotations
 import os
 import socket
 import time
+from langchain_core.tools import tool
 
 _INST_ROOT = 48                        # C3
 _INST_SCALE = [0, 2, 4, 5, 7, 9, 11]  # Major-Skala-Intervalle
@@ -284,3 +286,50 @@ def suggest_notes(notes: list[int], r: int = 0, g: int = 50, b: int = 63) -> str
         return "[suggest_notes] Keine Pads — Noten außerhalb INSTRUMENT-Bereich (C3–G8)"
     except Exception as exc:
         return f"[suggest_notes] OSC-Fehler: {exc}"
+
+
+@tool
+def launchpad(
+    action: str,
+    notes: list[int] | None = None,
+    note_data: list[dict] | None = None,
+    bpm: float = 120.0,
+    arm: int = 1,
+    duration: float = 3.0,
+    r: int = 0,
+    g: int = 50,
+    b: int = 63,
+) -> str:
+    """Launchpad-Steuerung: Modus abfragen, Noten hervorheben, Aufnahme armen, lauschen, live spielen.
+
+    action:
+      mode     → Aktuellen Launchpad-Modus abfragen (CONTROL/DRUM/INSTRUMENT)
+      suggest  → MIDI-Noten auf dem Launchpad hervorheben (notes = MIDI-Noten, z.B. [48,52,55])
+      arm      → Track für Aufnahme armen/disarmen (arm=1 armt, arm=0 disarmt)
+      listen   → Auf gespielte Noten lauschen (duration = Sekunden, Standard 3.0)
+      play     → Notensequenz über das Launchpad in Bitwig spielen
+                 (note_data = [{note, vel, dur, gap}...], bpm = Tempo)
+
+    Args:
+        notes:     MIDI-Notennummern für action=suggest (z.B. [48, 52, 55])
+        note_data: Notenliste für action=play, jede Note als Dict mit note/vel/dur/gap
+        bpm:       Tempo für action=play (Standard 120)
+        arm:       0 oder 1 für action=arm
+        duration:  Lausch-Dauer in Sekunden für action=listen (Standard 3.0)
+        r,g,b:     LED-Farbe 0-63 für action=suggest (Standard cyan)
+    """
+    act = (action or "").lower().strip()
+    if act == "mode":
+        return get_launchpad_mode()
+    if act == "suggest":
+        return suggest_notes(notes or [], r=r, g=g, b=b)
+    if act == "arm":
+        return arm_track(arm)
+    if act == "listen":
+        return listen_played_notes(duration)
+    if act == "play":
+        return play_notes(note_data or [], bpm=bpm)
+    return (
+        f"[launchpad] Unbekannte Aktion: '{action}'. "
+        "Gültig: mode, suggest, arm, listen, play"
+    )

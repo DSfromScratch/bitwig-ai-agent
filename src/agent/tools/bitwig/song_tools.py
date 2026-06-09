@@ -151,3 +151,20 @@ def get_bitwig_track_state() -> str:
         return "\n".join(lines)
 
     return "Track-Zustand unbekannt — Annahme: leeres Projekt, start_track_index=1"
+
+
+@tool
+def get_bitwig_state() -> str:
+    """Prüft Bitwig-Verbindung und gibt den aktuellen Track-Zustand zurück.
+
+    Kombiniert Verbindungscheck und Track-Snapshot in einem Aufruf.
+    Vor execute_setup oder write_pattern_raw aufrufen um den Ist-Zustand zu kennen.
+    Returns: Verbindungsstatus + Anzahl/Namen vorhandener Tracks.
+    """
+    conn = check_bitwig_connection.invoke({})
+    if isinstance(conn, dict) and not conn.get("connected", True):
+        return f"Bitwig nicht erreichbar. {conn.get('message', '')}"
+
+    track_state = get_bitwig_track_state.invoke({})
+    conn_msg = conn.get("message", "Bitwig erreichbar") if isinstance(conn, dict) else str(conn)
+    return f"{conn_msg}\n{track_state}"

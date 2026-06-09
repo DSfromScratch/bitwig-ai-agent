@@ -3,18 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
-from src.agent.router import (
-    _classify_task,
-    _CONTROL_TOOL_NAMES,
-    _latest_user_text,
-    _TOOLS_GENERATING,
-    _TOOLS_LAUNCHPAD,
-    _TOOLS_PLANNING,
-    _TOOLS_SETUP,
-    _TOOLS_STATUS,
-    _TOOLS_VERIFYING,
-)
+from langchain_core.messages import AIMessage
+from src.agent.router import _latest_user_text
 
 _FX_NAMES = {
     "distortion", "amp", "compressor", "compressor+", "eq-5", "eq+",
@@ -22,26 +12,27 @@ _FX_NAMES = {
     "saturator", "transient control", "echo",
 }
 
-# Keywords die auf eine konkrete Track-Aufgabe hindeuten
 _CONCRETE_TASK_KEYWORDS = [
     "erstelle", "create", "mach", "baue", "bpm", "track", "riff",
     "instrument", "phase-4", "fm-4", "polysynth", "drums", "bass",
 ]
 
-_PHASE_ALLOWED_TOOLS = {
-    "idle": _TOOLS_PLANNING,
-    "planning": _TOOLS_PLANNING,
-    "setup": _TOOLS_SETUP,
-    "generating": _TOOLS_GENERATING,
-    "verifying": _TOOLS_VERIFYING,
-    "done": _TOOLS_PLANNING,
-    "error": _TOOLS_PLANNING,
-    "control": _CONTROL_TOOL_NAMES,
-}
+# Halluzinierte Tool-Namen die nie existiert haben oder entfernt wurden
+_DEAD_TOOLS = frozenset([
+    "setup_instrument_track", "write_notes_to_clip", "build_song",
+    "bitwig_load_instrument", "bitwig_load_sample", "add_track",
+    "bitwig_set_parameter", "bitwig_add_instrument_track",
+    # Phase-3-entfernte Tools (LLM könnte sie noch kennen)
+    "check_bitwig_connection", "get_bitwig_track_state",
+    "query_bitwig_docs", "get_song_context", "get_artist_context",
+    "search_artist_song", "list_known_songs",
+    "suggest_notes", "arm_track", "listen_played_notes", "get_launchpad_mode",
+    "play_notes", "find_audio_example", "analyze_song",
+    "scan_vst_plugins", "export_mlx_training_data",
+])
 
 
 def _extract_explicit_fx(text: str) -> list[str]:
-    """Extrahiert explizit genannte FX in stabiler Reihenfolge."""
     lower = text.lower()
     out: list[str] = []
     for fx in _FX_NAMES:
@@ -51,7 +42,6 @@ def _extract_explicit_fx(text: str) -> list[str]:
 
 
 def _is_strict_fx_request(text: str) -> bool:
-    """Erkennt enge Vorgaben wie 'nur', 'exakt' oder 'FX-Chain'."""
     lower = text.lower()
     markers = ["nur", "exakt", "genau", "fx-chain", "fx chain", "fx-kette", "kette"]
     return any(m in lower for m in markers)
@@ -98,7 +88,6 @@ def _beats_from_time(bpm: float, text: str) -> float | None:
 
 
 def is_concrete_track_task(user_text: str) -> bool:
-    """Erkennt ob der User eine konkrete Track-/Song-Aufgabe stellt."""
     lower = user_text.lower()
     matches = sum(1 for kw in _CONCRETE_TASK_KEYWORDS if kw in lower)
     return matches >= 2
@@ -113,52 +102,17 @@ def enforce_policy_on_response(state: dict[str, Any], response: AIMessage) -> tu
     concrete = is_concrete_track_task(user_text)
     calls = list(response.tool_calls or [])
 
-    # Halluzinierte Legacy-Tools die nie existiert haben
-    _DEAD_TOOLS = {"setup_instrument_track", "write_notes_to_clip", "build_song",
-                   "bitwig_load_instrument", "bitwig_load_sample", "add_track",
-                   "bitwig_set_parameter", "bitwig_add_instrument_track"}
-    violations = [tc["name"] for tc in calls if tc.get("name") in _DEAD_TOOLS]
-
-    if violations:
-        # Tote Tool-Calls herausfiltern — Agent soll ohne sie weitermachen
+    dead_violations = [tc["name"] for tc in calls if tc.get("name") in _DEAD_TOOLS]
+    if dead_violations:
         clean_calls = [tc for tc in calls if tc.get("name") not in _DEAD_TOOLS]
-        if not clean_calls:
-            new_msg = AIMessage(content=response.content, tool_calls=[])
-            return new_msg, {
-                "action": "rewrite",
-                "violations": violations,
-                "concrete_track_task": concrete,
-                "strict_fx_request": False,
-                "explicit_fx": [],
-            }
         new_msg = AIMessage(content=response.content, tool_calls=clean_calls)
         return new_msg, {
             "action": "rewrite",
-            "violations": violations,
+            "violations": dead_violations,
             "concrete_track_task": concrete,
             "strict_fx_request": False,
             "explicit_fx": [],
         }
-
-    phase = state.get("generation_phase", "idle")
-    allowed = _PHASE_ALLOWED_TOOLS.get(phase)
-    task = _classify_task(user_text)
-    if task == "launchpad":
-        allowed = _TOOLS_LAUNCHPAD
-    elif task == "status":
-        allowed = _TOOLS_STATUS
-    if allowed:
-        phase_violations = [tc["name"] for tc in calls if tc.get("name") not in allowed]
-        if phase_violations:
-            clean_calls = [tc for tc in calls if tc.get("name") in allowed]
-            new_msg = AIMessage(content=response.content, tool_calls=clean_calls)
-            return new_msg, {
-                "action": "rewrite",
-                "violations": [f"phase:{phase}:{name}" for name in phase_violations],
-                "concrete_track_task": concrete,
-                "strict_fx_request": False,
-                "explicit_fx": [],
-            }
 
     explicit_fx = _extract_explicit_fx(user_text)
     strict_fx = bool(explicit_fx) and _is_strict_fx_request(user_text)
