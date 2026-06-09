@@ -13,6 +13,10 @@ log = logging.getLogger("bitwig-agent")
 
 class InvalidOutputState(AgentPhaseState):
     def execute(self, ctx: PhaseContext) -> PhaseContext:
+        # Auto-patch XML-fragment tool calls (Qwen3 produziert gelegentlich <tool_call>-Format)
+        from src.agent.recovery import _recover_tool_calls
+        ctx.response = _recover_tool_calls(ctx.response, ctx.agent_state)
+
         retry_result = _handle_invalid_output(
             ctx.response, ctx.agent_state, ctx.updates,
         )
