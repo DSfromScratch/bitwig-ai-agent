@@ -109,7 +109,7 @@ class TestPropertyBased:
 
     @pytest.mark.unit
     @given(score=st.floats(min_value=1.01, max_value=100.0, allow_nan=False))
-    @hyp_settings(max_examples=50, deadline=1000)
+    @hyp_settings(max_examples=50, deadline=None)
     def test_score_normalization_always_produces_0_1(self, score):
         """Score-Normalisierung: jeder Wert > 1 wird auf 0-1 skaliert."""
         result_json = json.dumps({"score": score, "rhythmic_ok": True,

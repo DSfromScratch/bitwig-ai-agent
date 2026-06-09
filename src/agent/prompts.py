@@ -107,7 +107,8 @@ Sawtooth Pluck (Break), Dissonant Pad (Break/Outro), Sharp Arp (Break)
 - `validate_and_learn` — Validierung + Feedback in Neo4j speichern (Lernschleife)
 - `analyze_song` — analysiert Audio-Datei auf Genre, Tonart, Tempo
 - Alle drei sind **optional** — funktionieren nur wenn Ollama auf Mac (192.168.0.4:11434) läuft
-- Bei Score < 0.7: Noten verbessern; Score >= 0.7: weitermachen
+- Bei Score < 0.7: Noten einmal verbessern, dann weitermachen (max. 1 Verbesserungs-Iteration)
+- Wenn validate_music "nicht erreichbar" zurückgibt: sofort weitermachen, kein weiterer Aufruf
 
 ## MLX Training-Daten Export (Ansatz 3)
 

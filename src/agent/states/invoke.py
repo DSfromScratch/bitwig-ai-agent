@@ -52,7 +52,7 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
     from src.agent.tools import ALL_TOOLS
     slim_tools = _trim_tool_descriptions(selected_tools) if selected_tools else []
     slim_msgs  = _trim_messages(messages)
-    llm = _get_llm().bind_tools(slim_tools) if slim_tools else _get_llm()
+    llm = _get_llm(max_tokens=800).bind_tools(slim_tools) if slim_tools else _get_llm(max_tokens=800)
     # Retry bei ConnectError (Server-OOM-Crash → LaunchAgent startet ihn neu)
     for attempt in range(3):
         try:
