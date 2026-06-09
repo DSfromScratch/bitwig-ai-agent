@@ -7,65 +7,7 @@ Device-Ketten und Parameter-Zusammenfassung.
 """
 from __future__ import annotations
 
-import json
-
 from langchain_core.tools import tool
-
-_PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-
-
-def _midi_name(pitch: int) -> str:
-    return _PITCH_NAMES[pitch % 12] + str(pitch // 12 - 1)
-
-
-def _format_notes(notes_json: str, max_events: int = 24) -> str:
-    """Konvertiert notes_json zu kompakter Noten-Sequenz.
-
-    Polyphonie-bewusst: Noten am gleichen Step werden als Akkord zusammengefasst.
-    Gleiche aufeinanderfolgende Akkorde werden zu einem Event mit Gesamtdauer.
-    Format: 'C#5+A3+A2(s0,d16) F#5(s16,d3) ...'
-    Steps sind relativ zum ersten Step normalisiert.
-    """
-    try:
-        notes = json.loads(notes_json)
-    except Exception:
-        return "?"
-    if not notes:
-        return "–"
-
-    notes = sorted(notes, key=lambda n: n['step'])
-    offset = notes[0]['step']
-
-    # Step → frozenset(pitches) gruppieren
-    from collections import defaultdict
-    step_chords: dict[int, set] = defaultdict(set)
-    for n in notes:
-        step_chords[n['step'] - offset].add(n['pitch'])
-
-    sorted_steps = sorted(step_chords)
-
-    # Aufeinanderfolgende identische Akkorde zu Events zusammenfassen
-    events: list[tuple[int, frozenset, int]] = []  # (start_step, chord, duration)
-    cur_start = sorted_steps[0]
-    cur_chord = frozenset(step_chords[sorted_steps[0]])
-    cur_len   = 1
-    for step in sorted_steps[1:]:
-        chord = frozenset(step_chords[step])
-        if chord == cur_chord and step == cur_start + cur_len:
-            cur_len += 1
-        else:
-            events.append((cur_start, cur_chord, cur_len))
-            cur_start = step
-            cur_chord = chord
-            cur_len   = 1
-    events.append((cur_start, cur_chord, cur_len))
-
-    def fmt_chord(pitches: frozenset) -> str:
-        return "+".join(_midi_name(p) for p in sorted(pitches, reverse=True))
-
-    parts = [f"{fmt_chord(c)}(s{s},d{d})" for s, c, d in events[:max_events]]
-    suffix = f" … +{len(events) - max_events} weitere" if len(events) > max_events else ""
-    return " ".join(parts) + suffix
 
 
 def _classify_role(track_name: str, device: str | None) -> str:
@@ -310,23 +252,6 @@ def get_song_context(project_name: str = "") -> str:
             )
             if rhythm:
                 lines.append(f"    Rhythmus: {rhythm}")
-            if mc.get("notes_json"):
-                seq = _format_notes(mc["notes_json"])
-                # Zeile umbrechen wenn zu lang
-                if len(seq) > 100:
-                    words = seq.split()
-                    cur_line = "    "
-                    for w in words:
-                        if len(cur_line) + len(w) + 1 > 100:
-                            lines.append(cur_line)
-                            cur_line = "    " + w
-                        else:
-                            cur_line += (" " if cur_line.strip() else "") + w
-                    if cur_line.strip():
-                        lines.append(cur_line)
-                else:
-                    lines.append(f"    {seq}")
-
     # Audio-Samples
     if audio_samples:
         lines.append("")

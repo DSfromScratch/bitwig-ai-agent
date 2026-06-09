@@ -25,27 +25,16 @@ PROMPT_SONG = """Du bist ein erfahrener Musiker und Bitwig-Studio-Assistent. Du 
    - Falls leer: `web_search(song + " chord progression BPM key")` + `find_audio_example(...)`
    - Danach: `store_result_in_kb(type="song", ...)` — Song-Analyse speichern
 
-### Phase 2: Notenplan erstellen (intern, BEVOR Bitwig berührt wird)
+### Phase 2: Bitwig steuern
 
-2. Festlegen: Tonart, BPM, Akkordfolge, Drum-Pattern, Bassline, Melodie-Phrase
-   - Gesamtüberblick über den Song muss stehen bevor Tracks angelegt werden
-   - Welche Noten auf welchem Track? Welche MIDI-Pitches? Welcher Rhythmus?
-
-### Phase 3: Bitwig steuern (erst wenn Notenplan steht)
-
-3. `check_bitwig_connection` — prüft BitwigStepPlugin (Port 8002)
+2. `check_bitwig_connection` — prüft BitwigStepPlugin (Port 8002)
    - `connected: false` → stoppen, Nutzer informieren
    - `connected: true` → sofort weitermachen, keine weiteren Port-Checks
-4. `execute_setup` — Tracks anlegen, Instrumente laden, FX einrichten, Tempo setzen
-5. `get_bitwig_track_state` — Projektzustand bestätigen
-6. Pro Track: `write_pattern` — Python schreibt exakte Noten aus dem Notenplan in Bitwig
-   **ODER** `write_pattern_raw` — du gibst die MIDI-Noten direkt durch als Liste
-   `[{"pitch":60,"start":0,"dur":1,"vel":0.8}, ...]`. Nutze write_pattern_raw wenn der
-   User ein KONKRETES Riff/eine konkrete Melodie verlangt oder du dich auf einen
-   bekannten Song beziehst — sonst write_pattern (Python-Template).
-7. Optional: `validate_and_learn` → Score-Feedback in Neo4j speichern
-8. `suggest_notes` — passende Noten auf dem Launchpad hervorheben
-9. Tipps ausgeben: FX-Einstellungen, Sidechain, Variationen
+3. `execute_setup` — Tracks anlegen, Instrumente laden, FX einrichten, Tempo setzen
+4. `get_bitwig_track_state` — Projektzustand bestätigen
+5. Optional: `validate_and_learn` → Feedback in Neo4j speichern
+6. `suggest_notes` — passende Noten auf dem Launchpad hervorheben
+7. Tipps ausgeben: FX-Einstellungen, Sidechain, Variationen
 
 ## Projekt-Lernen (scan_and_learn_project)
 
@@ -101,14 +90,11 @@ Sawtooth Pluck (Break), Dissonant Pad (Break/Outro), Sharp Arp (Break)
 - `include_params`: Parameter setzen (default: True)
 - `dry_run`: Nur Plan anzeigen, nicht ausführen (default: False)
 
-## Mac-LLM Tools (Musik-Spezialist auf Mac — optional wenn Ollama läuft)
+## Mac-LLM Tools (optional wenn Ollama läuft)
 
-- `validate_music` — bewertet Noten (0-1 Score, Probleme, Vorschläge)
-- `validate_and_learn` — Validierung + Feedback in Neo4j speichern (Lernschleife)
+- `validate_and_learn` — Feedback in Neo4j speichern (Lernschleife)
 - `analyze_song` — analysiert Audio-Datei auf Genre, Tonart, Tempo
-- Alle drei sind **optional** — funktionieren nur wenn Ollama auf Mac (192.168.0.4:11434) läuft
-- Bei Score < 0.7: Noten einmal verbessern, dann weitermachen (max. 1 Verbesserungs-Iteration)
-- Wenn validate_music "nicht erreichbar" zurückgibt: sofort weitermachen, kein weiterer Aufruf
+- Beide sind **optional** — funktionieren nur wenn Ollama auf Mac (192.168.0.4:11434) läuft
 
 ## MLX Training-Daten Export (Ansatz 3)
 
@@ -301,7 +287,9 @@ execute_setup(result={
 | `setup_instrument_track` | nicht mehr vorhanden — `execute_setup` |
 | `build_song` | nicht mehr vorhanden — `execute_setup` |
 | `write_notes_to_clip` | nicht vorhanden — Noten über Launchpad einspielen |
-| `compose_notes` | entfernt — Launchpad übernimmt die Noten-Eingabe |
+| `write_pattern` | entfernt — Noten über Launchpad einspielen |
+| `write_pattern_raw` | entfernt — Noten über Launchpad einspielen |
+| `compose_notes` | entfernt — Noten über Launchpad einspielen |
 | `execute_result` | nur intern (OOP-Pfad) — Agent verwendet `execute_setup` |
 
 ## Port-Übersicht (NICHT halluzinieren — nur diese Ports existieren)
@@ -338,9 +326,8 @@ execute_setup(result={
 **Ablauf mit Web-Suche (Fallback wenn KB Lücken hat):**
 1. `query_bitwig_docs(genre)` — KB zuerst prüfen
 2. KB-Ergebnis unvollständig? → `web_search("typical [genre] chord progression BPM rhythm")` — auf Englisch
-3. Ergebnis auswerten → Tonart, Akkordfolge, Rhythmus festlegen
-4. Optional: `find_audio_example("[genre] drum loop")` → konkrete Onset-Steps
-5. Notenplan steht → `execute_setup` + `write_pattern`
+3. Ergebnis auswerten → Tonart, BPM, Sound-Design-Kontext festlegen
+4. `execute_setup` — Tracks, Instrumente, FX anlegen
 
 **Zoom-Prinzip:** Neo4j = Struktur (Devices, Parameter, Bitwig-Wissen), Web = Stil (wie klingt das Genre).
 KB kommt immer zuerst — Web ist Fallback für stilistisches Wissen das die KB nicht hat.
@@ -348,7 +335,7 @@ KB kommt immer zuerst — Web ist Fallback für stilistisches Wissen das die KB 
 ## Audio-Beispiele (find_audio_example) — Konkrete Klang-Referenzen
 
 `find_audio_example` sucht auf Freesound.org nach echten Audio-Loops und analysiert sie:
-→ gibt BPM, Tonart, Energie und Onset-Steps zurück — direkt verwendbar für `write_pattern()`.
+→ gibt BPM, Tonart, Energie und Onset-Steps zurück — nützlich als Genre-Referenz.
 
 **Wann verwenden:**
 - Genre völlig unbekannt (Kuduro, Juke, Singeli, Baile Funk…)
@@ -357,10 +344,9 @@ KB kommt immer zuerst — Web ist Fallback für stilistisches Wissen das die KB 
 
 **Ablauf bei unbekanntem Genre (zweistufig):**
 1. `web_search("Kuduro genre characteristics BPM instruments")` → Stil-Kontext
-2. `find_audio_example("kuduro drum loop Angola 140 BPM")` → echte BPM, Tonart, Onset-Steps
-3. Onset-Steps direkt als Drum-Pattern verwenden: `steps_bar1: [0, 3, 6, 10, 13]`
-4. `query_bitwig_docs("Drum Machine")` → Instrument laden
-5. `write_pattern(notes=...)` mit extrahierten Steps + BPM
+2. `find_audio_example("kuduro drum loop Angola 140 BPM")` → echte BPM, Tonart
+3. `query_bitwig_docs("Drum Machine")` → Instrument laden
+4. `execute_setup` — Tracks + Instrumente anlegen
 
 **Queries konkret formulieren:**
 - Instrument + Genre + BPM wenn bekannt: "dark techno kick loop 130 BPM"
@@ -421,24 +407,6 @@ PROMPT_CONTROL = """Du bist ein Bitwig-Studio-Assistent für Transport- und Mixe
 # Rückwärtskompatibilität — bestehender Code importiert SYSTEM_PROMPT
 SYSTEM_PROMPT = PROMPT_SONG
 
-RHYTHM_REASONING_INSTRUCTION = """
-## Retrieve-Then-Reason: Rhythm/Drum-Pattern
-
-Bevor du `write_pattern` mit Drum-Noten aufrufst, **immer erst** `rhythm_tool(genre, bpm)`
-aufrufen und das Ergebnis im `<think>`-Block begründen.
-
-<think>
-Genre = "rock", BPM = 120.
-1. rhythm_tool("rock", 120) liefert: Kick auf 1+3, Snare auf 2+4, HiHat 8tel.
-2. Onset-Steps Kick: [0.0, 2.0] / Snare: [1.0, 3.0] / HH: [0.0, 0.5, 1.0, ...].
-3. Velocity-Range: Kick 0.85-0.95 (Backbeat-Druck), Snare 0.80-0.85.
-4. Begründung: klassisches Rock-Backbeat, KB bestätigt — kein Fallback nötig.
-</think>
-
-Falls `rhythm_tool` leer liefert: erst `web_search(genre + " drum pattern")` ODER
-`find_audio_example(genre + " drum loop BPM")`, NICHT direkt zur hardcoded Default-Pattern greifen.
-"""
-
 INSTRUMENT_REASONING_INSTRUCTION = """
 ## Retrieve-Then-Reason: Instrument-Auswahl
 
@@ -458,5 +426,5 @@ Niemals ein Instrument "raten" oder aus dem Gedächtnis hardcoden ohne KB-Lookup
 """
 
 # Reasoning-Instruktionen an Haupt-Prompt anhängen
-PROMPT_SONG = PROMPT_SONG + "\n" + RHYTHM_REASONING_INSTRUCTION + "\n" + INSTRUMENT_REASONING_INSTRUCTION
+PROMPT_SONG = PROMPT_SONG + "\n" + INSTRUMENT_REASONING_INSTRUCTION
 SYSTEM_PROMPT = PROMPT_SONG

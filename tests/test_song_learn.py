@@ -59,6 +59,36 @@ def test_search_artist_song_formats(mock_mb, mock_ab, mock_lf):
     assert "electronic" in out
 
 
+@patch("src.knowledge.neo4j_graph.session")
+@patch("src.knowledge.neo4j_graph.is_available", return_value=True)
+def test_list_known_songs_formats_rows(mock_available, mock_session):
+    from src.agent.tools.knowledge.song_metadata_tool import list_known_songs
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def run(self, *_args, **_kwargs):
+            return MagicMock(data=lambda: [{
+                "artist": "Deadmau5",
+                "name": "Strobe",
+                "bpm": 128,
+                "key": "A minor",
+                "score": 0.9,
+            }])
+
+    mock_session.return_value = FakeSession()
+
+    out = list_known_songs.invoke({"limit": 10})
+
+    assert "Bekannte Songs" in out
+    assert "Deadmau5 — Strobe" in out
+    assert "128.0 BPM" in out
+
+
 # ── song_learn_tool ─────────────────────────────────────────────────────────
 
 def test_build_content_text_includes_all_fields():

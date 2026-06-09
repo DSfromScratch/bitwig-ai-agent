@@ -7,9 +7,8 @@ Verbindet bitwigbridge (OSC-Layer) mit Agent-spezifischen Komponenten:
   - BitwigProjectState für Precondition-Checks
   - Device-UUID-Cache
 
-Zwei-Phasen-Workflow:
-  Phase 1: execute_setup()  — Tracks, Instrumente, FX, Tempo
-  Phase 2: compose_notes()  — Noten für EINEN Track pro Call
+Workflow:
+  execute_setup() — Tracks, Instrumente, FX, Tempo
 """
 from __future__ import annotations
 
@@ -20,10 +19,8 @@ load_dotenv()
 
 from bitwigbridge.executor import (
     execute_setup as _bb_execute_setup,
-    compose_notes as _bb_compose_notes,
     execute_result as _bb_execute_result,
     _SETUP_TYPES,        # noqa: F401  re-export
-    _NOTE_TYPES,         # noqa: F401  re-export
     _exec_step_and_wait, # noqa: F401  re-export (für Tests + MCP-Server)
 )
 from bitwigbridge.connection import BitwigConnection  # noqa: E402
@@ -146,21 +143,6 @@ def execute_setup(result: dict) -> str:
     return result_str
 
 
-def compose_notes(result: dict) -> str:
-    """Phase 2: Noten für EINEN Track schreiben.
-
-    Delegiert an bitwigbridge.executor.compose_notes.
-    """
-    result = _as_dict(result)
-    if not _check_connection():
-        return ("[compose_notes] BitwigStepPlugin nicht erreichbar "
-                "— Bitwig starten und Extension aktivieren")
-
-    conn = _make_connection()
-
-    return _bb_compose_notes(result, connection=conn)
-
-
 def execute_result(result: dict) -> str:
     """Rückwärtskompatibel: Setup + Noten in einem Call."""
     result = _as_dict(result)
@@ -175,22 +157,3 @@ def execute_result(result: dict) -> str:
     return result_str
 
 
-# ── Interne Hilfsfunktionen (Backward-kompatibel für Tests) ──────────────────
-
-def _resolve_drum_pattern(step: dict) -> dict:
-    """Löst write_drum_pattern auf (für Backward-Kompatibilität mit Tests)."""
-    resolver = _get_drum_resolver()
-    if resolver:
-        return resolver.resolve(step)
-    # Fallback: einfache Konvertierung
-    args    = step.get("args", {})
-    pattern = args.get("pattern", {})
-    notes   = []
-    _midi   = {"kick": 36, "snare": 38, "hihat": 42, "tom": 47, "cymbal": 49}
-    for drum, hits in pattern.items():
-        pitch = _midi.get(drum.lower(), 36)
-        for i, hit in enumerate(hits):
-            if hit:
-                notes.append({"step": i * 0.25, "pitch": pitch, "vel": 0.85, "dur": 0.25})
-    return {**step, "type": "write_notes",
-            "args": {**args, "notes": notes}}

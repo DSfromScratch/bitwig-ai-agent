@@ -24,9 +24,13 @@ class ReasoningExtractionState(AgentPhaseState):
 
 def _extract_think(text: str) -> tuple[str, str]:
     match = _THINK_RE.search(text)
-    reasoning = match.group(1).strip() if match else ""
-    cleaned   = _THINK_RE.sub("", text)
-    cleaned   = _THINK_OPEN.sub("", cleaned)
+    if match:
+        reasoning = match.group(1).strip()
+        cleaned = _THINK_RE.sub("", text)
+    else:
+        open_match = _THINK_OPEN.search(text)
+        reasoning = open_match.group(0).removeprefix("<think>").strip() if open_match else ""
+        cleaned = _THINK_OPEN.sub("", text)
     return reasoning, cleaned.strip()
 
 
@@ -54,6 +58,10 @@ def _process_reasoning(response, state: dict, msg_count: int) -> dict:
     bus = get_event_bus()
     bus.emit("reasoning", {"text": reasoning[:500], "current_phase": current_phase,
                             "detected_phase": new_phase, "msg_count": msg_count})
+    log.info(
+        "Reasoning erkannt: chars=%d phase=%s detected=%s",
+        len(reasoning), current_phase, new_phase,
+    )
     if new_phase is not None:
         log.info("Phase %s → %s (aus Reasoning)", current_phase, new_phase)
         bus.emit("phase_change", {"from": current_phase, "to": new_phase})

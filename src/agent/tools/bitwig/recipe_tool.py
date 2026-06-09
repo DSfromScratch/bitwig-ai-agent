@@ -190,33 +190,11 @@ def create_track_from_recipe(
     )
 
     try:
-        from src.bitwig_executor import execute_setup, compose_notes
+        from src.bitwig_executor import execute_setup
         status = execute_setup(result_setup.to_dict())
         lines.append(f"\n✅ Track {actual_name!r} als Track {track_idx} eingefügt")
         lines.append(f"   {status}")
-
-        # Phase 2: Noten schreiben
-        if note_steps:
-            import time as _t; _t.sleep(0.5)
-            result_notes = BitwigResult(
-                context_type="song",
-                target={"project": project_name, "track": actual_name},
-                summary=f"Noten: {actual_name}",
-                steps=note_steps,
-            )
-            notes_status = compose_notes(result_notes.to_dict())
-            lines.append(f"🎵 Noten geschrieben: {notes_status}")
-
-            # Clip automatisch starten (Slot 0)
-            import time as _t2; _t2.sleep(0.8)
-            from src.agent.osc.project_scan import launch_clip
-            launched = launch_clip(track_idx, slot=0, timeout=2.0)
-            if launched:
-                lines.append(f"▶️  Clip gestartet (Track {track_idx}, Slot 0)")
-            else:
-                lines.append(f"ℹ️  Clip manuell starten: Launcher-Clip auf Track {track_idx} klicken")
-        else:
-            lines.append("ℹ️  Keine Noten — Track manuell mit MIDI-Input bespielen")
+        lines.append("ℹ️  Noten über Launchpad einspielen")
 
     except Exception as e:
         lines.append(f"\n❌ Ausführung fehlgeschlagen: {e}")

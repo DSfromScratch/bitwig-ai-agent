@@ -33,10 +33,16 @@ def _trim_tool_descriptions(tools: list, max_chars: int = 80) -> list:
     return trimmed
 
 
-def _trim_messages(messages: list, max_messages: int = 6, max_tool_result_chars: int = 800) -> list:
-    """Begrenzt History und kürzt lange Tool-Ergebnisse (OOM-Schutz)."""
+def _trim_messages(messages: list, max_messages: int = 4, max_tool_result_chars: int = 600) -> list:
+    """Begrenzt History und kürzt lange Tool-Ergebnisse (OOM-Schutz).
+
+    Ein führender SystemMessage-Eintrag enthält ggf. den kompakten Verlauf aus
+    PreparationState und bleibt zusätzlich zum Recent-Window erhalten.
+    """
     from langchain_core.messages import ToolMessage
-    recent = messages[-max_messages:]
+    compact_context = messages[:1] if messages and isinstance(messages[0], SystemMessage) else []
+    rest = messages[1:] if compact_context else messages
+    recent = compact_context + rest[-max_messages:]
     trimmed = []
     for m in recent:
         if isinstance(m, ToolMessage) and len(m.content or "") > max_tool_result_chars:

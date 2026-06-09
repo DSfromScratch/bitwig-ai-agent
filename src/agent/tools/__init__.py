@@ -9,19 +9,15 @@ from src.agent.tools.bitwig.song_tools import (
     get_bitwig_track_state,
 )
 from src.agent.tools.bitwig.suggest_tools import suggest_notes, get_launchpad_mode, listen_played_notes, play_notes, arm_track
-from src.agent.tools.music.pattern_tools import write_pattern
-from src.agent.tools.music.pattern_raw_tool import write_pattern_raw
 from src.agent.tools.music.context_tool import get_song_context
 from src.agent.tools.knowledge.artist_tool import get_artist_context
 from src.agent.tools.knowledge.web_search_tool import web_search
 from src.agent.tools.knowledge.freesound_tool import find_audio_example
-from src.agent.tools.music.music_validator import validate_music
 from src.agent.tools.music.audio_llm_tool import analyze_song
-from src.agent.tools.knowledge.song_metadata_tool import search_artist_song
+from src.agent.tools.knowledge.song_metadata_tool import search_artist_song, list_known_songs
 from src.agent.tools.knowledge.song_learn_tool import learn_song_from_youtube
-from src.agent.tools.knowledge.music_learning import validate_and_learn
 from src.agent.tools.meta.mlx_export import export_mlx_training_data
-from src.bitwig_executor import execute_setup, compose_notes
+from src.bitwig_executor import execute_setup
 from langchain_core.tools import StructuredTool, tool as _tool
 from pydantic import BaseModel, model_validator
 from src.knowledge.vst_scanner import scan_and_store as _scan_fn
@@ -71,15 +67,11 @@ ALL_TOOLS = [
     registry.register(check_bitwig_connection, domain="bitwig"),
     registry.register(get_bitwig_track_state, domain="bitwig"),
     registry.register(_make_tool(execute_setup), domain="bitwig"),
-    registry.register(_make_tool(compose_notes), domain="music"),
-    registry.register(write_pattern, domain="music"),
-    registry.register(write_pattern_raw, domain="music"),
     registry.register(get_song_context, domain="music"),
     registry.register(get_artist_context, domain="knowledge"),
-    registry.register(validate_music, domain="music"),
-    registry.register(validate_and_learn, domain="knowledge"),
     registry.register(analyze_song, domain="music"),
     registry.register(search_artist_song, domain="knowledge"),
+    registry.register(list_known_songs, domain="knowledge"),
     registry.register(learn_song_from_youtube, domain="knowledge"),
     registry.register(export_mlx_training_data, domain="meta"),
     registry.register(scan_vst_plugins, domain="bitwig"),

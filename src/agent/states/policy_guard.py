@@ -12,7 +12,8 @@ log = logging.getLogger("bitwig-agent")
 
 class PolicyGuardState(AgentPhaseState):
     def execute(self, ctx: PhaseContext) -> PhaseContext:
-        ctx.response, _ = _apply_policy(ctx.response, ctx.agent_state)
+        effective_state = {**ctx.agent_state, **ctx.updates}
+        ctx.response, _ = _apply_policy(ctx.response, effective_state)
         return ctx
 
 

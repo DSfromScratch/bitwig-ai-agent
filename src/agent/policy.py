@@ -4,6 +4,12 @@ import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
+from src.agent.router import (
+    _CONTROL_TOOL_NAMES,
+    _TOOLS_PLANNING,
+    _TOOLS_SETUP,
+    _TOOLS_VERIFYING,
+)
 
 _NUDGE_PREFIX = "Deine Antwort war leer."
 
@@ -18,6 +24,16 @@ _CONCRETE_TASK_KEYWORDS = [
     "erstelle", "create", "mach", "baue", "bpm", "track", "riff",
     "instrument", "phase-4", "fm-4", "polysynth", "drums", "bass",
 ]
+
+_PHASE_ALLOWED_TOOLS = {
+    "idle": _TOOLS_PLANNING,
+    "planning": _TOOLS_PLANNING,
+    "setup": _TOOLS_SETUP,
+    "verifying": _TOOLS_VERIFYING,
+    "done": _TOOLS_PLANNING,
+    "error": _TOOLS_PLANNING,
+    "control": _CONTROL_TOOL_NAMES,
+}
 
 
 def _extract_explicit_fx(text: str) -> list[str]:
@@ -112,7 +128,14 @@ def enforce_policy_on_response(state: dict[str, Any], response: AIMessage) -> tu
         # Tote Tool-Calls herausfiltern — Agent soll ohne sie weitermachen
         clean_calls = [tc for tc in calls if tc.get("name") not in _DEAD_TOOLS]
         if not clean_calls:
-            return response, {"action": "none", "violations": violations}
+            new_msg = AIMessage(content=response.content, tool_calls=[])
+            return new_msg, {
+                "action": "rewrite",
+                "violations": violations,
+                "concrete_track_task": concrete,
+                "strict_fx_request": False,
+                "explicit_fx": [],
+            }
         new_msg = AIMessage(content=response.content, tool_calls=clean_calls)
         return new_msg, {
             "action": "rewrite",
@@ -121,6 +144,21 @@ def enforce_policy_on_response(state: dict[str, Any], response: AIMessage) -> tu
             "strict_fx_request": False,
             "explicit_fx": [],
         }
+
+    phase = state.get("generation_phase", "idle")
+    allowed = _PHASE_ALLOWED_TOOLS.get(phase)
+    if allowed:
+        phase_violations = [tc["name"] for tc in calls if tc.get("name") not in allowed]
+        if phase_violations:
+            clean_calls = [tc for tc in calls if tc.get("name") in allowed]
+            new_msg = AIMessage(content=response.content, tool_calls=clean_calls)
+            return new_msg, {
+                "action": "rewrite",
+                "violations": [f"phase:{phase}:{name}" for name in phase_violations],
+                "concrete_track_task": concrete,
+                "strict_fx_request": False,
+                "explicit_fx": [],
+            }
 
     explicit_fx = _extract_explicit_fx(user_text)
     strict_fx = bool(explicit_fx) and _is_strict_fx_request(user_text)

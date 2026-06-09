@@ -179,8 +179,6 @@ def _normalize_key(key: str) -> str:
 VALID_TOOLS = {
     "create_track_from_recipe",
     "reconstruct_project",
-    "write_pattern",
-    "write_pattern_raw",
     "scan_and_learn_project",
     "get_song_context",
 }
@@ -188,8 +186,6 @@ VALID_TOOLS = {
 REQUIRED_PARAMS: dict[str, list[str]] = {
     "create_track_from_recipe": ["track_name", "project_name"],
     "reconstruct_project":      ["project_name"],
-    "write_pattern":            ["track_name", "notes", "length_beats"],
-    "write_pattern_raw":        ["track_index", "notes", "length_beats"],
     "scan_and_learn_project":   [],
     "get_song_context":         ["project_name"],
 }
@@ -293,41 +289,6 @@ def score_completion(prompt: str, completion: str) -> tuple[float, dict]:
         project = (args.get("project_name") or "").lower()
         neo4j_ok = _project_match(project, ctx.get("projects", []))
         breakdown["project_ok"] = neo4j_ok
-
-    elif tool in ("write_pattern", "write_pattern_raw"):
-        # notes kann str (JSON) oder Liste sein
-        raw_notes = args.get("notes")
-        if isinstance(raw_notes, str):
-            try:
-                raw_notes = json.loads(raw_notes)
-            except (json.JSONDecodeError, TypeError):
-                raw_notes = None
-
-        notes_ok = (
-            isinstance(raw_notes, list)
-            and len(raw_notes) > 0
-            and isinstance(raw_notes[0], dict)
-            and "pitch" in raw_notes[0]
-        )
-        breakdown["notes_ok"] = notes_ok
-
-        if notes_ok:
-            # Musikalischer Reward
-            key_raw  = args.get("key") or args.get("description") or ""
-            energy   = float(args.get("scene_energy") or 0.5)
-            mus_score, mus_breakdown = musical_reward(
-                raw_notes, key=key_raw, energy=energy
-            )
-            breakdown.update(mus_breakdown)
-            # neo4j_ok = notes strukturell korrekt + musikalisch > 0.5
-            neo4j_ok = mus_score >= 0.5
-            # Anteiligen Score addieren (ersetzt fixe 0.25)
-            score += 0.35 * mus_score
-            breakdown["musical_score"] = mus_score
-            # früh rückgeben — Score schon inkl. musikalischem Anteil
-            return round(min(1.0, score), 3), breakdown
-        else:
-            neo4j_ok = False
 
     elif tool == "scan_and_learn_project":
         neo4j_ok = True   # Kein Argument nötig

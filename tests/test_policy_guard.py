@@ -2,6 +2,8 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.agent.policy import enforce_policy_on_response, is_concrete_track_task
+from src.agent.states.base import PhaseContext
+from src.agent.states.policy_guard import PolicyGuardState
 
 
 @pytest.mark.unit
@@ -19,17 +21,20 @@ def test_non_task_question_not_concrete():
 @pytest.mark.unit
 def test_allows_execute_result_unchanged():
     """execute_result ist kein totes Tool — Policy lässt es durch."""
-    state = {"messages": [HumanMessage(content="Erstelle einen Rock-Bass mit FM-4, 120 BPM")]}
+    state = {
+        "messages": [HumanMessage(content="Erstelle einen Rock-Bass mit FM-4, 120 BPM")],
+        "generation_phase": "setup",
+    }
     response = AIMessage(
         content="",
         tool_calls=[
             {"name": "check_bitwig_connection", "args": {}, "id": "c1", "type": "tool_call"},
-            {"name": "execute_result", "args": {"result": {}}, "id": "c2", "type": "tool_call"},
+            {"name": "execute_setup", "args": {"result": {}}, "id": "c2", "type": "tool_call"},
         ],
     )
     out, meta = enforce_policy_on_response(state, response)
     assert meta["action"] == "allow"
-    assert [tc["name"] for tc in out.tool_calls] == ["check_bitwig_connection", "execute_result"]
+    assert [tc["name"] for tc in out.tool_calls] == ["check_bitwig_connection", "execute_setup"]
 
 
 @pytest.mark.unit
@@ -77,3 +82,75 @@ def test_no_tool_calls_returns_none_action():
     response = AIMessage(content="Hallo zurück")
     _, meta = enforce_policy_on_response(state, response)
     assert meta["action"] == "none"
+
+
+@pytest.mark.unit
+def test_blocks_setup_tool_during_planning_phase():
+    state = {
+        "messages": [HumanMessage(content="Erstelle Levels in Bitwig")],
+        "generation_phase": "planning",
+    }
+    response = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "query_bitwig_docs", "args": {"query": "Levels"}, "id": "c1", "type": "tool_call"},
+            {"name": "execute_setup", "args": {"result": {}}, "id": "c2", "type": "tool_call"},
+        ],
+    )
+
+    out, meta = enforce_policy_on_response(state, response)
+
+    assert meta["action"] == "rewrite"
+    assert "phase:planning:execute_setup" in meta["violations"]
+    assert [tc["name"] for tc in out.tool_calls] == ["query_bitwig_docs"]
+
+
+@pytest.mark.unit
+def test_blocks_project_tool_during_generating_phase():
+    state = {
+        "messages": [HumanMessage(content="ja")],
+        "generation_phase": "generating",
+    }
+    response = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "scan_and_learn_project", "args": {}, "id": "c1", "type": "tool_call"},
+            {"name": "compose_notes", "args": {"result": {}}, "id": "c2", "type": "tool_call"},
+        ],
+    )
+
+    out, meta = enforce_policy_on_response(state, response)
+
+    assert meta["action"] == "rewrite"
+    assert "phase:generating:scan_and_learn_project" in meta["violations"]
+    assert [tc["name"] for tc in out.tool_calls] == ["compose_notes"]
+
+
+@pytest.mark.unit
+def test_policy_guard_uses_pending_phase_updates(monkeypatch):
+    entries = []
+    monkeypatch.setattr(
+        "src.agent.states.policy_guard._append_policy_feedback",
+        lambda entry: entries.append(entry),
+    )
+    state = {
+        "messages": [HumanMessage(content="ja")],
+        "generation_phase": "idle",
+    }
+    response = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "execute_setup", "args": {"result": {}}, "id": "c1", "type": "tool_call"},
+        ],
+    )
+    ctx = PhaseContext(
+        agent_state=state,
+        response=response,
+        updates={"generation_phase": "setup"},
+    )
+
+    out = PolicyGuardState().execute(ctx)
+
+    assert [tc["name"] for tc in out.response.tool_calls] == ["execute_setup"]
+    assert entries[-1]["action"] == "allow"
+    assert entries[-1]["phase"] == "setup"

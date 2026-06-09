@@ -209,3 +209,61 @@ def search_artist_song(artist: str, title: str) -> str:
     """
     data = search_artist_song_dict(artist, title)
     return _format(data)
+
+
+@tool
+def list_known_songs(limit: int = 20) -> str:
+    """Listet die in der Neo4j-Wissensdatenbank gespeicherten Songs.
+
+    Nutze dieses Tool bei Fragen wie "welche Songs kennst du?" oder
+    "zeige mir bekannte/gelernte Songs". Es liefert vorhandene Song-Knoten
+    inklusive Künstler, BPM, Tonart und Qualitäts-Score.
+    """
+    try:
+        limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError):
+        limit = 20
+
+    try:
+        from src.knowledge.neo4j_graph import is_available, session
+        if not is_available():
+            return "Keine Songliste verfügbar: Neo4j ist nicht erreichbar."
+    except Exception as exc:
+        return f"Keine Songliste verfügbar: Neo4j-Fehler: {exc}"
+
+    try:
+        with session() as s:
+            rows = s.run("""
+                MATCH (song:Song)
+                RETURN song.name AS name,
+                       song.artist AS artist,
+                       song.bpm AS bpm,
+                       song.key AS key,
+                       song.quality_score AS score
+                ORDER BY coalesce(song.quality_score, 0) DESC,
+                         toLower(coalesce(song.artist, '')),
+                         toLower(song.name)
+                LIMIT $limit
+            """, limit=limit).data()
+    except Exception as exc:
+        return f"Keine Songliste verfügbar: Neo4j-Abfrage fehlgeschlagen: {exc}"
+
+    if not rows:
+        return "Keine Songs in der Wissensdatenbank gefunden."
+
+    lines = [f"Bekannte Songs in der Wissensdatenbank ({len(rows)}):"]
+    for row in rows:
+        artist = row.get("artist") or "?"
+        bpm = row.get("bpm")
+        key = row.get("key") or "?"
+        score = row.get("score")
+        details = []
+        if bpm:
+            details.append(f"{round(float(bpm), 1)} BPM")
+        if key != "?":
+            details.append(f"Tonart {key}")
+        if score is not None:
+            details.append(f"Score {float(score):.2f}")
+        suffix = f" ({', '.join(details)})" if details else ""
+        lines.append(f"- {artist} — {row.get('name') or '?'}{suffix}")
+    return "\n".join(lines)

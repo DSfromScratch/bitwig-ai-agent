@@ -83,30 +83,37 @@ def _get_copilot_token() -> str:
     return token
 
 
-def _get_llm(max_tokens: int = 1500) -> BaseChatModel:
+def _get_llm(
+    max_tokens: int = int(os.getenv("COPILOT_MAX_TOKENS", "1500")),
+    backend: str | None = None,
+    model: str | None = None,
+    temperature: float | None = None,
+) -> BaseChatModel:
     if os.getenv("BITWIG_TEST_MODE", "").lower() == "mock":
         log.info("TEST_MODE: Verwende Mock-LLM")
         return MockLLM()
 
-    backend = os.getenv("LLM_BACKEND", "mlx").lower()
+    backend = (backend or os.getenv("LLM_BACKEND", "mlx")).lower()
 
     if backend == "mlx":
         base  = os.getenv("MAC_MLX_URL", "http://localhost:8080") + "/v1"
-        model = os.getenv("VLLM_MODEL", "mlx-community/Qwen3-8B-4bit")
+        model = model or os.getenv("VLLM_MODEL", "mlx-community/Qwen3-8B-4bit")
         log.info("MLX-Backend: %s / %s", base, model)
         return ChatOpenAI(
             base_url=base, api_key="mlx", model=model,
-            temperature=0.6, max_tokens=max_tokens, timeout=120,
+            temperature=0.6 if temperature is None else temperature,
+            max_tokens=max_tokens, timeout=120,
         )
 
     if backend == "copilot":
         token = _get_copilot_token()
         base  = os.getenv("COPILOT_BASE_URL", "https://api.githubcopilot.com")
-        model = os.getenv("COPILOT_MODEL", "gpt-4.1-mini")
+        model = model or os.getenv("COPILOT_MODEL", "gpt-4.1-mini")
         log.info("Copilot-Backend: %s / %s", base, model)
         return ChatOpenAI(
             base_url=base, api_key=token, model=model,
-            temperature=0.6, max_tokens=max_tokens, timeout=120,
+            temperature=0.6 if temperature is None else temperature,
+            max_tokens=max_tokens, timeout=120,
             default_headers={
                 "Copilot-Integration-Id": "vscode-chat",
                 "Editor-Version": "vscode/1.99.0",
@@ -116,11 +123,12 @@ def _get_llm(max_tokens: int = 1500) -> BaseChatModel:
 
     # vllm
     base  = os.getenv("VLLM_BASE_URL", "http://192.168.0.3:8100") + "/v1"
-    model = os.getenv("VLLM_MODEL", "./models/Qwen3-14B-AWQ")
+    model = model or os.getenv("VLLM_MODEL", "./models/Qwen3-14B-AWQ")
     log.info("vLLM-Backend: %s / %s", base, model)
     return ChatOpenAI(
         base_url=base, api_key="vllm", model=model,
-        temperature=0.6, max_tokens=max_tokens, timeout=120,
+        temperature=0.6 if temperature is None else temperature,
+        max_tokens=max_tokens, timeout=120,
     )
 
 

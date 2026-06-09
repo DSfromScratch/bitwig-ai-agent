@@ -205,7 +205,7 @@ def _format_record(record: "GenrePatternRecord", source: str = "Neo4j") -> str: 
         f"  Takt 1: {grid}",
         f"  Quellen: {', '.join(record.sources[:2])}" if record.sources else "",
         "",
-        "**→ Empfehlung für write_pattern():**",
+        "**→ Audio-Analyse:**",
         f"  BPM:          {int(round(bpm))}",
         f"  Tonart:       {keys[0] if keys else '?'}",
         f"  Energie:      {record.energy}",
@@ -221,8 +221,8 @@ def find_audio_example(query: str) -> str:
     Ergebnisse werden in Neo4j gespeichert — bei erneutem Aufruf desselben Genres
     kommt die Antwort sofort aus dem Cache (kein YouTube-Download nötig).
 
-    Gibt BPM, Tonart, Energie und konkrete Onset-Steps zurück — direkt verwendbar
-    für write_pattern(). Kein API-Key nötig.
+    Gibt BPM, Tonart, Energie und konkrete Onset-Steps zurück als Genre-Referenz.
+    Kein API-Key nötig.
 
     Beispiele:
       find_audio_example("kuduro drum loop Angola 140 BPM")
@@ -342,7 +342,7 @@ def find_audio_example(query: str) -> str:
         repo.save(record)
         lines.append(f"✓ Als GenrePattern '{genre_name}' in Neo4j gespeichert")
         lines.append("")
-        lines.append("**→ Empfehlung für write_pattern():**")
+        lines.append("**→ Audio-Analyse:**")
         lines.append(f"  BPM:          {int(round(avg_bpm))}")
         lines.append(f"  Tonart:       {keys[0] if keys else '?'}")
         lines.append(f"  Energie:      {energy}")
