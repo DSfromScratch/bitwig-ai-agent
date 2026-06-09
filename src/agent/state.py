@@ -61,14 +61,6 @@ class SongBlueprint(TypedDict):
     instrument_roles: list[str]       # Aktive Rollen (z.B. ["kick","bass","lead"])
 
 
-class SectionResult(TypedDict):
-    """Ergebnis einer fertig generierten Section."""
-    section:     str
-    slot_base:   int    # Clip-Slot-Startindex
-    note_count:  int    # Gesamt-Noten dieser Section
-    bpm:         float
-
-
 # ── LangGraph Agent-State ─────────────────────────────────────────────────────
 
 GenerationPhase = Literal[
@@ -94,8 +86,5 @@ class AgentState(TypedDict):
     # Song-Generierungs-Kontext
     generation_phase:   GenerationPhase
     song_blueprint:     Optional[SongBlueprint]
-    section_timeline:   list[SectionResult]    # bereits fertige Sections
-    quality_report:     Optional[dict]          # letztes verify_song JSON
-    pending_sections:   list[str]              # noch zu generierende Sections
     retry_count:        int
     ui_song_config:     Optional[dict]         # Strukturierte Song-Config aus Bitwig UI (OSC)

@@ -298,7 +298,6 @@ execute_setup(result={
 |---|---|---|
 | 8002 | BitwigStepPlugin | Tracks, Instrumente, Noten → Haupt-Port |
 | 8003 | Launchpad Agent | LED-Steuerung — NICHT für Track-Abfragen |
-| 8001 | BitwigAgentBridge | optional, nicht immer aktiv |
 
 **Niemals Port 8003 für Track-Abfragen oder Transport verwenden.**
 **Wenn Port 8002 erreichbar → Song-Erstellung sofort starten ohne weitere Checks.**

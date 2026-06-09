@@ -18,32 +18,29 @@ def pytest_configure(config):
 
 @pytest.fixture(scope="session")
 def osc_available():
-    """Returns True if Bitwig is reachable (BitwigStepPlugin port 8002 or AgentBridge port 8001)."""
+    """Returns True if Bitwig is reachable via BitwigStepPlugin (port 8002)."""
     import socket
     from dotenv import load_dotenv
     load_dotenv()
 
     host = os.environ.get("BITWIG_HOST", "127.0.0.1")
-
-    # Primär: BitwigStepPlugin Port 8002
-    for port, reply_port in [(8002, 9002), (8001, 9001)]:
-        try:
-            from pythonosc import udp_client
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            if hasattr(socket, "SO_REUSEPORT"):
-                try: sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-                except OSError: pass
-            sock.settimeout(1.5)
-            try: sock.bind(("", reply_port))
+    try:
+        from pythonosc import udp_client
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try: sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             except OSError: pass
-            udp_client.SimpleUDPClient(host, port).send_message("/ping", 1)
-            sock.recvfrom(64)
-            sock.close()
-            return True
-        except (OSError, socket.timeout):
-            try: sock.close()
-            except Exception: pass
+        sock.settimeout(1.5)
+        try: sock.bind(("", 9002))
+        except OSError: pass
+        udp_client.SimpleUDPClient(host, 8002).send_message("/ping", 1)
+        sock.recvfrom(64)
+        sock.close()
+        return True
+    except (OSError, socket.timeout):
+        try: sock.close()
+        except Exception: pass
     return False
 
 

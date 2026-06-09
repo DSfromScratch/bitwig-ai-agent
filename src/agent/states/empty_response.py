@@ -1,8 +1,7 @@
 """EmptyResponseState — nudgt das LLM bei fehlenden oder falschen Tool-Calls."""
 from __future__ import annotations
 import logging
-import os
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 from src.agent.router import _classify_task, _latest_user_text
 from src.agent.states.base import AgentPhaseState, PhaseContext
 
@@ -12,24 +11,7 @@ log = logging.getLogger("bitwig-agent")
 class EmptyResponseState(AgentPhaseState):
     def execute(self, ctx: PhaseContext) -> PhaseContext:
         has_tool_calls = bool(getattr(ctx.response, "tool_calls", None))
-        if not has_tool_calls and _needs_note_generation_fallback(ctx.response, ctx.agent_state, ctx.updates):
-            retry = ctx.agent_state.get("retry_count", 0) + 1
-            fallback = _call_copilot_note_fallback(ctx.system, ctx.messages, ctx.selected_tools, ctx.agent_state)
-            if fallback is not None:
-                log.info("Workflow: Notengenerierung via Copilot-Fallback #%d", retry)
-                ctx.early_return = {"messages": [fallback],
-                                    "retry_count": ctx.agent_state.get("retry_count", 0),
-                                    **ctx.updates}
-            else:
-                log.warning("Workflow: Copilot-Notenfallback fehlgeschlagen — Nudge #%d", retry)
-                nudge = HumanMessage(content=(
-                    "Die Notengenerierung braucht jetzt einen ausführbaren Tool-Call. "
-                    "Rufe `play_notes` mit konkreten MIDI-Noten auf. "
-                    "Kein Text, nur Tool-Call."
-                ))
-                ctx.early_return = {"messages": [ctx.response, nudge],
-                                    "retry_count": retry, **ctx.updates}
-        elif not has_tool_calls and not (ctx.response.content or "").strip():
+        if not has_tool_calls and not (ctx.response.content or "").strip():
             retry = ctx.agent_state.get("retry_count", 0) + 1
             log.warning("LLM: leere Antwort (think-only) — Nudge #%d", retry)
             nudge = HumanMessage(content=(
@@ -91,61 +73,6 @@ class EmptyResponseState(AgentPhaseState):
             ctx.early_return = {"messages": [ctx.response, nudge],
                                 "retry_count": retry, **ctx.updates}
         return ctx
-
-
-def _needs_note_generation_fallback(response, state: dict, updates: dict) -> bool:
-    if os.getenv("ENABLE_COPILOT_NOTE_FALLBACK", "").lower() not in ("1", "true", "yes"):
-        return False
-    if getattr(response, "tool_calls", None):
-        return False
-    phase = updates.get("generation_phase", state.get("generation_phase", "idle"))
-    return phase == "generating"
-
-
-def _call_copilot_note_fallback(system, messages: list, selected_tools: list, state: dict) -> AIMessage | None:
-    from src.agent.llm_client import _get_llm, _log_token_usage
-    from src.agent.recovery import _has_invalid_tool_output, _recover_tool_calls
-    from src.agent.tools import ALL_TOOLS
-
-    note_tools = [
-        tool for tool in (selected_tools or ALL_TOOLS)
-        if getattr(tool, "name", "") == "play_notes"
-    ]
-    if not note_tools:
-        return None
-
-    user_text = _latest_user_text(state.get("messages", []))
-    hard_nudge = HumanMessage(content=(
-        "MLX konnte keine gültige Notengenerierung liefern. "
-        "Du bist der leistungsstarke Copilot-Max-Musik-Fallback für die Generating-Phase. "
-        "Erzeuge jetzt einen ausführbaren, musikalisch kohärenten Tool-Call für die aktuelle Aufgabe. "
-        "Nutze `play_notes` mit konkreten MIDI-Noten inklusive Velocity, Dauer und Gap. "
-        f"Aktueller Nutzerauftrag: {user_text}. "
-        "Kein Freitext, kein Markdown, nur ein Tool-Call."
-    ))
-    try:
-        model = os.getenv("COPILOT_MUSIC_MODEL", os.getenv("COPILOT_MODEL", "gpt-5.5"))
-        llm = _get_llm(
-            max_tokens=1600,
-            backend="copilot",
-            model=model,
-            temperature=0.45,
-        ).bind_tools(note_tools)
-        candidate = llm.invoke([system] + messages[-5:] + [hard_nudge])
-        _log_token_usage(candidate, label="copilot-note-fallback")
-    except Exception as exc:
-        log.warning("Copilot-Notenfallback nicht verfügbar: %s", exc)
-        return None
-
-    candidate = _recover_tool_calls(candidate, state)
-    if _has_invalid_tool_output(candidate):
-        return None
-    if not getattr(candidate, "tool_calls", None):
-        return None
-    names = {tc.get("name") for tc in candidate.tool_calls}
-    if "play_notes" not in names:
-        return None
-    return candidate
 
 
 def _needs_setup_tool_nudge(response, state: dict, updates: dict) -> bool:

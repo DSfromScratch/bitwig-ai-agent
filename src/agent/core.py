@@ -99,9 +99,6 @@ def _default_state() -> "AgentState":
         # Song-Generierungs-Kontext
         "generation_phase":  "idle",
         "song_blueprint":    None,
-        "section_timeline":  [],
-        "quality_report":    None,
-        "pending_sections":  [],
         "retry_count":       0,
         "ui_song_config":    None,
     }

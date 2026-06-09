@@ -6,10 +6,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from src.agent.states.base import PhaseContext
 from src.agent.states.empty_response import (
     EmptyResponseState,
-    _call_copilot_note_fallback,
     _needs_known_songs_nudge,
     _needs_launchpad_tool_nudge,
-    _needs_note_generation_fallback,
     _needs_setup_tool_nudge,
     _needs_status_tool_nudge,
 )
@@ -194,96 +192,3 @@ def test_launchpad_play_request_does_not_repeat_after_play_notes():
 
     assert _needs_launchpad_tool_nudge(response, state) is False
 
-
-def test_generating_text_response_does_not_need_note_fallback_by_default():
-    response = AIMessage(content="Ich würde jetzt Noten schreiben.")
-    state = {
-        "messages": [HumanMessage(content="Tear Drops Bass auf Track 1")],
-        "generation_phase": "generating",
-    }
-
-    assert _needs_note_generation_fallback(response, state, {}) is False
-
-
-def test_empty_response_state_uses_copilot_note_fallback(monkeypatch):
-    monkeypatch.setenv("ENABLE_COPILOT_NOTE_FALLBACK", "1")
-    fallback = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "name": "play_notes",
-                "args": {
-                    "notes": [{"note": 36, "dur": 1, "vel": 100}],
-                    "bpm": 120,
-                },
-                "id": "fallback-1",
-                "type": "tool_call",
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        "src.agent.states.empty_response._call_copilot_note_fallback",
-        lambda *_args, **_kwargs: fallback,
-    )
-    state = {
-        "messages": [HumanMessage(content="Tear Drops Bass auf Track 1")],
-        "generation_phase": "generating",
-        "retry_count": 2,
-    }
-    ctx = PhaseContext(agent_state=state, response=AIMessage(content=""))
-
-    result = EmptyResponseState().execute(ctx)
-
-    assert result.early_return is not None
-    assert result.early_return["messages"] == [fallback]
-    assert result.early_return["retry_count"] == 2
-
-
-def test_copilot_note_fallback_uses_music_model(monkeypatch):
-    calls = {}
-
-    class FakeTool:
-        name = "play_notes"
-
-    class FakeLLM:
-        def bind_tools(self, tools):
-            calls["tools"] = [tool.name for tool in tools]
-            return self
-
-        def invoke(self, messages):
-            return AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "play_notes",
-                        "args": {
-                            "notes": [{"note": 36, "dur": 1, "vel": 100}],
-                            "bpm": 120,
-                        },
-                        "id": "fallback-1",
-                        "type": "tool_call",
-                    }
-                ],
-            )
-
-    def fake_get_llm(**kwargs):
-        calls.update(kwargs)
-        return FakeLLM()
-
-    monkeypatch.setenv("COPILOT_MUSIC_MODEL", "gpt-5.5")
-    monkeypatch.setattr("src.agent.llm_client._get_llm", fake_get_llm)
-    monkeypatch.setattr("src.agent.llm_client._log_token_usage", lambda *_args, **_kwargs: {})
-
-    response = _call_copilot_note_fallback(
-        None,
-        [HumanMessage(content="Bass auf Track 1")],
-        [FakeTool()],
-        {"messages": [HumanMessage(content="Bass auf Track 1")]},
-    )
-
-    assert response is not None
-    assert calls["backend"] == "copilot"
-    assert calls["model"] == "gpt-5.5"
-    assert calls["max_tokens"] == 1600
-    assert calls["temperature"] == 0.45
-    assert calls["tools"] == ["play_notes"]

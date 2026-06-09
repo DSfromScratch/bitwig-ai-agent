@@ -72,19 +72,8 @@ def _patch_langchain_tool_call_parser() -> None:
         log.debug("LangChain Tool-Parser Patch nicht angewendet: %s", exc)
 
 
-def _get_copilot_token() -> str:
-    token = (
-        os.getenv("COPILOT_API_KEY")
-        or os.getenv("GITHUB_COPILOT_TOKEN")
-        or os.getenv("COPILOT_TOKEN")
-    )
-    if not token:
-        raise RuntimeError("Copilot-Token fehlt")
-    return token
-
-
 def _get_llm(
-    max_tokens: int = int(os.getenv("COPILOT_MAX_TOKENS", "1500")),
+    max_tokens: int = 1500,
     backend: str | None = None,
     model: str | None = None,
     temperature: float | None = None,
@@ -103,22 +92,6 @@ def _get_llm(
             base_url=base, api_key="mlx", model=model,
             temperature=0.6 if temperature is None else temperature,
             max_tokens=max_tokens, timeout=120,
-        )
-
-    if backend == "copilot":
-        token = _get_copilot_token()
-        base  = os.getenv("COPILOT_BASE_URL", "https://api.githubcopilot.com")
-        model = model or os.getenv("COPILOT_MODEL", "gpt-4.1-mini")
-        log.info("Copilot-Backend: %s / %s", base, model)
-        return ChatOpenAI(
-            base_url=base, api_key=token, model=model,
-            temperature=0.6 if temperature is None else temperature,
-            max_tokens=max_tokens, timeout=120,
-            default_headers={
-                "Copilot-Integration-Id": "vscode-chat",
-                "Editor-Version": "vscode/1.99.0",
-                "Editor-Plugin-Version": "copilot-chat/0.27.0",
-            },
         )
 
     # vllm
