@@ -27,15 +27,13 @@ class EmptyResponseState(AgentPhaseState):
             if _is_launchpad_play_request(user_text):
                 content = (
                     "Der Nutzer will einen Beat hören. "
-                    "Rufe jetzt direkt `play_notes` mit einem einfachen Drum-Beat auf. "
+                    "Rufe jetzt direkt `launchpad` mit action=\"play\" und einem einfachen Drum-Beat auf. "
                     "Kein Freitext, keine Absichtserklärung, nur Tool-Call."
                 )
             else:
                 content = (
                     "Der Nutzer will das Launchpad benutzen. "
-                    "Rufe jetzt direkt ein passendes Launchpad-Tool auf: "
-                    "`check_bitwig_connection`, `get_launchpad_mode`, `arm_track`, "
-                    "`suggest_notes`, `play_notes` oder `listen_played_notes`. "
+                    "Rufe jetzt direkt `launchpad` auf (action: mode/suggest/arm/listen/play). "
                     "Kein Freitext, keine Absichtserklärung, nur Tool-Call."
                 )
             nudge = HumanMessage(content=content)
@@ -46,7 +44,7 @@ class EmptyResponseState(AgentPhaseState):
             log.info("Workflow: Bitwig-Status nur als Text beantwortet — Status-Nudge #%d", retry)
             nudge = HumanMessage(content=(
                 "Der Nutzer fragt nach dem Bitwig-Status. "
-                "Rufe jetzt direkt `check_bitwig_connection` oder `get_bitwig_track_state` auf. "
+                "Rufe jetzt direkt `get_bitwig_state` auf. "
                 "Kein Freitext, keine Absichtserklärung, nur Tool-Call."
             ))
             ctx.early_return = {"messages": [ctx.response, nudge],
@@ -67,7 +65,7 @@ class EmptyResponseState(AgentPhaseState):
             log.info("Workflow: Songliste angefragt — Knowledge-Nudge #%d", retry)
             nudge = HumanMessage(content=(
                 "Der Nutzer fragt, welche Songs du kennst. "
-                "Rufe jetzt `list_known_songs` auf. "
+                "Rufe jetzt `query_knowledge` mit type=\"songs\" auf. "
                 "Kein Freitext, kein Raten, nur Tool-Call."
             ))
             ctx.early_return = {"messages": [ctx.response, nudge],
@@ -97,14 +95,8 @@ def _needs_launchpad_tool_nudge(response, state: dict, intent: str | None = None
         return False
     user_text = _latest_user_text(state.get("messages", []))
     if _is_launchpad_play_request(user_text):
-        return not _has_recent_tool_call(state.get("messages", []), "play_notes")
-    if _has_recent_tool_call_any(
-        state.get("messages", []),
-        {
-            "check_bitwig_connection", "get_launchpad_mode", "arm_track",
-            "suggest_notes", "play_notes", "listen_played_notes",
-        },
-    ):
+        return not _has_recent_tool_call(state.get("messages", []), "launchpad")
+    if _has_recent_tool_call(state.get("messages", []), "launchpad"):
         return False
     return True
 
@@ -114,7 +106,7 @@ def _needs_status_tool_nudge(response, state: dict, intent: str | None = None) -
         return False
     if not (getattr(response, "content", "") or "").strip():
         return False
-    if _has_recent_tool_call(state.get("messages", []), "get_bitwig_track_state"):
+    if _has_recent_tool_call(state.get("messages", []), "get_bitwig_state"):
         return False
     return intent == "status"
 
@@ -131,7 +123,7 @@ def _needs_known_songs_nudge(response, state: dict, intent: str | None = None) -
         return False
     if not (getattr(response, "content", "") or "").strip():
         return False
-    if _has_recent_tool_call(state.get("messages", []), "list_known_songs"):
+    if _has_recent_tool_call(state.get("messages", []), "query_knowledge"):
         return False
     if intent != "knowledge":
         return False

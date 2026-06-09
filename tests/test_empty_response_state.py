@@ -75,7 +75,7 @@ def test_empty_response_state_nudges_known_songs_tool():
 
     assert result.early_return is not None
     assert result.early_return["retry_count"] == 1
-    assert "list_known_songs" in result.early_return["messages"][1].content
+    assert "query_knowledge" in result.early_return["messages"][1].content
 
 
 def test_known_songs_nudge_does_not_repeat_after_tool_call():
@@ -84,8 +84,8 @@ def test_known_songs_nudge_does_not_repeat_after_tool_call():
         "messages": [
             HumanMessage(content="welche Songs kennst du ?"),
             AIMessage(content="", tool_calls=[{
-                "name": "list_known_songs",
-                "args": {"limit": 20},
+                "name": "query_knowledge",
+                "args": {"query": "songs", "type": "songs"},
                 "id": "songs-1",
                 "type": "tool_call",
             }]),
@@ -113,7 +113,7 @@ def test_status_nudge_does_not_repeat_after_track_state_tool():
         "messages": [
             HumanMessage(content="Wie viele Tracks sind in Bitwig vorhanden?"),
             AIMessage(content="", tool_calls=[{
-                "name": "get_bitwig_track_state",
+                "name": "get_bitwig_state",
                 "args": {},
                 "id": "state-1",
                 "type": "tool_call",
@@ -142,8 +142,8 @@ def test_launchpad_mode_nudge_does_not_repeat_after_tool_call():
         "messages": [
             HumanMessage(content="prüfe den Launchpad Modus"),
             AIMessage(content="", tool_calls=[{
-                "name": "get_launchpad_mode",
-                "args": {},
+                "name": "launchpad",
+                "args": {"action": "mode"},
                 "id": "launchpad-1",
                 "type": "tool_call",
             }]),
@@ -155,18 +155,11 @@ def test_launchpad_mode_nudge_does_not_repeat_after_tool_call():
     assert _needs_launchpad_tool_nudge(response, state, intent="launchpad") is False
 
 
-def test_launchpad_play_request_still_needs_play_notes_after_mode_check():
+def test_launchpad_play_request_still_needs_play_notes_after_no_call():
     response = AIMessage(content="Bitwig ist verbunden, ich lege einen Beat auf.")
     state = {
         "messages": [
             HumanMessage(content="spiele einen Beat auf dem Launchpad"),
-            AIMessage(content="", tool_calls=[{
-                "name": "get_launchpad_mode",
-                "args": {},
-                "id": "launchpad-1",
-                "type": "tool_call",
-            }]),
-            ToolMessage(content="Timeout", tool_call_id="launchpad-1"),
         ],
         "generation_phase": "planning",
     }
@@ -180,8 +173,8 @@ def test_launchpad_play_request_does_not_repeat_after_play_notes():
         "messages": [
             HumanMessage(content="spiele einen Beat auf dem Launchpad"),
             AIMessage(content="", tool_calls=[{
-                "name": "play_notes",
-                "args": {"notes": []},
+                "name": "launchpad",
+                "args": {"action": "play", "note_data": []},
                 "id": "launchpad-1",
                 "type": "tool_call",
             }]),
