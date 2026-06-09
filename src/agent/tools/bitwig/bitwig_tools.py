@@ -1,19 +1,8 @@
 """
-Bitwig Studio Integration — OSC via DrivenByMoss Extension.
+Bitwig Studio Integration — OSC via BitwigStepPluginExtension (Port 8002).
 
-Voraussetzung: DrivenByMoss in Bitwig installiert und OSC aktiviert.
-  Download: https://github.com/git-moss/DrivenByMoss
-  Setup:    Bitwig → Einstellungen → Controller → DrivenByMoss → OSC
-  Port:     empfangen 8001 (BITWIG_DM_PORT), senden 9001
-
-DrivenByMoss erweitert die bisherige BitwigOscBridge um:
-  - Tracks erstellen (Instrument, Audio)
-  - Tracks auswählen, löschen, benennen
-  - Devices per Browser einfügen
-  - Presets laden und navigieren
-  - Alle 8 Device-Parameter setzen
-  - EQ-Bänder (Freq, Gain, Q)
-  - Clips erstellen und starten
+Alle Transport/Track/EQ-Befehle laufen über BitwigStepPluginExtension.
+Kein separates DrivenByMoss / BitwigAgentBridgeExtension nötig.
 """
 
 from __future__ import annotations
@@ -75,8 +64,8 @@ def control_bitwig(
         return {"error": "python-osc nicht installiert: uv pip install python-osc"}
 
     _host = host or os.getenv("BITWIG_HOST", "127.0.0.1")
-    _port = port or int(os.getenv("BITWIG_DM_PORT", "8001"))
-    _reply_port = int(os.getenv("BITWIG_REPLY_PORT", "9001"))
+    _port = port or int(os.getenv("BITWIG_DM_PORT", "8002"))
+    _reply_port = int(os.getenv("BITWIG_REPLY_PORT", "9002"))
     c = udp_client.SimpleUDPClient(_host, _port, allow_broadcast=False)
     # Festen Quellport setzen damit Bitwig's src.sendMessage() nicht auf Port 0 läuft
     try:

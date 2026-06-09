@@ -1043,6 +1043,62 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     }, 450);
                 });
 
+        // ── Direct OSC Control (Port-8001-Parität) ────────────────────────
+        // Transport
+        space.registerMethod("/transport/play", "*", "Play",
+                (src, msg) -> { transport.play(); sendReply("/ack/transport/play", 1); });
+        space.registerMethod("/transport/stop", "*", "Stop",
+                (src, msg) -> { transport.stop(); sendReply("/ack/transport/stop", 1); });
+        space.registerMethod("/transport/tempo", "*", "Tempo",
+                (src, msg) -> { transport.tempo().setRaw(argFloat(msg, 0, 120f)); sendReply("/ack/tempo/set", 1); });
+        space.registerMethod("/tempo/raw", "*", "Tempo (alias)",
+                (src, msg) -> { transport.tempo().setRaw(argFloat(msg, 0, 120f)); sendReply("/ack/tempo/set", 1); });
+        space.registerMethod("/record", "*", "Record",
+                (src, msg) -> transport.record());
+        space.registerMethod("/repeat", "*", "Loop toggle",
+                (src, msg) -> { float v = argFloat(msg, 0, -1f); if (v < 0) transport.isArrangerLoopEnabled().toggle(); else transport.isArrangerLoopEnabled().set(v > 0); });
+
+        // Per-track OSC routes
+        for (int n = 1; n <= TRACK_BANK_SIZE; n++) {
+            final int tn = n;
+            Track tr = (Track) trackBank.getItemAt(n - 1);
+            space.registerMethod("/track/" + n + "/select", "*", "Select " + n,
+                    (src, msg) -> { tr.selectInMixer(); host.scheduleTask(() -> sendReply("/ack/track/selected", tn), 40); });
+            space.registerMethod("/track/" + n + "/volume", "*", "Volume " + n,
+                    (src, msg) -> tr.volume().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/track/" + n + "/pan", "*", "Pan " + n,
+                    (src, msg) -> tr.pan().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/track/" + n + "/mute", "*", "Mute " + n,
+                    (src, msg) -> tr.mute().set(argFloat(msg, 0, 0f) > 0.5f));
+            space.registerMethod("/track/" + n + "/solo", "*", "Solo " + n,
+                    (src, msg) -> tr.solo().set(argFloat(msg, 0, 0f) > 0.5f));
+        }
+
+        // EQ parameter control (cursorDevice)
+        for (int b = 1; b <= REMOTE_PARAMS; b++) {
+            final int band = b - 1;
+            space.registerMethod("/eq/freq/" + b, "*", "EQ freq " + b,
+                    (src, msg) -> cursorDevice.getParameter(band * 3).value().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/eq/gain/" + b, "*", "EQ gain " + b,
+                    (src, msg) -> cursorDevice.getParameter(band * 3 + 1).value().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/eq/q/" + b, "*", "EQ Q " + b,
+                    (src, msg) -> cursorDevice.getParameter(band * 3 + 2).value().set(argFloat(msg, 0, 0.5f)));
+        }
+
+        // Clip launch/create via legacy paths
+        space.registerMethod("/clip/create", "*", "Create clip",
+                (src, msg) -> {
+                    int slot = Math.max(0, (int) argFloat(msg, 0, 0f) - 1);
+                    int beats = Math.max(1, (int) argFloat(msg, 1, 4f));
+                    clipSlotBank.createEmptyClip(slot, beats);
+                    host.scheduleTask(() -> sendReply("/ack/clip/created", 1), 150);
+                });
+        space.registerMethod("/clip/launch", "*", "Launch clip",
+                (src, msg) -> {
+                    int slot = Math.max(0, (int) argFloat(msg, 0, 0f) - 1);
+                    clipSlotBank.launch(slot);
+                });
+
         // ── HAUPTENDPUNKT: /step/exec ─────────────────────────────────────
         space.registerMethod("/step/exec", "*", "Execute single step",
                 (src, msg) -> {
@@ -1893,6 +1949,16 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         host.println("[BitwigStep] '" + key + "' auch mit VST-Filter nicht gefunden.");
         if (s3 != null)
             stepDone(s3, "error:" + t3 + ":not_found:" + key);
+    }
+
+    private float argFloat(OscMessage msg, int idx, float def) {
+        try { Float v = msg.getFloat(idx); return v != null ? v : def; }
+        catch (Exception e) { return def; }
+    }
+
+    private String argStr(OscMessage msg, int idx) {
+        try { return msg.getString(idx); }
+        catch (Exception e) { return null; }
     }
 
     @Override
