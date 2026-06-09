@@ -73,7 +73,12 @@ def classify_intent_llm(text: str) -> str:
             SystemMessage(content=_INTENT_SYSTEM),
             _HM(content=text[:300]),
         ])
-        raw = (response.content or "").strip().lower().split()[0] if response.content else ""
+        content = response.content or ""
+        # <think>...</think> Block entfernen (Qwen3 denkt immer erst)
+        import re as _re
+        content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.DOTALL)
+        content = _re.sub(r"<think>.*", "", content, flags=_re.DOTALL)
+        raw = content.strip().lower().split()[0] if content.strip() else ""
         if raw in _INTENT_CATEGORIES:
             log.debug("Intent: '%s' → %s", text[:60], raw)
             return raw

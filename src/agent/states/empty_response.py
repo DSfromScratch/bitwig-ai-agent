@@ -8,7 +8,7 @@ log = logging.getLogger("bitwig-agent")
 
 # Intents die immer einen Tool-Call erfordern
 _ACTION_INTENTS = frozenset([
-    "control", "status", "project", "launchpad", "song_creation", "song_default",
+    "control", "status", "project", "launchpad", "song_creation",
 ])
 
 
