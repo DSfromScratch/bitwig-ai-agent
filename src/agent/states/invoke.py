@@ -120,6 +120,12 @@ def _backend_fallback(system: SystemMessage, messages: list, tools: list, origin
         _log_token_usage(response, label="mlx-fallback")
         return response
     except Exception as mlx_exc:
-        raise RuntimeError(
-            f"vLLM nicht erreichbar ({original_exc}) und MLX-Fallback fehlgeschlagen: {mlx_exc}"
-        ) from mlx_exc
+        log.error("MLX-Fallback fehlgeschlagen: %s", mlx_exc)
+        from langchain_core.messages import AIMessage
+        return AIMessage(content=(
+            "⚠️ Kein LLM-Backend erreichbar.\n"
+            "• vLLM (192.168.0.3:8100): nicht verbunden\n"
+            "• MLX (localhost:8080): nicht erreichbar\n\n"
+            "Bitte vLLM starten: `vllm serve ... --served-model-name agent`\n"
+            "oder MLX starten: `mlx_lm.server --model ~/models/Qwen3-14B-4bit --port 8080`"
+        ))

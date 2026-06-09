@@ -86,7 +86,7 @@ def _get_llm(
 
     if backend == "mlx":
         base  = os.getenv("MAC_MLX_URL", "http://localhost:8080") + "/v1"
-        model = model or os.getenv("MLX_MODEL", os.getenv("VLLM_MODEL", "mlx-community/Qwen3-14B-4bit"))
+        model = model or os.getenv("MLX_MODEL", "mlx-community/Qwen3-14B-4bit")
         log.info("MLX-Backend: %s / %s", base, model)
         return ChatOpenAI(
             base_url=base, api_key="mlx", model=model,
