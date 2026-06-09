@@ -84,7 +84,7 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
 
     # Fallback bei Kontextüberschreitung
     fallback_tools = [t for t in ALL_TOOLS
-                      if getattr(t, "name", "") in {"check_bitwig_connection", "execute_setup"}]
+                      if getattr(t, "name", "") in {"get_bitwig_state", "execute_setup"}]
     fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)
     log.warning("LLM Kontextlimit — Fallback mit %d Tools, max_tokens=700",
                 len(fallback_tools or selected_tools))

@@ -9,7 +9,7 @@ Der Agent ruft dieses Tool auf wenn:
 - Er ein unbekanntes Projekt vorfindet
 - Gefragt wird "Was ist gerade in Bitwig offen?"
 - Er Sound-Design-Details eines Projekts verstehen möchte
-- query_bitwig_docs keine ausreichenden Infos liefert
+- query_knowledge keine ausreichenden Infos liefert
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def scan_and_learn_project(project_name: str = "") -> str:
     Grid-Patches (Poly Grid / FX Grid), analysiert sie visuell mit
     Claude Vision und speichert alles in der Wissensdatenbank.
 
-    Nach dem Aufruf kann query_bitwig_docs detaillierte Fragen über
+    Nach dem Aufruf kann query_knowledge detaillierte Fragen über
     das Projekt beantworten (Sound-Design, Geräte-Einstellungen, etc.)
 
     Args:
@@ -190,7 +190,7 @@ def scan_and_learn_project(project_name: str = "") -> str:
         lines.append("   Für visuelle Grid-Analyse: ANTHROPIC_API_KEY in .env setzen")
 
     # ── 6. Zusammenfassung ────────────────────────────────────────────────
-    lines.append("\n📚 Wissensdatenbank aktualisiert. query_bitwig_docs kennt jetzt:")
+    lines.append("\n📚 Wissensdatenbank aktualisiert. query_knowledge kennt jetzt:")
     lines.append(f"   • {len(recipes)} Sound-Rezepte mit Parameter-Details (params_json)")
     if grid_tracks and anthropic_key:
         lines.append(f"   • {len(grid_tracks)} Grid-Patch-Analysen (Signal-Flow, Module)")

@@ -180,16 +180,18 @@ VALID_TOOLS = {
     "create_track_from_recipe",
     "reconstruct_project",
     "scan_and_learn_project",
-    "get_song_context",
+    "query_knowledge",
     "write_pattern_raw",
+    "generate_pattern",
 }
 
 REQUIRED_PARAMS: dict[str, list[str]] = {
     "create_track_from_recipe": ["track_name", "project_name"],
     "reconstruct_project":      ["project_name"],
     "scan_and_learn_project":   [],
-    "get_song_context":         ["project_name"],
+    "query_knowledge":          ["query"],
     "write_pattern_raw":        ["track_index", "notes", "length_beats"],
+    "generate_pattern":         ["track_index", "instrument"],
 }
 
 _neo4j_cache: dict | None = None

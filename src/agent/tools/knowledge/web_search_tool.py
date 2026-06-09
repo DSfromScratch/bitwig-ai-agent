@@ -7,7 +7,7 @@ Liefert stilistisches/kulturelles Wissen das nicht in Neo4j oder Modell-Gewichte
 - Spieltechniken und Produktions-Stile
 
 NICHT für: diatonische Akkorde, Bitwig-Device-Parameter, Projektdaten
-→ dafür query_bitwig_docs() oder get_song_context() nutzen.
+→ dafür query_knowledge() nutzen.
 """
 from __future__ import annotations
 import os
@@ -110,9 +110,9 @@ def web_search(query: str) -> str:
     - Aktuelle Trends: "2024 melodic techno Strukturen"
 
     NICHT für:
-    - Diatonische Akkorde einer Tonart → query_bitwig_docs()
-    - Bitwig Device-Parameter → query_bitwig_docs()
-    - Projektdaten → get_song_context()
+    - Diatonische Akkorde einer Tonart → query_knowledge()
+    - Bitwig Device-Parameter → query_knowledge()
+    - Projektdaten → query_knowledge(type="song")
 
     Tipps für bessere Ergebnisse:
     - Auf Englisch suchen für internationale Musikproduktion

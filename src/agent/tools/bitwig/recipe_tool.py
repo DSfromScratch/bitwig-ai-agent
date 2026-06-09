@@ -74,7 +74,7 @@ def create_track_from_recipe(
 
         if not recipe:
             return (f"❌ Kein Track '{track_name}' in '{project_name}' gefunden.\n"
-                    "   Verfügbare Tracks: query_bitwig_docs verwenden.")
+                    "   Verfügbare Tracks: query_knowledge verwenden.")
 
         # MIDI-Noten laden
         notes_data = None
