@@ -9,6 +9,7 @@ from src.agent.router import (
     _is_confirmation,
     _latest_user_text,
     _route_request,
+    classify_intent_llm,
 )
 from src.agent.states.base import AgentPhaseState, PhaseContext
 
@@ -37,11 +38,15 @@ class PreparationState(AgentPhaseState):
         ctx.messages = self._prepare_messages(all_messages, current_phase, phase)
         if phase != current_phase:
             ctx.updates["generation_phase"] = phase
-        ctx.selected_tools = _filter(all_messages, lambda: ALL_TOOLS, phase)
+
+        # Intent einmal per LLM klassifizieren — alle nachfolgenden States lesen ctx.intent
+        ctx.intent = classify_intent_llm(user_text)
+
+        ctx.selected_tools = _filter(all_messages, lambda: ALL_TOOLS, phase, intent=ctx.intent)
         mode = _route_request(user_text)
         ctx.system = SystemMessage(content=_get_prompt_for_mode(mode))
-        log.info("LLM call — mode=%s %d→%d Nachrichten, %d Tools",
-                 mode, len(all_messages), len(ctx.messages), len(ctx.selected_tools))
+        log.info("LLM call — mode=%s intent=%s %d→%d Nachrichten, %d Tools",
+                 mode, ctx.intent, len(all_messages), len(ctx.messages), len(ctx.selected_tools))
         return ctx
 
     @staticmethod

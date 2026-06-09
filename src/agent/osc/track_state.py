@@ -1,5 +1,5 @@
 """
-Track-State und OSC-Verbindung via BitwigStepPlugin (Port 8002) und AgentBridge (8001).
+Track-State und OSC-Verbindung via BitwigStepPlugin (Port 8002).
 """
 from __future__ import annotations
 import os
@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OSC_HOST            = os.getenv("BITWIG_HOST",        "127.0.0.1")
-OSC_PORT            = int(os.getenv("BITWIG_PORT",    "8001"))
-OSC_REPLY_PORT      = int(os.getenv("BITWIG_REPLY_PORT", "9001"))
+OSC_PORT            = int(os.getenv("BITWIG_PORT",    "8002"))
+OSC_REPLY_PORT      = int(os.getenv("BITWIG_REPLY_PORT", "9002"))
 OSC_STEP_PORT       = int(os.getenv("BITWIG_STEP_PORT",  "8002"))
 OSC_STEP_REPLY_PORT = int(os.getenv("BITWIG_STEP_REPLY_PORT", "9002"))
 

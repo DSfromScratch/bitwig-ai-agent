@@ -1,6 +1,7 @@
-"""InvokeState — ruft das LLM auf (mit Kontext-Overflow-Fallback)."""
+"""InvokeState — ruft das LLM auf (mit Backend-Fallback und Kontext-Overflow-Fallback)."""
 from __future__ import annotations
 import logging
+import os
 import time
 from httpx import ConnectError
 from openai import APIConnectionError, BadRequestError
@@ -71,7 +72,8 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
                 log.warning("LLM nicht erreichbar (Versuch %d/3) — warte %ds: %s", attempt + 1, wait, exc)
                 time.sleep(wait)
                 continue
-            raise
+            # Alle Retries erschöpft → MLX-Fallback wenn vLLM primär war
+            return _backend_fallback(system, slim_msgs, slim_tools, exc)
         except BadRequestError as exc:
             msg = str(exc)
             if "maximum context length" not in msg and "input_tokens" not in msg:
@@ -82,7 +84,7 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
 
     # Fallback bei Kontextüberschreitung
     fallback_tools = [t for t in ALL_TOOLS
-                      if getattr(t, "name", "") in {"check_bitwig_connection", "execute_setup"}]
+                      if getattr(t, "name", "") in {"get_bitwig_state", "execute_setup"}]
     fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)
     log.warning("LLM Kontextlimit — Fallback mit %d Tools, max_tokens=700",
                 len(fallback_tools or selected_tools))
@@ -101,3 +103,29 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
         raise RuntimeError(
             f"LLM nicht erreichbar — Kontext zu groß, Fallback fehlgeschlagen: {fallback_exc}"
         ) from fallback_exc
+
+
+def _backend_fallback(system: SystemMessage, messages: list, tools: list, original_exc: Exception):
+    """Fällt auf MLX zurück wenn das primäre Backend (vLLM) nach 3 Versuchen nicht erreichbar ist."""
+    primary = os.getenv("LLM_BACKEND", "mlx").lower()
+    if primary == "mlx":
+        raise RuntimeError(f"MLX-Backend nicht erreichbar: {original_exc}") from original_exc
+
+    log.warning("vLLM nicht erreichbar nach 3 Versuchen — MLX-Fallback: %s", original_exc)
+    try:
+        fallback_llm = _get_llm(max_tokens=800, backend="mlx")
+        if tools:
+            fallback_llm = fallback_llm.bind_tools(tools)
+        response = fallback_llm.invoke([system] + messages)
+        _log_token_usage(response, label="mlx-fallback")
+        return response
+    except Exception as mlx_exc:
+        log.error("MLX-Fallback fehlgeschlagen: %s", mlx_exc)
+        from langchain_core.messages import AIMessage
+        return AIMessage(content=(
+            "⚠️ Kein LLM-Backend erreichbar.\n"
+            "• vLLM (192.168.0.3:8100): nicht verbunden\n"
+            "• MLX (localhost:8080): nicht erreichbar\n\n"
+            "Bitte vLLM starten: `vllm serve ... --served-model-name agent`\n"
+            "oder MLX starten: `mlx_lm.server --model ~/models/Qwen3-14B-4bit --port 8080`"
+        ))

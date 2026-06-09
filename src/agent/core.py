@@ -88,6 +88,20 @@ def build_graph() -> StateGraph:
     return graph.compile()
 
 
+_NUDGE_PREFIXES = (
+    "Deine Antwort war leer.",
+    "Dein Tool-Call war ungültig",
+    "Deine Antwort war nur ein Plan.",
+    "Der Nutzer will",
+    "Die Notengenerierung braucht jetzt",
+)
+
+
+def _is_nudge_message(msg: "HumanMessage") -> bool:
+    text = (msg.content or "").strip()
+    return any(text.startswith(p) for p in _NUDGE_PREFIXES)
+
+
 def _default_state() -> "AgentState":
     return {
         "messages":          [],
@@ -99,9 +113,6 @@ def _default_state() -> "AgentState":
         # Song-Generierungs-Kontext
         "generation_phase":  "idle",
         "song_blueprint":    None,
-        "section_timeline":  [],
-        "quality_report":    None,
-        "pending_sections":  [],
         "retry_count":       0,
         "ui_song_config":    None,
     }
@@ -158,10 +169,16 @@ def chat(message: str, history: list | None = None) -> str:
                     total_out   += meta.get("output_tokens", 0)
                     total_think += (meta.get("output_tokens", 0) - meta.get("input_tokens", 0)) // 2
                     llm_calls   += 1
+        nudge_count = sum(
+            1 for m in result["messages"]
+            if isinstance(m, HumanMessage) and _is_nudge_message(m)
+        )
+        retry_count = result.get("retry_count", 0)
         if llm_calls:
             summary = (
                 f"=== TOKEN SUMMARY ({llm_calls} LLM-Calls): "
-                f"input={total_in} | output={total_out} | total={total_in + total_out}"
+                f"input={total_in} | output={total_out} | total={total_in + total_out} | "
+                f"nudges={nudge_count} retries={retry_count}"
             )
             log.info(summary)
             print(summary, flush=True)

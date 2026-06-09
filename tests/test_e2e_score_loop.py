@@ -203,10 +203,10 @@ class TestE2EScoreLoop:
     def test_rock_intro_score_loop(self, osc_available):
         """Rock Intro: iteriere bis Score >= SCORE_THRESHOLD."""
         if not osc_available:
-            pytest.skip("Bitwig nicht erreichbar (Port 8002/8001) — Integration-Test übersprungen")
+            pytest.skip("Bitwig nicht erreichbar (Port 8002) — Integration-Test übersprungen")
         import os, urllib.request
         _backend = os.getenv("LLM_BACKEND", "vllm").lower()
-        if _backend not in ("copilot", "claude"):
+        if _backend != "claude":
             _llm_base = os.getenv("VLLM_BASE_URL", "http://localhost:8100").rstrip("/")
             try:
                 urllib.request.urlopen(f"{_llm_base}/v1/models", timeout=3)

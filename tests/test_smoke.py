@@ -156,7 +156,7 @@ class TestProjectSmoke:
         """Alle kritischen Tools sind in der Registry (Launchpad-Workflow)."""
         from src.agent.recovery import _get_known_tool_names
 
-        required = {"execute_setup", "check_bitwig_connection", "get_bitwig_track_state"}
+        required = {"execute_setup", "get_bitwig_state", "control_bitwig"}
         missing = required - _get_known_tool_names()
         assert not missing, f"Fehlende Tools in der Registry: {missing}"
 

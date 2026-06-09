@@ -2,8 +2,8 @@
 store_result_in_kb() — Speichert bewertete Artist/Song-Ergebnisse dauerhaft in Neo4j.
 
 Flywheel:
-  web_search() + find_audio_example() → gutes Ergebnis → store_result_in_kb()
-  → nächste Anfrage → query_bitwig_docs() findet es direkt (kein Web nötig)
+  web_search() → gutes Ergebnis → store_result_in_kb()
+  → nächste Anfrage → query_knowledge() findet es direkt (kein Web nötig)
   → generate_context_pairs.py erzeugt daraus neue Trainingspaare
 
 Qualitätsbewertung (automatisch, Minimum 0.5 zum Speichern):
@@ -175,9 +175,9 @@ def _store_song(s, data: dict, quality: float) -> str:
 def store_result_in_kb(data: dict) -> str:
     """Speichert bewertete Artist- oder Song-Ergebnisse dauerhaft in Neo4j.
 
-    Nutze dieses Tool nachdem du web_search + find_audio_example aufgerufen hast
+    Nutze dieses Tool nachdem du web_search aufgerufen hast
     und ein vollständiges Ergebnis (BPM, Tonart, Akkorde/Pattern, Notenplan) vorliegt.
-    Das gespeicherte Wissen steht beim nächsten Mal direkt via query_bitwig_docs bereit.
+    Das gespeicherte Wissen steht beim nächsten Mal direkt via query_knowledge bereit.
 
     Mindest-Qualität zum Speichern: 0.5 (BPM + Key vorhanden).
     Bei Score < 0.5 wird NICHT gespeichert und eine Warnung zurückgegeben.

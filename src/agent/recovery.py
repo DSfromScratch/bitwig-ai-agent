@@ -70,7 +70,7 @@ def _recover_xml_fragment_once(
     fallback_tools = [
         t for t in get_tools_fn()
         if getattr(t, "name", "") in {
-            "check_bitwig_connection", "execute_setup", "query_bitwig_docs",
+            "get_bitwig_state", "execute_setup", "query_knowledge",
         }
     ]
     llm = get_llm_fn(max_tokens=4000).bind_tools(fallback_tools or selected_tools)

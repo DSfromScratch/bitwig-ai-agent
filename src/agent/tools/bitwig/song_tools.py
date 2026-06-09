@@ -1,8 +1,7 @@
 """
 Song-Erstellungs-Tools für den LangGraph-Agenten.
 
-OSC-Kommunikation mit der BitwigAgentBridge — Helper-Funktionen
-für Tests + zwei produktive @tool-Funktionen.
+OSC-Kommunikation mit der BitwigStepPlugin (Port 8002).
 """
 
 from __future__ import annotations
@@ -14,12 +13,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OSC_HOST = os.getenv("BITWIG_HOST", "127.0.0.1")
-OSC_PORT = int(os.getenv("BITWIG_PORT", "8001"))
-OSC_REPLY_PORT = int(os.getenv("BITWIG_REPLY_PORT", "9001"))
+OSC_PORT = int(os.getenv("BITWIG_PORT", "8002"))
+OSC_REPLY_PORT = int(os.getenv("BITWIG_REPLY_PORT", "9002"))
 
-# BitwigStepPlugin — Note-Counter + Track-Management
-OSC_STEP_PORT       = int(os.getenv("BITWIG_STEP_PORT",       "8002"))
-OSC_STEP_REPLY_PORT = int(os.getenv("BITWIG_STEP_REPLY_PORT", "9002"))
+# BitwigStepPlugin — Note-Counter + Track-Management (alias für Klarheit)
+OSC_STEP_PORT       = OSC_PORT
+OSC_STEP_REPLY_PORT = OSC_REPLY_PORT
 
 # ── Re-exports für Backward-Kompatibilität (Bridge-Pattern — Phase 8 entfernen) ──
 from src.agent.osc.device_uuid import (  # noqa: F401
@@ -64,12 +63,11 @@ def check_bitwig_connection() -> dict:
         except (OSError, ValueError, socket.timeout):
             pass
 
-    # Fallback: BitwigAgentBridge Port 8001
     ok = _check_bridge()
     return {
         "connected": ok,
         "message": (
-            "Bitwig erreichbar ✓ (BitwigAgentBridge)" if ok else
+            "Bitwig erreichbar ✓ (BitwigStepPlugin)" if ok else
             "Bitwig nicht erreichbar — Bitwig starten + BitwigStepPlugin aktivieren (Port 8002)"
         ),
     }
@@ -151,3 +149,20 @@ def get_bitwig_track_state() -> str:
         return "\n".join(lines)
 
     return "Track-Zustand unbekannt — Annahme: leeres Projekt, start_track_index=1"
+
+
+@tool
+def get_bitwig_state() -> str:
+    """Prüft Bitwig-Verbindung und gibt den aktuellen Track-Zustand zurück.
+
+    Kombiniert Verbindungscheck und Track-Snapshot in einem Aufruf.
+    Vor execute_setup oder write_pattern_raw aufrufen um den Ist-Zustand zu kennen.
+    Returns: Verbindungsstatus + Anzahl/Namen vorhandener Tracks.
+    """
+    conn = check_bitwig_connection.invoke({})
+    if isinstance(conn, dict) and not conn.get("connected", True):
+        return f"Bitwig nicht erreichbar. {conn.get('message', '')}"
+
+    track_state = get_bitwig_track_state.invoke({})
+    conn_msg = conn.get("message", "Bitwig erreichbar") if isinstance(conn, dict) else str(conn)
+    return f"{conn_msg}\n{track_state}"

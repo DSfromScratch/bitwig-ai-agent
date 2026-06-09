@@ -808,7 +808,16 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     sb.append("]");
 
                     sb.append(",\"tempo\":").append(String.format(java.util.Locale.US, "%.1f", tempo));
-                    sb.append(",\"total_tracks\":").append(trackCount).append("}");
+                    sb.append(",\"total_tracks\":").append(trackCount);
+                    // named params des aktuellen Cursor-Device (für set_param_named)
+                    sb.append(",\"param_catalog\":{");
+                    int pci = 0;
+                    for (Map.Entry<String, Integer> e : paramCatalog.entrySet()) {
+                        if (pci > 0) sb.append(",");
+                        sb.append("\"").append(jsonEsc(e.getKey())).append("\":").append(e.getValue());
+                        pci++;
+                    }
+                    sb.append("}}");
                     sendReply("/agent/project/full-snapshot/response", sb.toString());
                     host.println("[BitwigStep] /agent/project/full-snapshot → " + trackCount + " Tracks, " + markerCount + " CueMarker");
                 });
@@ -1043,6 +1052,62 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     }, 450);
                 });
 
+        // ── Direct OSC Control (Port-8001-Parität) ────────────────────────
+        // Transport
+        space.registerMethod("/transport/play", "*", "Play",
+                (src, msg) -> { transport.play(); sendReply("/ack/transport/play", 1); });
+        space.registerMethod("/transport/stop", "*", "Stop",
+                (src, msg) -> { transport.stop(); sendReply("/ack/transport/stop", 1); });
+        space.registerMethod("/transport/tempo", "*", "Tempo",
+                (src, msg) -> { transport.tempo().setRaw(argFloat(msg, 0, 120f)); sendReply("/ack/tempo/set", 1); });
+        space.registerMethod("/tempo/raw", "*", "Tempo (alias)",
+                (src, msg) -> { transport.tempo().setRaw(argFloat(msg, 0, 120f)); sendReply("/ack/tempo/set", 1); });
+        space.registerMethod("/record", "*", "Record",
+                (src, msg) -> transport.record());
+        space.registerMethod("/repeat", "*", "Loop toggle",
+                (src, msg) -> { float v = argFloat(msg, 0, -1f); if (v < 0) transport.isArrangerLoopEnabled().toggle(); else transport.isArrangerLoopEnabled().set(v > 0); });
+
+        // Per-track OSC routes
+        for (int n = 1; n <= TRACK_BANK_SIZE; n++) {
+            final int tn = n;
+            Track tr = (Track) trackBank.getItemAt(n - 1);
+            space.registerMethod("/track/" + n + "/select", "*", "Select " + n,
+                    (src, msg) -> { tr.selectInMixer(); host.scheduleTask(() -> sendReply("/ack/track/selected", tn), 40); });
+            space.registerMethod("/track/" + n + "/volume", "*", "Volume " + n,
+                    (src, msg) -> tr.volume().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/track/" + n + "/pan", "*", "Pan " + n,
+                    (src, msg) -> tr.pan().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/track/" + n + "/mute", "*", "Mute " + n,
+                    (src, msg) -> tr.mute().set(argFloat(msg, 0, 0f) > 0.5f));
+            space.registerMethod("/track/" + n + "/solo", "*", "Solo " + n,
+                    (src, msg) -> tr.solo().set(argFloat(msg, 0, 0f) > 0.5f));
+        }
+
+        // EQ parameter control (cursorDevice)
+        for (int b = 1; b <= REMOTE_PARAMS; b++) {
+            final int band = b - 1;
+            space.registerMethod("/eq/freq/" + b, "*", "EQ freq " + b,
+                    (src, msg) -> cursorDevice.getParameter(band * 3).value().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/eq/gain/" + b, "*", "EQ gain " + b,
+                    (src, msg) -> cursorDevice.getParameter(band * 3 + 1).value().set(argFloat(msg, 0, 0.5f)));
+            space.registerMethod("/eq/q/" + b, "*", "EQ Q " + b,
+                    (src, msg) -> cursorDevice.getParameter(band * 3 + 2).value().set(argFloat(msg, 0, 0.5f)));
+        }
+
+        // Clip launch/create via legacy paths
+        space.registerMethod("/clip/create", "*", "Create clip",
+                (src, msg) -> {
+                    int slot = Math.max(0, (int) argFloat(msg, 0, 0f) - 1);
+                    int beats = Math.max(1, (int) argFloat(msg, 1, 4f));
+                    clipSlotBank.createEmptyClip(slot, beats);
+                    host.scheduleTask(() -> sendReply("/ack/clip/created", 1), 150);
+                });
+        space.registerMethod("/clip/launch", "*", "Launch clip",
+                (src, msg) -> {
+                    int slot = Math.max(0, (int) argFloat(msg, 0, 0f) - 1);
+                    clipSlotBank.launch(slot);
+                });
+
         // ── HAUPTENDPUNKT: /step/exec ─────────────────────────────────────
         space.registerMethod("/step/exec", "*", "Execute single step",
                 (src, msg) -> {
@@ -1109,6 +1174,8 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             case "set_send" -> execSetSend(src, args);
             case "setup_drum_machine" -> execSetupDrumMachine(src, args);
             case "write_notes" -> execWriteNotes(src, args);
+            case "transpose_clip" -> execTransposeClip(src, args);
+            case "set_clip_loop" -> execSetClipLoop(src, args);
             case "clear_tracks" -> execClearTracks(src);
             case "play" -> {
                 transport.play();
@@ -1625,6 +1692,48 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         }, 200);
     }
 
+    private void execTransposeClip(OscConnection src, String args) {
+        int semitones = (int) JsonStepParser.extractNumField(args, "semitones", 0);
+        int slot = Math.max(0, (int) JsonStepParser.extractNumField(args, "slot", 1) - 1);
+        if (semitones == 0) { stepDone(src, "transpose_clip"); return; }
+        final int fSemi = semitones;
+
+        // Select slot, collect notes via step observer, then rewrite transposed
+        clipSlotBank.select(slot);
+        clipNoteBuf.clear();
+        collectingClipNotes = true;
+        host.scheduleTask(() -> {
+            cursorClip.scrollToStep(0);
+            host.scheduleTask(() -> {
+                collectingClipNotes = false;
+                java.util.List<String> notes = new java.util.ArrayList<>(clipNoteBuf);
+                cursorClip.clearSteps();
+                host.scheduleTask(() -> {
+                    for (String entry : notes) {
+                        String[] parts = entry.split(",");
+                        int step  = Integer.parseInt(parts[0]);
+                        int pitch = Math.max(0, Math.min(127, Integer.parseInt(parts[1]) + fSemi));
+                        cursorClip.setStep(0, step, pitch, 100, 0.5);
+                    }
+                    host.println("[BitwigStep] transpose_clip: " + notes.size()
+                            + " Noten, " + (fSemi > 0 ? "+" : "") + fSemi + " Halbton");
+                    stepDone(src, "transpose_clip");
+                }, 100);
+            }, 600);
+        }, 300);
+    }
+
+    private void execSetClipLoop(OscConnection src, String args) {
+        double beats = JsonStepParser.extractNumField(args, "beats", 4.0);
+        int slot = Math.max(0, (int) JsonStepParser.extractNumField(args, "slot", 1) - 1);
+        clipSlotBank.select(slot);
+        host.scheduleTask(() -> {
+            cursorClip.getLoopLength().set(beats);
+            host.println("[BitwigStep] set_clip_loop: " + beats + " Beats, Slot " + (slot + 1));
+            stepDone(src, "set_clip_loop");
+        }, 200);
+    }
+
     // ── Hilfe ────────────────────────────────────────────────────────────────
 
     /**
@@ -1893,6 +2002,16 @@ public class BitwigStepPluginExtension extends ControllerExtension {
         host.println("[BitwigStep] '" + key + "' auch mit VST-Filter nicht gefunden.");
         if (s3 != null)
             stepDone(s3, "error:" + t3 + ":not_found:" + key);
+    }
+
+    private float argFloat(OscMessage msg, int idx, float def) {
+        try { Float v = msg.getFloat(idx); return v != null ? v : def; }
+        catch (Exception e) { return def; }
+    }
+
+    private String argStr(OscMessage msg, int idx) {
+        try { return msg.getString(idx); }
+        catch (Exception e) { return null; }
     }
 
     @Override

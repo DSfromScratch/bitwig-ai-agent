@@ -449,81 +449,42 @@ class TestKnowledgeQAGuard:
 # ── Teil 2: Agent-Einbindung (Unit) ──────────────────────────────────────────
 
 class TestAgentIntegration:
-    """Prüft dass der Agent query_bitwig_docs korrekt einbindet."""
+    """Prüft dass der Agent query_knowledge (Phase-3-Fusion) korrekt einbindet."""
 
     @pytest.mark.unit
-    def test_query_bitwig_docs_in_all_tools(self):
-        """query_bitwig_docs muss in ALL_TOOLS des Agents sein."""
+    def test_query_knowledge_in_all_tools(self):
+        """query_knowledge (Fusion aus query_bitwig_docs + get_*_context) muss in ALL_TOOLS sein."""
         from src.agent.tools import ALL_TOOLS
         names = [getattr(t, "name", "") for t in ALL_TOOLS]
-        assert "query_bitwig_docs" in names, (
-            f"query_bitwig_docs nicht in ALL_TOOLS: {names}"
+        assert "query_knowledge" in names, (
+            f"query_knowledge nicht in ALL_TOOLS: {names}"
         )
 
     @pytest.mark.unit
-    def test_query_bitwig_docs_in_song_router(self):
-        """Song-Modus gibt alle registrierten Tools frei — query_bitwig_docs inklusive."""
-        from src.agent.router import _filter_tools_for_mode
-        from src.agent.tools import ALL_TOOLS
-        names = [getattr(t, "name", "") for t in _filter_tools_for_mode("song", ALL_TOOLS)]
-        assert "query_bitwig_docs" in names, (
-            "query_bitwig_docs nicht im Song-Modus verfügbar — "
-            "Agent kann Tool nicht aufrufen"
-        )
-
-    @pytest.mark.unit
-    def test_query_bitwig_docs_not_in_control_router(self):
-        """query_bitwig_docs darf nicht im Control-Modus freigegeben sein."""
-        from src.agent.router import _CONTROL_TOOL_NAMES
-        assert "query_bitwig_docs" not in _CONTROL_TOOL_NAMES, (
-            "query_bitwig_docs unnötig im Control-Modus"
-        )
-
-    @pytest.mark.unit
-    def test_filter_tools_includes_query_for_song(self):
-        """_filter_tools_for_mode gibt query_bitwig_docs für song-Modus zurück."""
-        from src.agent.router import _filter_tools_for_mode
+    def test_query_knowledge_always_available(self):
+        """Phase 3: alle Tools immer sichtbar — query_knowledge hat keine Einschränkungen."""
+        from src.agent.router import _select_tools_for_context
         from src.agent.tools import ALL_TOOLS
 
-        song_tools = _filter_tools_for_mode("song", ALL_TOOLS)
-        names = [getattr(t, "name", "") for t in song_tools]
-        assert "query_bitwig_docs" in names
+        result = _select_tools_for_context([], lambda: ALL_TOOLS, "idle", intent="control")
+        names = [getattr(t, "name", "") for t in result]
+        assert "query_knowledge" in names
 
     @pytest.mark.unit
-    def test_filter_tools_excludes_query_for_control(self):
-        """_filter_tools_for_mode gibt query_bitwig_docs NICHT für control-Modus zurück."""
-        from src.agent.router import _filter_tools_for_mode
+    def test_query_knowledge_tool_schema(self):
+        """query_knowledge hat das korrekte Tool-Schema (query + type)."""
         from src.agent.tools import ALL_TOOLS
-
-        control_tools = _filter_tools_for_mode("control", ALL_TOOLS)
-        names = [getattr(t, "name", "") for t in control_tools]
-        assert "query_bitwig_docs" not in names
-
-    @pytest.mark.unit
-    def test_query_bitwig_docs_tool_schema(self):
-        """query_bitwig_docs hat das korrekte Tool-Schema (query + n_results)."""
-        from src.agent.tools import ALL_TOOLS
-        tool = next(t for t in ALL_TOOLS if getattr(t, "name", "") == "query_bitwig_docs")
+        tool = next(t for t in ALL_TOOLS if getattr(t, "name", "") == "query_knowledge")
         schema = tool.args_schema.model_json_schema() if hasattr(tool, "args_schema") else {}
-        # Mindestens 'query' als Parameter
         props = schema.get("properties", {})
         assert "query" in props, f"'query'-Parameter fehlt im Tool-Schema: {props}"
 
     @pytest.mark.unit
-    def test_prompt_mentions_query_bitwig_docs(self):
-        """PROMPT_SONG referenziert query_bitwig_docs damit der Agent weiß wann es nutzen."""
-        from src.agent.prompts import PROMPT_SONG
-        assert "query_bitwig_docs" in PROMPT_SONG, (
-            "PROMPT_SONG erwähnt query_bitwig_docs nicht — Agent könnte Tool ignorieren"
-        )
-
-    @pytest.mark.unit
-    def test_recovery_knows_query_bitwig_docs(self):
-        """Recovery-Mechanismus muss query_bitwig_docs als bekanntes Tool kennen."""
+    def test_recovery_knows_query_knowledge(self):
+        """Recovery-Mechanismus muss query_knowledge als bekanntes Tool kennen."""
         from src.agent.recovery import _get_known_tool_names
-        assert "query_bitwig_docs" in _get_known_tool_names(), (
-            "query_bitwig_docs nicht in der Tool-Registry — "
-            "wird bei Recovery-Fallback u.U. blockiert"
+        assert "query_knowledge" in _get_known_tool_names(), (
+            "query_knowledge nicht in der Tool-Registry"
         )
 
 

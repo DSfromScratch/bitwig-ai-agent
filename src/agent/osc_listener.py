@@ -41,7 +41,7 @@ def _start_agent_ui_osc_listener(on_prompt) -> object | None:
     listen_host  = os.getenv("BITWIG_AGENT_UI_HOST", "127.0.0.1")
     listen_port  = int(os.getenv("BITWIG_AGENT_UI_PORT", "9003"))
     bitwig_host  = os.getenv("BITWIG_HOST", "127.0.0.1")
-    bitwig_port  = int(os.getenv("BITWIG_PORT", "8001"))
+    bitwig_port  = int(os.getenv("BITWIG_PORT", "8002"))
     plugin_port  = int(os.getenv("AGENT_PLUGIN_RESPONSE_PORT", "9004"))
     plugin_host  = os.getenv("AGENT_PLUGIN_HOST", bitwig_host)
     out_clients  = [

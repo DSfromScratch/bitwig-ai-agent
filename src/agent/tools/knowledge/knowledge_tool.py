@@ -106,3 +106,45 @@ def query_bitwig_docs(query: str, n_results: int = 6) -> str:
         return "Keine Ergebnisse gefunden."
 
     return "\n\n" + "\n\n═══\n\n".join(results)
+
+
+@tool
+def query_knowledge(query: str, type: str = "general", limit: int = 6) -> str:
+    """Durchsucht die Wissensdatenbank nach Bitwig-Devices, Künstlern, Songs und Projekten.
+
+    type:
+      general / bitwig  → Bitwig Devices, Parameter, Genres, Workflows (query = Suchanfrage)
+      artist            → Künstlerprofil aus der KB (query = Künstlername)
+      song / project    → Song-Kontext des aktuellen/genannten Bitwig-Projekts (query = Projektname)
+      metadata          → Song-Metadaten via MusicBrainz (query = "Künstler - Titel")
+      songs / list      → Bekannte Songs in der KB auflisten (query wird ignoriert)
+
+    Args:
+        query: Suchanfrage, Künstlername, Projektname oder "Künstler - Titel"
+        type:  Suchtyp (siehe oben), Standard: general
+        limit: Max. Ergebnisse für general-Suche oder songs-Liste (Standard 6)
+    """
+    t = (type or "general").lower().strip()
+
+    if t == "artist":
+        from src.agent.tools.knowledge.artist_tool import get_artist_context
+        return get_artist_context.invoke({"artist_name": query})
+
+    if t in ("song", "project"):
+        from src.agent.tools.music.context_tool import get_song_context
+        return get_song_context.invoke({"project_name": query})
+
+    if t == "metadata":
+        from src.agent.tools.knowledge.song_metadata_tool import search_artist_song_dict, _format
+        if " - " in query:
+            artist, _, title = query.partition(" - ")
+        else:
+            artist, title = query, query
+        return _format(search_artist_song_dict(artist.strip(), title.strip()))
+
+    if t in ("songs", "list"):
+        from src.agent.tools.knowledge.song_metadata_tool import list_known_songs
+        return list_known_songs.invoke({"limit": max(1, min(int(limit), 50))})
+
+    # Default: Bitwig / general KB search
+    return query_bitwig_docs.invoke({"query": query, "n_results": limit})

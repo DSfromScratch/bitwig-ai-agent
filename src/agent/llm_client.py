@@ -72,19 +72,8 @@ def _patch_langchain_tool_call_parser() -> None:
         log.debug("LangChain Tool-Parser Patch nicht angewendet: %s", exc)
 
 
-def _get_copilot_token() -> str:
-    token = (
-        os.getenv("COPILOT_API_KEY")
-        or os.getenv("GITHUB_COPILOT_TOKEN")
-        or os.getenv("COPILOT_TOKEN")
-    )
-    if not token:
-        raise RuntimeError("Copilot-Token fehlt")
-    return token
-
-
 def _get_llm(
-    max_tokens: int = int(os.getenv("COPILOT_MAX_TOKENS", "1500")),
+    max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "2000")),
     backend: str | None = None,
     model: str | None = None,
     temperature: float | None = None,
@@ -97,39 +86,26 @@ def _get_llm(
 
     if backend == "mlx":
         base  = os.getenv("MAC_MLX_URL", "http://localhost:8080") + "/v1"
-        model = model or os.getenv("VLLM_MODEL", "mlx-community/Qwen3-8B-4bit")
+        model = model or os.getenv("MLX_MODEL", "mlx-community/Qwen3-14B-4bit")
         log.info("MLX-Backend: %s / %s", base, model)
         return ChatOpenAI(
             base_url=base, api_key="mlx", model=model,
-            temperature=0.6 if temperature is None else temperature,
+            temperature=0.3 if temperature is None else temperature,
             max_tokens=max_tokens, timeout=120,
         )
 
-    if backend == "copilot":
-        token = _get_copilot_token()
-        base  = os.getenv("COPILOT_BASE_URL", "https://api.githubcopilot.com")
-        model = model or os.getenv("COPILOT_MODEL", "gpt-4.1-mini")
-        log.info("Copilot-Backend: %s / %s", base, model)
+    if backend == "vllm":
+        base  = os.getenv("VLLM_BASE_URL", "http://192.168.0.3:8100") + "/v1"
+        model = model or os.getenv("VLLM_MODEL", "./models/Qwen3-14B-AWQ")
+        log.info("vLLM-Backend: %s / %s", base, model)
         return ChatOpenAI(
-            base_url=base, api_key=token, model=model,
-            temperature=0.6 if temperature is None else temperature,
-            max_tokens=max_tokens, timeout=120,
-            default_headers={
-                "Copilot-Integration-Id": "vscode-chat",
-                "Editor-Version": "vscode/1.99.0",
-                "Editor-Plugin-Version": "copilot-chat/0.27.0",
-            },
+            base_url=base, api_key="vllm", model=model,
+            temperature=0.3 if temperature is None else temperature,
+            max_tokens=min(max_tokens, 1500), timeout=120,
         )
 
-    # vllm
-    base  = os.getenv("VLLM_BASE_URL", "http://192.168.0.3:8100") + "/v1"
-    model = model or os.getenv("VLLM_MODEL", "./models/Qwen3-14B-AWQ")
-    log.info("vLLM-Backend: %s / %s", base, model)
-    return ChatOpenAI(
-        base_url=base, api_key="vllm", model=model,
-        temperature=0.6 if temperature is None else temperature,
-        max_tokens=max_tokens, timeout=120,
-    )
+    log.warning("Unbekanntes LLM_BACKEND '%s' — fallback auf mlx", backend)
+    return _get_llm(max_tokens=max_tokens, backend="mlx", model=model, temperature=temperature)
 
 
 def _log_token_usage(response: AIMessage, label: str = "") -> dict:
