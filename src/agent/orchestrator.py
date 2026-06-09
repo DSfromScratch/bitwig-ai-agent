@@ -1,9 +1,8 @@
-"""LLMOrchestrator — verkettet die 9 LLM-Phasen-States."""
+"""LLMOrchestrator — verkettet die LLM-Phasen-States."""
 from __future__ import annotations
 from src.agent.states import (
     HelpState, PreparationState, InvokeState, ReasoningExtractionState,
-    RecoveryState, InvalidOutputState, PolicyGuardState,
-    EmptyResponseState, FinalizeState,
+    InvalidOutputState, PolicyGuardState, EmptyResponseState, FinalizeState,
 )
 from src.agent.states.base import PhaseContext
 
@@ -14,9 +13,8 @@ class LLMOrchestrator:
         PreparationState(),
         InvokeState(),
         ReasoningExtractionState(),
-        RecoveryState(),
-        InvalidOutputState(),
         PolicyGuardState(),
+        InvalidOutputState(),
         EmptyResponseState(),
         FinalizeState(),
     ]

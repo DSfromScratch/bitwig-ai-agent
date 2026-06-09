@@ -808,7 +808,16 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                     sb.append("]");
 
                     sb.append(",\"tempo\":").append(String.format(java.util.Locale.US, "%.1f", tempo));
-                    sb.append(",\"total_tracks\":").append(trackCount).append("}");
+                    sb.append(",\"total_tracks\":").append(trackCount);
+                    // named params des aktuellen Cursor-Device (für set_param_named)
+                    sb.append(",\"param_catalog\":{");
+                    int pci = 0;
+                    for (Map.Entry<String, Integer> e : paramCatalog.entrySet()) {
+                        if (pci > 0) sb.append(",");
+                        sb.append("\"").append(jsonEsc(e.getKey())).append("\":").append(e.getValue());
+                        pci++;
+                    }
+                    sb.append("}}");
                     sendReply("/agent/project/full-snapshot/response", sb.toString());
                     host.println("[BitwigStep] /agent/project/full-snapshot → " + trackCount + " Tracks, " + markerCount + " CueMarker");
                 });
@@ -1165,6 +1174,8 @@ public class BitwigStepPluginExtension extends ControllerExtension {
             case "set_send" -> execSetSend(src, args);
             case "setup_drum_machine" -> execSetupDrumMachine(src, args);
             case "write_notes" -> execWriteNotes(src, args);
+            case "transpose_clip" -> execTransposeClip(src, args);
+            case "set_clip_loop" -> execSetClipLoop(src, args);
             case "clear_tracks" -> execClearTracks(src);
             case "play" -> {
                 transport.play();
@@ -1678,6 +1689,48 @@ public class BitwigStepPluginExtension extends ControllerExtension {
                 noteCountMap.merge(tn, written, Integer::sum);
             host.println("[BitwigStep] " + written + " Noten → '" + tn + "'" + (append ? " [append]" : ""));
             stepDone(src, "write_notes");
+        }, 200);
+    }
+
+    private void execTransposeClip(OscConnection src, String args) {
+        int semitones = (int) JsonStepParser.extractNumField(args, "semitones", 0);
+        int slot = Math.max(0, (int) JsonStepParser.extractNumField(args, "slot", 1) - 1);
+        if (semitones == 0) { stepDone(src, "transpose_clip"); return; }
+        final int fSemi = semitones;
+
+        // Select slot, collect notes via step observer, then rewrite transposed
+        clipSlotBank.select(slot);
+        clipNoteBuf.clear();
+        collectingClipNotes = true;
+        host.scheduleTask(() -> {
+            cursorClip.scrollToStep(0);
+            host.scheduleTask(() -> {
+                collectingClipNotes = false;
+                java.util.List<String> notes = new java.util.ArrayList<>(clipNoteBuf);
+                cursorClip.clearSteps();
+                host.scheduleTask(() -> {
+                    for (String entry : notes) {
+                        String[] parts = entry.split(",");
+                        int step  = Integer.parseInt(parts[0]);
+                        int pitch = Math.max(0, Math.min(127, Integer.parseInt(parts[1]) + fSemi));
+                        cursorClip.setStep(0, step, pitch, 100, 0.5);
+                    }
+                    host.println("[BitwigStep] transpose_clip: " + notes.size()
+                            + " Noten, " + (fSemi > 0 ? "+" : "") + fSemi + " Halbton");
+                    stepDone(src, "transpose_clip");
+                }, 100);
+            }, 600);
+        }, 300);
+    }
+
+    private void execSetClipLoop(OscConnection src, String args) {
+        double beats = JsonStepParser.extractNumField(args, "beats", 4.0);
+        int slot = Math.max(0, (int) JsonStepParser.extractNumField(args, "slot", 1) - 1);
+        clipSlotBank.select(slot);
+        host.scheduleTask(() -> {
+            cursorClip.getLoopLength().set(beats);
+            host.println("[BitwigStep] set_clip_loop: " + beats + " Beats, Slot " + (slot + 1));
+            stepDone(src, "set_clip_loop");
         }, 200);
     }
 

@@ -111,6 +111,20 @@ class StopStep(_BaseStep):
     type: Literal["stop"] = "stop"
 
 
+class TransposeClipStep(_BaseStep):
+    type: Literal["transpose_clip"] = "transpose_clip"
+    track_index: int
+    semitones: int          # positive = up, negative = down
+    slot: int = 0
+
+
+class SetClipLoopStep(_BaseStep):
+    type: Literal["set_clip_loop"] = "set_clip_loop"
+    track_index: int
+    beats: float            # loop length in beats
+    slot: int = 0
+
+
 # Discriminated Union — alle Step-Typen
 BitwigStep = Union[
     SetTempoStep,
@@ -126,4 +140,6 @@ BitwigStep = Union[
     WriteDrumPatternStep,
     PlayStep,
     StopStep,
+    TransposeClipStep,
+    SetClipLoopStep,
 ]
