@@ -111,3 +111,15 @@ def test_get_bitwig_state_in_bitwig_domain():
     from src.agent.tools.registry import registry
 
     assert registry.domain_of("get_bitwig_state") == "bitwig"
+
+
+def test_generate_pattern_in_music_domain():
+    from src.agent.tools.registry import registry
+
+    assert registry.domain_of("generate_pattern") == "music"
+
+
+def test_all_tools_count_is_thirteen():
+    from src.agent.tools import ALL_TOOLS
+
+    assert len(ALL_TOOLS) == 13, f"Erwarte 13 Tools, bekam {len(ALL_TOOLS)}"

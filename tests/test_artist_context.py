@@ -14,7 +14,8 @@ pytestmark = pytest.mark.unit
 
 def test_tool_is_registered():
     from src.agent.tools import ALL_TOOLS
-    assert "get_artist_context" in [t.name for t in ALL_TOOLS]
+    # get_artist_context ist in query_knowledge integriert (Phase 3)
+    assert "query_knowledge" in [t.name for t in ALL_TOOLS]
 
 
 def test_empty_name_returns_hint():

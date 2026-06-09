@@ -31,7 +31,7 @@ _NUDGE_PREFIXES = (
 )
 
 _SETUP_DONE_TOOLS  = frozenset(["execute_setup", "create_track_from_recipe", "reconstruct_project"])
-_NOTES_DONE_TOOLS  = frozenset(["write_pattern_raw"])
+_NOTES_DONE_TOOLS  = frozenset(["write_pattern_raw", "generate_pattern"])
 _VERIFY_DONE_TOOLS = frozenset(["validate_music", "validate_and_learn", "analyze_song"])
 
 # ── LLM-Intent-Klassifikation ─────────────────────────────────────────────────

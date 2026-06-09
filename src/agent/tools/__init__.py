@@ -9,6 +9,7 @@ from src.agent.tools.bitwig.suggest_tools import launchpad
 from src.agent.tools.knowledge.web_search_tool import web_search
 from src.agent.tools.knowledge.song_learn_tool import learn_song_from_youtube
 from src.agent.tools.music.pattern_raw_tool import write_pattern_raw
+from src.agent.tools.music.pattern_llm_tool import generate_pattern
 from src.agent.tools.registry import registry
 from src.bitwig_executor import execute_setup
 from langchain_core.tools import StructuredTool
@@ -48,6 +49,7 @@ ALL_TOOLS = [
     registry.register(get_bitwig_state, domain="bitwig"),
     registry.register(_make_tool(execute_setup), domain="bitwig"),
     registry.register(write_pattern_raw, domain="music"),
+    registry.register(generate_pattern, domain="music"),
     registry.register(launchpad, domain="music"),
     registry.register(learn_song_from_youtube, domain="knowledge"),
 ]
