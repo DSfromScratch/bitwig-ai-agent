@@ -271,7 +271,7 @@ def _phase_after_recent_tools(messages: list, current_phase: str) -> str:
         if tool_names & _NOTES_DONE_TOOLS:
             return "verifying"
         if tool_names & _SETUP_DONE_TOOLS:
-            return "generating"
+            return "verifying"
     return current_phase
 
 
@@ -281,7 +281,7 @@ def _phase_after_confirmation(text: str, current_phase: str) -> str:
     if current_phase in ("idle", "planning"):
         return "planning"
     if current_phase == "setup":
-        return "generating"
+        return "verifying"
     if current_phase == "generating":
         return "verifying"
     return current_phase

@@ -195,17 +195,18 @@ def test_launchpad_play_request_does_not_repeat_after_play_notes():
     assert _needs_launchpad_tool_nudge(response, state) is False
 
 
-def test_generating_text_response_needs_note_fallback():
+def test_generating_text_response_does_not_need_note_fallback_by_default():
     response = AIMessage(content="Ich würde jetzt Noten schreiben.")
     state = {
         "messages": [HumanMessage(content="Tear Drops Bass auf Track 1")],
         "generation_phase": "generating",
     }
 
-    assert _needs_note_generation_fallback(response, state, {}) is True
+    assert _needs_note_generation_fallback(response, state, {}) is False
 
 
 def test_empty_response_state_uses_copilot_note_fallback(monkeypatch):
+    monkeypatch.setenv("ENABLE_COPILOT_NOTE_FALLBACK", "1")
     fallback = AIMessage(
         content="",
         tool_calls=[

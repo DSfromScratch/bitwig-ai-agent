@@ -148,32 +148,32 @@ def test_control_mode_stays_limited_to_control_tools():
     assert _names(selected) == set(_CONTROL_TOOL_NAMES)
 
 
-def test_recent_setup_tool_advances_to_generating_phase():
+def test_recent_setup_tool_advances_to_verifying_phase():
     class FakeAIMessage:
         tool_calls = [{"name": "execute_setup", "args": {}, "id": "1"}]
 
     messages = [FakeAIMessage()]
 
-    assert _phase_after_recent_tools(messages, "setup") == "generating"
+    assert _phase_after_recent_tools(messages, "setup") == "verifying"
 
 
-def test_neutral_tool_after_setup_keeps_generating_phase():
+def test_neutral_tool_after_setup_keeps_verifying_phase():
     class SetupMessage:
         tool_calls = [{"name": "execute_setup", "args": {}, "id": "1"}]
 
     class NeutralMessage:
         tool_calls = [{"name": "get_bitwig_track_state", "args": {}, "id": "2"}]
 
-    assert _phase_after_recent_tools([SetupMessage(), NeutralMessage()], "idle") == "generating"
+    assert _phase_after_recent_tools([SetupMessage(), NeutralMessage()], "idle") == "verifying"
 
 
-def test_effective_phase_drives_next_tool_selection_after_setup():
+def test_effective_phase_drives_next_tool_selection_after_setup_to_verifying():
     class FakeAIMessage:
         tool_calls = [{"name": "execute_setup", "args": {}, "id": "1"}]
 
     phase = _phase_after_recent_tools([FakeAIMessage()], "setup")
-    all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING
+    all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING | _TOOLS_VERIFYING
     selected = _filter_tools_for_mode("song", _tools(all_names), "mach weiter", phase)
 
-    assert phase == "generating"
-    assert _names(selected) == set(_TOOLS_GENERATING)
+    assert phase == "verifying"
+    assert _names(selected) == set(_TOOLS_VERIFYING)

@@ -94,6 +94,8 @@ class EmptyResponseState(AgentPhaseState):
 
 
 def _needs_note_generation_fallback(response, state: dict, updates: dict) -> bool:
+    if os.getenv("ENABLE_COPILOT_NOTE_FALLBACK", "").lower() not in ("1", "true", "yes"):
+        return False
     if getattr(response, "tool_calls", None):
         return False
     phase = updates.get("generation_phase", state.get("generation_phase", "idle"))

@@ -26,6 +26,8 @@ from bitwigbridge.executor import (
 from bitwigbridge.connection import BitwigConnection  # noqa: E402
 from src.agent.error_handler import log_error, ErrorDomain
 
+_NOTE_TYPES = {"write_notes", "write_drum_pattern"}
+
 # ── Agent-spezifische Interfaces ──────────────────────────────────────────────
 
 def _get_event_emitter():
@@ -155,5 +157,13 @@ def execute_result(result: dict) -> str:
     result_str = _bb_execute_result(result, connection=conn)
     result_str += _track_count_status()
     return result_str
+
+
+def compose_notes(result: dict) -> str:
+    """Backward-compatible alias for note composition flows.
+
+    Older tests patch this symbol directly, so keep it as a thin wrapper.
+    """
+    return execute_result(result)
 
 

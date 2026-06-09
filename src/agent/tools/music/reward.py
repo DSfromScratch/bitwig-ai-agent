@@ -181,6 +181,7 @@ VALID_TOOLS = {
     "reconstruct_project",
     "scan_and_learn_project",
     "get_song_context",
+    "write_pattern_raw",
 }
 
 REQUIRED_PARAMS: dict[str, list[str]] = {
@@ -188,6 +189,7 @@ REQUIRED_PARAMS: dict[str, list[str]] = {
     "reconstruct_project":      ["project_name"],
     "scan_and_learn_project":   [],
     "get_song_context":         ["project_name"],
+    "write_pattern_raw":        ["track_index", "notes", "length_beats"],
 }
 
 _neo4j_cache: dict | None = None
@@ -297,6 +299,11 @@ def score_completion(prompt: str, completion: str) -> tuple[float, dict]:
         project = (args.get("project_name") or "").lower()
         neo4j_ok = not project or _project_match(project, ctx.get("projects", []))
         breakdown["project_ok"] = neo4j_ok
+
+    elif tool == "write_pattern_raw":
+        notes = args.get("notes")
+        neo4j_ok = isinstance(notes, list) and len(notes) > 0
+        breakdown["note_count"] = len(notes) if isinstance(notes, list) else 0
 
     if neo4j_ok:
         score += 0.25
