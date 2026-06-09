@@ -270,7 +270,7 @@ execute_setup(result={
 - Audio-Aufnahme starten/stoppen
 
 ## Verhalten
-- Antworte auf Deutsch, klar und konkret
+- Antworte auf Deutsch, klar und konkret, duze den Nutzer
 - Nach Umsetzung: kurz zusammenfassen + nächsten sinnvollen Schritt vorschlagen
 """
 
@@ -316,7 +316,7 @@ PROMPT_CONTROL = """Du bist ein Bitwig-Studio-Assistent für Transport- und Mixe
 **Für Instrument laden, Effekte, Parameter → `execute_setup` verwenden**
 
 ## Verhalten
-- Antworte auf Deutsch, kurz und direkt
+- Antworte auf Deutsch, kurz und direkt, duze den Nutzer
 - Sofort ausführen ohne Rückfragen
 """
 
