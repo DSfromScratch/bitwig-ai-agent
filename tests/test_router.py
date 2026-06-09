@@ -35,7 +35,7 @@ def _names(tools: list[_FakeTool]) -> set[str]:
 
 def test_song_without_keyword_uses_limited_planning_tools():
     all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING | {"export_mlx_training_data"}
-    selected = _filter_tools_for_mode("song", _tools(all_names), "song")
+    selected = _filter_tools_for_mode("song", _tools(all_names))
 
     assert _names(selected) == set(_TOOLS_PLANNING)
     assert len(selected) < len(all_names)
@@ -51,8 +51,8 @@ def test_song_creation_question_stays_planning_not_knowledge():
     selected = _filter_tools_for_mode(
         "song",
         _tools(all_names),
-        "kannst du mir einen Track vom Song Levels in Bitwig erstellen",
-        phase,
+        intent="song_creation",
+        phase=phase,
     )
 
     assert phase == "planning"
@@ -61,7 +61,7 @@ def test_song_creation_question_stays_planning_not_knowledge():
 
 def test_song_creation_uses_workflow_phase_not_all_production_tools():
     all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING
-    selected = _filter_tools_for_mode("song", _tools(all_names), "erstelle einen drum pattern", "setup")
+    selected = _filter_tools_for_mode("song", _tools(all_names), intent="song_creation", phase="setup")
 
     assert _names(selected) == set(_TOOLS_SETUP)
     assert _names(selected) != set(all_names)
@@ -69,28 +69,28 @@ def test_song_creation_uses_workflow_phase_not_all_production_tools():
 
 def test_generating_phase_uses_note_tools():
     all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING | _TOOLS_VERIFYING
-    selected = _filter_tools_for_mode("song", _tools(all_names), "mach weiter", "generating")
+    selected = _filter_tools_for_mode("song", _tools(all_names), phase="generating")
 
     assert _names(selected) == set(_TOOLS_GENERATING)
 
 
 def test_verifying_phase_uses_validation_tools():
     all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING | _TOOLS_VERIFYING
-    selected = _filter_tools_for_mode("song", _tools(all_names), "mach weiter", "verifying")
+    selected = _filter_tools_for_mode("song", _tools(all_names), phase="verifying")
 
     assert _names(selected) == set(_TOOLS_VERIFYING)
 
 
 def test_knowledge_task_can_use_broader_knowledge_tools():
     all_names = _TOOLS_KNOWLEDGE | _TOOLS_SETUP | _TOOLS_GENERATING
-    selected = _filter_tools_for_mode("song", _tools(all_names), "wie klingt jungle?")
+    selected = _filter_tools_for_mode("song", _tools(all_names), intent="knowledge")
 
     assert _names(selected) == set(_TOOLS_KNOWLEDGE)
 
 
 def test_artist_song_search_is_knowledge_not_song_default():
     all_names = _TOOLS_KNOWLEDGE | _TOOLS_PLANNING | _TOOLS_SETUP
-    selected = _filter_tools_for_mode("song", _tools(all_names), "suche mir einen song von b12")
+    selected = _filter_tools_for_mode("song", _tools(all_names), intent="knowledge")
 
     assert _names(selected) == set(_TOOLS_KNOWLEDGE)
     assert "web_search" in _names(selected)
@@ -98,14 +98,14 @@ def test_artist_song_search_is_knowledge_not_song_default():
 
 
 def test_known_songs_query_includes_song_list_tool():
-    selected = _filter_tools_for_mode("song", _tools(_TOOLS_KNOWLEDGE), "welche Songs kennst du?")
+    selected = _filter_tools_for_mode("song", _tools(_TOOLS_KNOWLEDGE), intent="knowledge")
 
     assert "list_known_songs" in _names(selected)
 
 
 def test_track_count_query_uses_status_tools_not_setup():
     all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_STATUS
-    selected = _filter_tools_for_mode("song", _tools(all_names), "Wie viele Tracks sind in Bitwig vorhanden?")
+    selected = _filter_tools_for_mode("song", _tools(all_names), intent="status")
 
     assert _names(selected) == set(_TOOLS_STATUS)
     assert "execute_setup" not in _names(selected)
@@ -116,7 +116,7 @@ def test_launchpad_play_request_gets_launchpad_tools():
         "check_bitwig_connection", "suggest_notes", "get_launchpad_mode",
         "listen_played_notes", "play_notes", "arm_track",
     }
-    selected = _filter_tools_for_mode("song", _tools(all_names), "spiele einen Beat mit dem Launchpad")
+    selected = _filter_tools_for_mode("song", _tools(all_names), intent="launchpad")
 
     assert "get_launchpad_mode" in _names(selected)
     assert "play_notes" in _names(selected)
@@ -143,7 +143,7 @@ def test_confirmation_keeps_incomplete_workflow_in_planning():
 
 def test_control_mode_stays_limited_to_control_tools():
     all_names = _CONTROL_TOOL_NAMES | _TOOLS_PLANNING | _TOOLS_SETUP
-    selected = _filter_tools_for_mode("control", _tools(all_names), "/play")
+    selected = _filter_tools_for_mode("control", _tools(all_names))
 
     assert _names(selected) == set(_CONTROL_TOOL_NAMES)
 
@@ -173,7 +173,7 @@ def test_effective_phase_drives_next_tool_selection_after_setup_to_verifying():
 
     phase = _phase_after_recent_tools([FakeAIMessage()], "setup")
     all_names = _TOOLS_PLANNING | _TOOLS_SETUP | _TOOLS_GENERATING | _TOOLS_VERIFYING
-    selected = _filter_tools_for_mode("song", _tools(all_names), "mach weiter", phase)
+    selected = _filter_tools_for_mode("song", _tools(all_names), phase=phase)
 
     assert phase == "verifying"
     assert _names(selected) == set(_TOOLS_VERIFYING)

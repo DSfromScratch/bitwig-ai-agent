@@ -22,7 +22,7 @@ def test_song_creation_text_response_needs_setup_nudge():
         "generation_phase": "idle",
     }
 
-    assert _needs_setup_tool_nudge(response, state, {}) is True
+    assert _needs_setup_tool_nudge(response, state, {}, intent="song_creation") is True
 
 
 def test_empty_response_state_turns_song_plan_into_setup_retry():
@@ -32,7 +32,7 @@ def test_empty_response_state_turns_song_plan_into_setup_retry():
         "generation_phase": "idle",
         "retry_count": 0,
     }
-    ctx = PhaseContext(agent_state=state, response=response)
+    ctx = PhaseContext(agent_state=state, response=response, intent="song_creation")
 
     result = EmptyResponseState().execute(ctx)
 
@@ -59,7 +59,7 @@ def test_known_songs_text_response_needs_tool_nudge():
         "generation_phase": "planning",
     }
 
-    assert _needs_known_songs_nudge(response, state) is True
+    assert _needs_known_songs_nudge(response, state, intent="knowledge") is True
 
 
 def test_empty_response_state_nudges_known_songs_tool():
@@ -69,7 +69,7 @@ def test_empty_response_state_nudges_known_songs_tool():
         "generation_phase": "planning",
         "retry_count": 0,
     }
-    ctx = PhaseContext(agent_state=state, response=response)
+    ctx = PhaseContext(agent_state=state, response=response, intent="knowledge")
 
     result = EmptyResponseState().execute(ctx)
 
@@ -94,7 +94,7 @@ def test_known_songs_nudge_does_not_repeat_after_tool_call():
         "generation_phase": "planning",
     }
 
-    assert _needs_known_songs_nudge(response, state) is False
+    assert _needs_known_songs_nudge(response, state, intent="knowledge") is False
 
 
 def test_status_text_response_needs_tool_nudge():
@@ -104,7 +104,7 @@ def test_status_text_response_needs_tool_nudge():
         "generation_phase": "planning",
     }
 
-    assert _needs_status_tool_nudge(response, state) is True
+    assert _needs_status_tool_nudge(response, state, intent="status") is True
 
 
 def test_status_nudge_does_not_repeat_after_track_state_tool():
@@ -123,7 +123,7 @@ def test_status_nudge_does_not_repeat_after_track_state_tool():
         "generation_phase": "planning",
     }
 
-    assert _needs_status_tool_nudge(response, state) is False
+    assert _needs_status_tool_nudge(response, state, intent="status") is False
 
 
 def test_launchpad_text_response_needs_tool_nudge():
@@ -133,7 +133,7 @@ def test_launchpad_text_response_needs_tool_nudge():
         "generation_phase": "verifying",
     }
 
-    assert _needs_launchpad_tool_nudge(response, state) is True
+    assert _needs_launchpad_tool_nudge(response, state, intent="launchpad") is True
 
 
 def test_launchpad_mode_nudge_does_not_repeat_after_tool_call():
@@ -152,7 +152,7 @@ def test_launchpad_mode_nudge_does_not_repeat_after_tool_call():
         "generation_phase": "verifying",
     }
 
-    assert _needs_launchpad_tool_nudge(response, state) is False
+    assert _needs_launchpad_tool_nudge(response, state, intent="launchpad") is False
 
 
 def test_launchpad_play_request_still_needs_play_notes_after_mode_check():
@@ -171,7 +171,7 @@ def test_launchpad_play_request_still_needs_play_notes_after_mode_check():
         "generation_phase": "planning",
     }
 
-    assert _needs_launchpad_tool_nudge(response, state) is True
+    assert _needs_launchpad_tool_nudge(response, state, intent="launchpad") is True
 
 
 def test_launchpad_play_request_does_not_repeat_after_play_notes():
@@ -190,5 +190,5 @@ def test_launchpad_play_request_does_not_repeat_after_play_notes():
         "generation_phase": "planning",
     }
 
-    assert _needs_launchpad_tool_nudge(response, state) is False
+    assert _needs_launchpad_tool_nudge(response, state, intent="launchpad") is False
 

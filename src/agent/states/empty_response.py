@@ -2,7 +2,7 @@
 from __future__ import annotations
 import logging
 from langchain_core.messages import HumanMessage
-from src.agent.router import _classify_task, _latest_user_text
+from src.agent.router import _latest_user_text
 from src.agent.states.base import AgentPhaseState, PhaseContext
 
 log = logging.getLogger("bitwig-agent")
@@ -20,7 +20,7 @@ class EmptyResponseState(AgentPhaseState):
             ))
             ctx.early_return = {"messages": [ctx.response, nudge],
                                 "retry_count": retry, **ctx.updates}
-        elif _needs_launchpad_tool_nudge(ctx.response, ctx.agent_state):
+        elif _needs_launchpad_tool_nudge(ctx.response, ctx.agent_state, intent=ctx.intent):
             retry = ctx.agent_state.get("retry_count", 0) + 1
             log.info("Workflow: Launchpad-Anfrage nur als Text beantwortet — Tool-Nudge #%d", retry)
             user_text = _latest_user_text(ctx.agent_state.get("messages", []))
@@ -41,7 +41,7 @@ class EmptyResponseState(AgentPhaseState):
             nudge = HumanMessage(content=content)
             ctx.early_return = {"messages": [ctx.response, nudge],
                                 "retry_count": retry, **ctx.updates}
-        elif _needs_status_tool_nudge(ctx.response, ctx.agent_state):
+        elif _needs_status_tool_nudge(ctx.response, ctx.agent_state, intent=ctx.intent):
             retry = ctx.agent_state.get("retry_count", 0) + 1
             log.info("Workflow: Bitwig-Status nur als Text beantwortet — Status-Nudge #%d", retry)
             nudge = HumanMessage(content=(
@@ -51,7 +51,7 @@ class EmptyResponseState(AgentPhaseState):
             ))
             ctx.early_return = {"messages": [ctx.response, nudge],
                                 "retry_count": retry, **ctx.updates}
-        elif _needs_setup_tool_nudge(ctx.response, ctx.agent_state, ctx.updates):
+        elif _needs_setup_tool_nudge(ctx.response, ctx.agent_state, ctx.updates, intent=ctx.intent):
             retry = ctx.agent_state.get("retry_count", 0) + 1
             log.info("Workflow: Song-Plan abgeschlossen — Setup-Nudge #%d", retry)
             nudge = HumanMessage(content=(
@@ -62,7 +62,7 @@ class EmptyResponseState(AgentPhaseState):
             updates = {**ctx.updates, "generation_phase": "setup"}
             ctx.early_return = {"messages": [ctx.response, nudge],
                                 "retry_count": retry, **updates}
-        elif _needs_known_songs_nudge(ctx.response, ctx.agent_state):
+        elif _needs_known_songs_nudge(ctx.response, ctx.agent_state, intent=ctx.intent):
             retry = ctx.agent_state.get("retry_count", 0) + 1
             log.info("Workflow: Songliste angefragt — Knowledge-Nudge #%d", retry)
             nudge = HumanMessage(content=(
@@ -75,7 +75,7 @@ class EmptyResponseState(AgentPhaseState):
         return ctx
 
 
-def _needs_setup_tool_nudge(response, state: dict, updates: dict) -> bool:
+def _needs_setup_tool_nudge(response, state: dict, updates: dict, intent: str | None = None) -> bool:
     if getattr(response, "tool_calls", None):
         return False
     if not (getattr(response, "content", "") or "").strip():
@@ -85,18 +85,17 @@ def _needs_setup_tool_nudge(response, state: dict, updates: dict) -> bool:
     if phase not in ("idle", "planning"):
         return False
 
-    user_text = _latest_user_text(state.get("messages", []))
-    return _classify_task(user_text) == "song_creation"
+    return intent == "song_creation"
 
 
-def _needs_launchpad_tool_nudge(response, state: dict) -> bool:
+def _needs_launchpad_tool_nudge(response, state: dict, intent: str | None = None) -> bool:
     if getattr(response, "tool_calls", None):
         return False
     if not (getattr(response, "content", "") or "").strip():
         return False
-    user_text = _latest_user_text(state.get("messages", []))
-    if _classify_task(user_text) != "launchpad":
+    if intent != "launchpad":
         return False
+    user_text = _latest_user_text(state.get("messages", []))
     if _is_launchpad_play_request(user_text):
         return not _has_recent_tool_call(state.get("messages", []), "play_notes")
     if _has_recent_tool_call_any(
@@ -110,15 +109,14 @@ def _needs_launchpad_tool_nudge(response, state: dict) -> bool:
     return True
 
 
-def _needs_status_tool_nudge(response, state: dict) -> bool:
+def _needs_status_tool_nudge(response, state: dict, intent: str | None = None) -> bool:
     if getattr(response, "tool_calls", None):
         return False
     if not (getattr(response, "content", "") or "").strip():
         return False
     if _has_recent_tool_call(state.get("messages", []), "get_bitwig_track_state"):
         return False
-    user_text = _latest_user_text(state.get("messages", []))
-    return _classify_task(user_text) == "status"
+    return intent == "status"
 
 
 def _is_launchpad_play_request(text: str) -> bool:
@@ -128,17 +126,19 @@ def _is_launchpad_play_request(text: str) -> bool:
     ))
 
 
-def _needs_known_songs_nudge(response, state: dict) -> bool:
+def _needs_known_songs_nudge(response, state: dict, intent: str | None = None) -> bool:
     if getattr(response, "tool_calls", None):
         return False
     if not (getattr(response, "content", "") or "").strip():
         return False
     if _has_recent_tool_call(state.get("messages", []), "list_known_songs"):
         return False
+    if intent != "knowledge":
+        return False
     user_text = _latest_user_text(state.get("messages", [])).lower()
     if not user_text:
         return False
-    asks_song_list = (
+    return (
         "welche songs" in user_text
         or "welche lieder" in user_text
         or "songs kennst" in user_text
@@ -147,7 +147,6 @@ def _needs_known_songs_nudge(response, state: dict) -> bool:
         or "gelernte songs" in user_text
         or "known songs" in user_text
     )
-    return asks_song_list and _classify_task(user_text) == "knowledge"
 
 
 def _has_recent_tool_call(messages: list, name: str) -> bool:

@@ -14,6 +14,7 @@ class PhaseContext:
     response: object = None         # AIMessage
     updates: dict = field(default_factory=dict)
     early_return: dict | None = None
+    intent: str | None = None       # LLM-klassifizierter Intent (einmal in PreparationState gesetzt)
 
 
 class AgentPhaseState(ABC):
