@@ -22,6 +22,10 @@ class EmptyResponseState(AgentPhaseState):
             return ctx
 
         has_content = bool((ctx.response.content or "").strip())
+
+        # Im done-summary-Modus (0 Tools) → Text-Antwort korrekt, kein Nudge
+        if ctx.updates.get("generation_phase") == "done" and has_content:
+            return ctx
         needs_nudge = (
             not has_content                              # leere Antwort (think-only)
             or ctx.intent in _ACTION_INTENTS             # Text ohne Tool-Call bei Action-Intent

@@ -30,9 +30,10 @@ _NUDGE_PREFIXES = (
     "Dein Tool-Call war ungültig",               # InvalidOutputState
 )
 
-_SETUP_DONE_TOOLS  = frozenset(["execute_setup", "create_track_from_recipe", "reconstruct_project"])
-_NOTES_DONE_TOOLS  = frozenset(["write_pattern_raw", "generate_pattern"])
-_VERIFY_DONE_TOOLS = frozenset(["validate_music", "validate_and_learn", "analyze_song"])
+_SETUP_DONE_TOOLS     = frozenset(["execute_setup", "create_track_from_recipe", "reconstruct_project"])
+_NOTES_DONE_TOOLS     = frozenset(["write_pattern_raw", "generate_pattern"])
+_VERIFY_DONE_TOOLS    = frozenset(["validate_music", "validate_and_learn", "analyze_song"])
+_LAUNCHPAD_DONE_TOOLS = frozenset(["launchpad"])
 
 # ── LLM-Intent-Klassifikation ─────────────────────────────────────────────────
 
@@ -99,8 +100,14 @@ def classify_note_input_answer(text: str) -> str:
     """Klassifiziert die User-Antwort auf die Noten-Eingabe-Frage.
 
     Gibt "launchpad" zurück wenn der User selbst spielen will, sonst "agent".
+    Numerische Antworten (1/2) werden bevorzugt ausgewertet.
     """
-    lower = text.lower()
+    stripped = text.strip()
+    if stripped in ("1", "1.") or stripped.startswith("1. ") or stripped.startswith("1 "):
+        return "launchpad"
+    if stripped in ("2", "2.") or stripped.startswith("2. ") or stripped.startswith("2 "):
+        return "agent"
+    lower = stripped.lower()
     if any(kw in lower for kw in _NOTE_INPUT_LAUNCHPAD_KW):
         return "launchpad"
     return "agent"
@@ -178,6 +185,8 @@ def _phase_after_recent_tools(messages: list, current_phase: str) -> str:
             return "done"
         if tool_names & _SETUP_DONE_TOOLS:
             return "verifying"
+        if tool_names & _LAUNCHPAD_DONE_TOOLS:
+            return "done"
     return current_phase
 
 

@@ -6,7 +6,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from src.agent.router import classify_note_input_answer
 from src.agent.states.base import PhaseContext
-from src.agent.states.preparation import PreparationState, _NOTE_INPUT_QUESTION, _NOTE_INPUT_HINTS
+from src.agent.states.preparation import PreparationState, _build_note_input_question, _NOTE_INPUT_HINTS
+_NOTE_INPUT_QUESTION = _build_note_input_question()
 
 pytestmark = pytest.mark.unit
 

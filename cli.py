@@ -265,24 +265,38 @@ class BitwigCLI(App):
 
             with self._history_lock:
                 self._session_state = _merge_session_state(state, result)
-                reply = self._session_state["messages"][-1].content
+                msgs = self._session_state["messages"]
+                from langchain_core.messages import AIMessage as _AI
+                last_ai = next(
+                    (m for m in reversed(msgs) if isinstance(m, _AI) and (m.content or "").strip()),
+                    None,
+                )
+                reply = last_ai.content if last_ai else (msgs[-1].content if msgs else "Keine Antwort.")
 
             self.call_from_thread(self._on_agent_reply, reply, list(pending))
         except Exception as exc:
-            self.call_from_thread(self._on_agent_error, str(exc))
+            import traceback as _tb
+            tb = _tb.format_exc()
+            import logging as _log
+            _log.getLogger("bitwig-agent").error("_run_agent Fehler:\n%s", tb)
+            label = f"{type(exc).__name__}: {exc}"
+            self.call_from_thread(self._on_agent_error, label, tb)
 
     def _on_agent_reply(self, text: str, tools: list[dict]) -> None:
         self._set_thinking(False)
         chat = self.query_one(ChatLog)
         for tool in tools:
-            chat.add_tool(tool["name"], tool.get("args", {}))
+            chat.add_tool(tool.get("name") or "?", tool.get("args", {}))
         chat.add_agent(text)
         chat.scroll_end(animate=False)
 
-    def _on_agent_error(self, error: str) -> None:
+    def _on_agent_error(self, error: str, traceback: str = "") -> None:
         self._set_thinking(False)
         chat = self.query_one(ChatLog)
         chat.add_error(error)
+        if traceback:
+            for line in traceback.strip().splitlines()[-6:]:
+                chat.add_system(line)
         chat.scroll_end(animate=False)
 
     def _set_thinking(self, visible: bool) -> None:
@@ -294,7 +308,7 @@ class BitwigCLI(App):
 
     def _setup_event_bus(self) -> None:
         from src.agent.events import get_event_bus
-        get_event_bus().subscribe("tool_call", lambda p: self._pending_tools.append(p))
+        get_event_bus().subscribe("tool_call", lambda e: self._pending_tools.append(e["payload"]))
 
     # ── Actions ───────────────────────────────────────────────────────────────
 

@@ -23,19 +23,128 @@ MAX_SUMMARY_ITEM_CHARS = 180
 MAX_PHASE_SUMMARY_CHARS = 700
 
 
-_NOTE_INPUT_QUESTION = (
-    "Möchtest du die Noten **selbst auf dem Launchpad** einspielen, "
-    "oder soll ich sie **automatisch generieren**?\n\n"
-    "• **Launchpad** — du spielst live ein, ich arme den Track\n"
-    "• **Agent** — ich generiere die Noten automatisch"
-)
+def _build_note_input_question(user_text: str = "") -> str:
+    """Baut die Launchpad/Agent-Frage — filtert Instrumente nach Stichwort aus user_text."""
+    base = (
+        "Möchtest du die Noten selbst einspielen oder soll ich sie generieren?\n\n"
+        "1. Launchpad — du spielst live ein (+ Instrument angeben)\n"
+        "2. Agent — ich generiere die Noten automatisch\n"
+    )
+    instrument_block = _fetch_instrument_list(user_text)
+    if instrument_block:
+        base += f"\n{instrument_block}"
+        base += "\nBeispiel-Antwort: \"1. Arturia Bass V3\""
+    return base
+
+
+_INSTRUMENT_CATEGORIES = frozenset(["synthesizer", "sampler", "oscillator"])
+
+_INSTRUMENT_KEYWORDS = {
+    "bass":      ["bass"],
+    "piano":     ["piano", "keys", "keyboard", "klavier"],
+    "synth":     ["synth", "lead", "pad", "arp"],
+    "drums":     ["drum", "beat", "schlagzeug", "kick"],
+    "guitar":    ["guitar", "gitarre"],
+    "strings":   ["string", "violin", "cello", "streicher"],
+    "sampler":   ["sample", "kontakt"],
+}
+
+# Compound phrases checked before individual keywords to avoid "bass drum" → "bass"
+_COMPOUND_KEYWORDS: list[tuple[str, str]] = [
+    ("bass drum",    "drum"),
+    ("drum kit",     "drum"),
+    ("drum machine", "drum"),
+    ("kick drum",    "drum"),
+    ("808",          "drum"),
+]
+
+
+def _extract_search_term(user_text: str) -> str | None:
+    """Extrahiert ein Instrument-Stichwort aus dem User-Request (z.B. 'drum' aus 'Drum Kit')."""
+    lower = user_text.lower()
+    # Compound-Begriffe zuerst (verhindert dass "bass drum" → "bass")
+    for phrase, term in _COMPOUND_KEYWORDS:
+        if phrase in lower:
+            return term
+    for keywords in _INSTRUMENT_KEYWORDS.values():
+        for kw in keywords:
+            if kw in lower:
+                return kw
+    return None
+
+
+def _fetch_instrument_list(user_text: str = "") -> str:
+    """Lädt Instrumente aus Neo4j, gefiltert nach Namens-Stichwort wenn erkennbar."""
+    search = _extract_search_term(user_text)
+    try:
+        from src.knowledge.neo4j_graph import session
+        with session() as s:
+            if search:
+                # Gezielt nach Namen suchen (Device + InstalledPlugin)
+                rows = s.run(
+                    "MATCH (d:Device) "
+                    "WHERE (d.category IN $cats OR d.device_type = 'instrument') "
+                    "  AND toLower(d.name) CONTAINS $term "
+                    "RETURN d.name AS name, coalesce(d.category,'synthesizer') AS category "
+                    "ORDER BY d.name LIMIT 12",
+                    cats=list(_INSTRUMENT_CATEGORIES), term=search,
+                ).data()
+                vst_rows = s.run(
+                    "MATCH (p:InstalledPlugin {installed: true}) "
+                    "WHERE toLower(p.name) CONTAINS $term "
+                    "RETURN p.name AS name, p.type AS category "
+                    "ORDER BY p.name LIMIT 12",
+                    term=search,
+                ).data()
+            else:
+                # Alle Kategorien, aber nur echte Plugin-Nodes (kein Name-only-Fallback)
+                rows = s.run(
+                    "MATCH (d:Device) "
+                    "WHERE d.category IN $cats "
+                    "  AND NOT d.name IN ['Drum Machine','E-Clap','E-Cowbell','E-Hat',"
+                    "                     'E-Kick','E-Snare','E-Tom','Hi-hat','Kick','Tom'] "
+                    "RETURN d.name AS name, d.category AS category "
+                    "ORDER BY category, d.name",
+                    cats=list(_INSTRUMENT_CATEGORIES),
+                ).data()
+                vst_rows = s.run(
+                    "MATCH (p:InstalledPlugin {installed: true}) "
+                    "RETURN p.name AS name, p.type AS category "
+                    "ORDER BY p.type, p.name LIMIT 40"
+                ).data()
+
+            rows.extend(vst_rows)
+
+        if not rows:
+            return ""
+
+        by_cat: dict[str, list[str]] = {}
+        seen: set[str] = set()
+        for r in rows:
+            n = r["name"]
+            if n in seen:
+                continue
+            seen.add(n)
+            by_cat.setdefault(r.get("category", "synthesizer"), []).append(n)
+
+        header = (f"Passende Instrumente für '{search}':"
+                  if search else "Verfügbare Instrumente (oder beliebigen VST-Namen eingeben):")
+        lines = [header]
+        for cat, names in sorted(by_cat.items()):
+            lines.append(f"  {cat}: {', '.join(names)}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
 
 _NOTE_INPUT_HINTS = {
     "launchpad": (
         "HINWEIS: Der User möchte die Noten SELBST auf dem Launchpad einspielen.\n"
-        "→ Ruf launchpad(action='arm', arm=1) auf um den Track aufnahmebereit zu machen.\n"
-        "→ Danach launchpad(action='listen') um die gespielten Noten aufzunehmen.\n"
-        "NICHT generate_pattern oder write_pattern_raw aufrufen."
+        "Das gewünschte Instrument steht in der User-Antwort (z.B. '1. Arturia Bass V3').\n"
+        "Schritt 1: execute_setup aufrufen — add_track + load_instrument mit dem genannten Instrument.\n"
+        "  Falls kein Instrument erkennbar: nimm ein generisches Bass-/Synth-Preset.\n"
+        "Schritt 2: launchpad(action='arm', arm=1) aufrufen.\n"
+        "NICHT generate_pattern, write_pattern_raw oder launchpad(action='listen') aufrufen."
     ),
     "agent": (
         "HINWEIS: Der User möchte dass der AGENT die Noten automatisch generiert.\n"
@@ -62,21 +171,32 @@ class PreparationState(AgentPhaseState):
         ctx.intent = classify_intent_llm(user_text)
 
         # ── Noten-Eingabe-Abfrage ────────────────────────────────────────────
-        if ctx.intent == "song_creation":
-            if note_input_mode is None:
-                # Frage stellen — kein LLM-Call nötig
-                ctx.early_return = {
-                    "messages": [AIMessage(content=_NOTE_INPUT_QUESTION)],
-                    "generation_phase": phase,
-                    "note_input_mode": "pending",
-                }
-                log.info("note_input_mode: Frage gestellt")
-                return ctx
-            elif note_input_mode == "pending":
-                # Antwort klassifizieren und speichern
-                note_input_mode = classify_note_input_answer(user_text)
-                ctx.updates["note_input_mode"] = note_input_mode
-                log.info("note_input_mode: %s (aus '%s')", note_input_mode, user_text[:40])
+        if ctx.intent == "song_creation" and note_input_mode is None:
+            # Frage stellen — kein LLM-Call nötig
+            ctx.early_return = {
+                "messages": [AIMessage(content=_build_note_input_question(user_text))],
+                "generation_phase": phase,
+                "note_input_mode": "pending",
+            }
+            log.info("note_input_mode: Frage gestellt")
+            return ctx
+
+        if note_input_mode == "pending":
+            # Antwort klassifizieren — auch wenn intent=launchpad (User hat "Launchpad" geantwortet)
+            note_input_mode = classify_note_input_answer(user_text)
+            ctx.updates["note_input_mode"] = note_input_mode
+            log.info("note_input_mode: %s (aus '%s')", note_input_mode, user_text[:40])
+
+        # ── Phase done → kein Tool-Call, nur Zusammenfassung ─────────────────
+        if phase == "done":
+            ctx.updates["generation_phase"] = "done"
+            ctx.intent = ctx.intent or classify_intent_llm(user_text)
+            ctx.selected_tools = []
+            ctx.messages = self._prepare_messages(all_messages, current_phase, phase, note_input_mode)
+            mode = _route_request(user_text)
+            ctx.system = SystemMessage(content=_get_prompt_for_mode(mode))
+            log.info("LLM call (done summary) — intent=%s 0 Tools", ctx.intent)
+            return ctx
 
         ctx.messages = self._prepare_messages(all_messages, current_phase, phase, note_input_mode)
         if phase != current_phase:

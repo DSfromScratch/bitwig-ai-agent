@@ -12,9 +12,15 @@ class FinalizeState(AgentPhaseState):
         has_tool_calls = bool(getattr(ctx.response, "tool_calls", None))
         if has_tool_calls:
             for tc in ctx.response.tool_calls:
-                log.info("Tool-Call: %s(%s)", tc["name"], str(tc.get("args", {}))[:120])
+                if not isinstance(tc, dict):
+                    log.warning("FinalizeState: tc ist kein dict: %r", tc)
+                    continue
+                name = tc.get("name") or tc.get("function", {}).get("name", "?")
+                if not name or name == "?":
+                    log.warning("FinalizeState: tc ohne name-Feld: %r", tc)
+                log.info("Tool-Call: %s(%s)", name, str(tc.get("args", {}))[:120])
                 get_event_bus().emit("tool_call", {
-                    "name": tc["name"],
+                    "name": name or "?",
                     "args": tc.get("args", {}),
                 })
         else:

@@ -55,10 +55,23 @@ def _trim_messages(messages: list, max_messages: int = 4, max_tool_result_chars:
     return trimmed
 
 
+def _prepend_no_think(messages: list) -> list:
+    """Fügt /no_think der letzten HumanMessage hinzu — verhindert Token-Verschwendung."""
+    from langchain_core.messages import HumanMessage as _HM
+    msgs = list(messages)
+    for i in range(len(msgs) - 1, -1, -1):
+        if isinstance(msgs[i], _HM):
+            content = msgs[i].content or ""
+            if not content.startswith("/no_think"):
+                msgs[i] = _HM(content="/no_think\n" + content)
+            break
+    return msgs
+
+
 def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: list):
     from src.agent.tools import ALL_TOOLS
     slim_tools = _trim_tool_descriptions(selected_tools) if selected_tools else []
-    slim_msgs  = _trim_messages(messages)
+    slim_msgs  = _prepend_no_think(_trim_messages(messages))
     llm = _get_llm().bind_tools(slim_tools) if slim_tools else _get_llm()
     # Retry bei ConnectError (Server-OOM-Crash → LaunchAgent startet ihn neu)
     for attempt in range(config.agent_max_retries):
