@@ -81,15 +81,16 @@ write_pattern_raw(
 | action | Beschreibung | Wichtige Args |
 |--------|-------------|---------------|
 | `"mode"` | Aktuellen Modus abfragen | — |
+| `"set_mode"` | Modus wechseln | `mode="session"|"drum"|"instrument"` |
 | `"suggest"` | Noten auf Pads hervorheben | `notes=[60,62,64]`, `r/g/b` |
 | `"arm"` | Track armed für Aufnahme | `arm=1` (an) / `arm=0` (aus) |
 | `"listen"` | Gespielte Noten aufzeichnen | `duration=3.0` |
 | `"play"` | Noten-Liste abspielen | `note_data=[{note,velocity,duration}]`, `bpm` |
 
 **Launchpad-Modi:**
-- **Session** (weiß): Transport, Volume, Tempo
-- **User 1** (rot): DRUM — 4×4 Grid, MIDI Noten 36–51, Kanal 10
-- **User 2** (grün): INSTRUMENT — 8×8 Scale-Layout ab C3=48
+- **Session** (weiß): Clip-/Scene-Matrix, Tracks als Spalten, Scenes als Reihen
+- **User 1** (rot): DRUM — 4×4 Grid unten links, MIDI-Noten/Profile für Drums
+- **User 2** (grün): INSTRUMENT — komplettes 8×8 Scale-/Performance-Layout
 - **Mixer**: Bitwig Mixer-Panel
 
 Nach `execute_setup` passende Noten hervorheben:
@@ -249,6 +250,7 @@ execute_setup(result={
 | `arm_track` | → `launchpad(action="arm", arm=1)` |
 | `listen_played_notes` | → `launchpad(action="listen", duration=3.0)` |
 | `get_launchpad_mode` | → `launchpad(action="mode")` |
+| `set_launchpad_mode` | → `launchpad(action="set_mode", mode="instrument")` |
 | `find_audio_example` | → `web_search(...)` |
 | `analyze_song` | nicht verfügbar |
 | `export_mlx_training_data` | nicht verfügbar |

@@ -27,7 +27,7 @@ _DEAD_TOOLS = frozenset([
     "query_bitwig_docs", "get_song_context", "get_artist_context",
     "search_artist_song", "list_known_songs",
     "suggest_notes", "arm_track", "listen_played_notes", "get_launchpad_mode",
-    "play_notes", "find_audio_example", "analyze_song",
+    "set_launchpad_mode", "play_notes", "find_audio_example", "analyze_song",
     "scan_vst_plugins", "export_mlx_training_data",
 ])
 

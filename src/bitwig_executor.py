@@ -128,17 +128,25 @@ def execute_setup(result: dict) -> str:
 
     conn = _make_connection()
 
-    # Drum-Profil nach erfolgreichem load_instrument setzen
+    # Drum-Profil + Instrument-Layout nach erfolgreichem load_instrument setzen
     def _on_step_done(payload: dict) -> None:
         if payload.get("type") == "load_instrument":
             name = payload.get("args", {}).get("name", "")
-            if name and any(k in name.lower() for k in
-                            {"drum", "vd-", "vd_", "mt-power", "v0 ", "v1 ", "v8 ", "v9 "}):
-                try:
-                    from src.agent.tools.bitwig.suggest_tools import set_drum_profile
+            if not name:
+                return
+            try:
+                from src.agent.tools.bitwig.suggest_tools import (
+                    set_drum_profile, set_instrument_layout, _detect_launchpad_layout,
+                )
+                if any(k in name.lower() for k in
+                       {"drum", "vd-", "vd_", "mt-power", "v0 ", "v1 ", "v8 ", "v9 "}):
                     set_drum_profile(name)
-                except Exception as _e:
-                    log_error(ErrorDomain.TOOL, _e, "bitwig_executor.set_drum_profile")
+                else:
+                    layout = _detect_launchpad_layout(name)
+                    if layout:
+                        set_instrument_layout(layout["root"], layout["scale"])
+            except Exception as _e:
+                log_error(ErrorDomain.TOOL, _e, "bitwig_executor.launchpad_layout")
 
     result_str = _bb_execute_setup(result, connection=conn, on_step_done=_on_step_done)
     result_str += _track_count_status()

@@ -8,11 +8,11 @@ import com.bitwig.extension.controller.api.*;
 /**
  * Standalone Launchpad MK2 Controller — drei Modi:
  *
- *   CONTROL    — Transport-Controls + Mixer (Seiten-Button Row 8, Note 89)
- *   DRUM       — 4×4 Drum-Pad-Grid, MIDI-Noten frei konfigurierbar (Row 7, Note 79)
- *   INSTRUMENT — 8×8 Scale-Layout, Root-Note + Skala konfigurierbar (Row 6, Note 69)
+ *   SESSION    — 8×8 Clip-Launcher-Grid (Bitwig Session/Clip-Ansicht), Pfeil-Buttons scrollen
+ *   DRUM       — 4×4 Drum-Pad-Grid, MIDI-Noten frei konfigurierbar
+ *   INSTRUMENT — 8×8 Scale-Layout, Root-Note + Skala konfigurierbar
  *
- * Konfiguration: Konstanten am Anfang der Klasse.
+ * Session-Button (CC 108) → SESSION, User1 (CC 109) → DRUM, User2 (CC 110) → INSTRUMENT
  */
 public class LaunchpadControllerExtension extends ControllerExtension {
 
@@ -52,20 +52,14 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private static final int[] DRUM_COLOR_CYMBAL  = {40,  0, 63};  // lila
     private static final int[] DRUM_COLOR_HIT     = {63, 63, 63};  // weiß (bei Treffer)
 
-    // ── Instrument Konfiguration ──────────────────────────────────────────────
-    // Root-Note (MIDI): 60 = C4, 48 = C3, 36 = C2
-    private static final int INST_ROOT_NOTE = 48; // C3
-
-    // Skala-Intervalle (Halbtonschritte ab Root)
-    // Major:        {0, 2, 4, 5, 7, 9, 11}
-    // Minor:        {0, 2, 3, 5, 7, 8, 10}
-    // Pentatonic:   {0, 2, 4, 7, 9}
-    // Blues:        {0, 3, 5, 6, 7, 10}
-    // Chromatic:    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
-    private static final int[] INST_SCALE = {0, 2, 4, 5, 7, 9, 11}; // Major
-
-    // Intervall zwischen Zeilen (Halbtonschritte): 5 = Quarte, 7 = Quinte
-    private static final int INST_ROW_INTERVAL = 5; // Quarte (Ableton-Push-Layout)
+    // ── Instrument Konfiguration (dynamisch per OSC /launchpad/layout) ──────────
+    // Root-Note (MIDI): 60 = C4, 48 = C3, 40 = E2 (Bass), 36 = C2
+    private int instRootNote    = 48; // C3
+    // Skala-Intervalle: Major={0,2,4,5,7,9,11}, Minor={0,2,3,5,7,8,10},
+    //   Pentatonic={0,2,4,7,9}, Blues={0,3,5,6,7,10}, Chromatic=alle 12
+    private int[] instScale       = {0, 2, 4, 5, 7, 9, 11}; // Major
+    // Intervall zwischen Zeilen: 5 = Quarte (Push-Layout), 7 = Quinte
+    private int instRowInterval = 5;
 
     // Instrument Farben
     private static final int[] INST_COLOR_ROOT    = {0,  63,  0};  // grün (Root-Note)
@@ -73,17 +67,16 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private static final int[] INST_COLOR_OUTSIDE = {5,   5,  5};  // sehr dunkel (außerhalb)
     private static final int[] INST_COLOR_HIT     = {63, 63, 63};  // weiß (bei Treffer)
 
-    // ── Control Mode Mapping ──────────────────────────────────────────────────
-    // 8 Pads in Zeile 1 (Notes 11–18) → Aktionen
-    private static final String[] CONTROL_ROW1 = {
-        "play_stop", "stop", "record", "undo",
-        "loop_toggle", "mute_toggle", "next_track", "prev_track"
-    };
-    // 8 Pads in Zeile 2 (Notes 21–28) → Aktionen (leer = inaktiv)
-    private static final String[] CONTROL_ROW2 = {
-        "solo_toggle", "vol_up", "vol_down", "tempo_up",
-        "tempo_down", "", "", ""
-    };
+    // ── Session Mode Farben ───────────────────────────────────────────────────
+    private static final int[] SESSION_COLOR_EMPTY     = { 0,  0,  0};  // aus
+    private static final int[] SESSION_COLOR_STOPPED   = { 0, 25,  0};  // gedimmt grün
+    private static final int[] SESSION_COLOR_PLAYING   = { 0, 63,  0};  // hell grün
+    private static final int[] SESSION_COLOR_QUEUED    = {30, 63,  0};  // gelb-grün
+    private static final int[] SESSION_COLOR_RECORDING = {63,  0,  0};  // rot
+    private static final int[] SESSION_COLOR_REC_QUEUE = {63, 30,  0};  // orange
+
+    private static final int SESSION_TRACKS = 8;
+    private static final int SESSION_SCENES = 8;
 
     // ── Launchpad MK2 Layout ──────────────────────────────────────────────────
     // Top-Row CC-Buttons (senden CC auf Kanal 1)
@@ -96,11 +89,13 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private static final int CC_BTN_USER2   = 110; // Modus: Instrument
     private static final int CC_BTN_MIXER   = 111; // Bitwig Mixer-Panel
 
-    // Rechte Spalte (Note-On, von oben nach unten)
-    private static final int BTN_VOLUME     = 89;
-    private static final int BTN_STOP_CLIP  = 49;
-    private static final int BTN_MUTE       = 39;
-    private static final int BTN_RECORD_ARM = 19;
+    // Rechte Spalte (Note-On, von oben nach unten) — Original Launchpad MK2 Labels
+    private static final int BTN_RECORD_ARM   = 89;
+    private static final int BTN_TRACK_SELECT = 79;
+    private static final int BTN_MUTE         = 69;
+    private static final int BTN_SOLO         = 59;
+    // 49=Volume, 39=Pan, 29=Sends — aktuell ungenutzt
+    private static final int BTN_STOP_CLIP    = 19;
 
     // Port für den eingebauten OSC-Server (LED-Suggestions + Mode-Query vom Agent)
     private static final int LED_OSC_PORT   = 8003;
@@ -108,8 +103,8 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private static final int MODE_REPLY_PORT = 9005;
 
     // ── Interne Zustands-Felder ───────────────────────────────────────────────
-    private enum Mode { CONTROL, DRUM, INSTRUMENT }
-    private Mode currentMode = Mode.CONTROL;
+    private enum Mode { SESSION, DRUM, INSTRUMENT }
+    private Mode currentMode = Mode.SESSION;
     private OscConnection      modeReplyConn;
     private SettableStringValue agentHost;
 
@@ -122,6 +117,15 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private Transport      transport;
     private CursorTrack    cursorTrack;
     private Application    application;
+    private TrackBank      trackBank;
+    private final ClipLauncherSlotBank[] slotBanks = new ClipLauncherSlotBank[SESSION_TRACKS];
+
+    // Per-property boolean caches — updated only by indexed bank observers (no .get() calls)
+    private final boolean[][] clipHasContent   = new boolean[SESSION_TRACKS][SESSION_SCENES];
+    private final boolean[][] clipIsPlaying    = new boolean[SESSION_TRACKS][SESSION_SCENES];
+    private final boolean[][] clipIsRecording  = new boolean[SESSION_TRACKS][SESSION_SCENES];
+    private final boolean[][] clipIsPlayQueued = new boolean[SESSION_TRACKS][SESSION_SCENES];
+    private final boolean[][] clipIsRecQueued  = new boolean[SESSION_TRACKS][SESSION_SCENES];
 
     // Pads die zuletzt per suggest_notes beleuchtet wurden (zum Löschen)
     private final java.util.List<Integer> suggestionPads = new java.util.ArrayList<>();
@@ -150,13 +154,13 @@ public class LaunchpadControllerExtension extends ControllerExtension {
                         .getStringSetting("Agent Host (IP)", "Network", 64, "127.0.0.1");
         agentHost.markInterested();
 
-        // NoteInput für Drum-Modus: alle MIDI-Noten auf Kanal 1 (Launchpad-Standard)
-        drumNoteInput = midiIn.createNoteInput("LP Drums", "9?????", "8?????");
+        // NoteInput nur für musikalische Pad-Noten; Funktions-/Scene-Buttons bleiben im Callback.
+        drumNoteInput = midiIn.createNoteInput("LP Drums", buildDrumInputMasks());
         drumNoteInput.setShouldConsumeEvents(true);
         drumNoteInput.setKeyTranslationTable(buildDrumTranslationTable());
 
-        // NoteInput für Instrument-Modus: eigener virtueller Kanal
-        instNoteInput = midiIn.createNoteInput("LP Instrument", "9?????", "8?????");
+        // NoteInput für Instrument-Modus: 8×8 Grid ohne rechte Funktionsspalte.
+        instNoteInput = midiIn.createNoteInput("LP Instrument", buildInstrumentInputMasks());
         instNoteInput.setShouldConsumeEvents(true);
         instNoteInput.setKeyTranslationTable(buildInstTranslationTable());
 
@@ -166,12 +170,36 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         midiIn.setMidiCallback(this::onMidi);
 
+        // TrackBank für Session View: 8 Tracks × 8 Scenes
+        trackBank = host.createMainTrackBank(SESSION_TRACKS, 0, SESSION_SCENES);
+        for (int t = 0; t < SESSION_TRACKS; t++) {
+            final int ti = t;
+            Track tr = (Track) trackBank.getItemAt(ti);
+            tr.exists().markInterested();
+            slotBanks[ti] = tr.clipLauncherSlotBank();
+            slotBanks[ti].addHasContentObserver((idx, v) -> {
+                if (idx < SESSION_SCENES) { clipHasContent[ti][idx] = v;   if (currentMode == Mode.SESSION) paintSlotLed(ti, idx); }
+            });
+            slotBanks[ti].addIsPlayingObserver((idx, v) -> {
+                if (idx < SESSION_SCENES) { clipIsPlaying[ti][idx] = v;    if (currentMode == Mode.SESSION) paintSlotLed(ti, idx); }
+            });
+            slotBanks[ti].addIsRecordingObserver((idx, v) -> {
+                if (idx < SESSION_SCENES) { clipIsRecording[ti][idx] = v;  if (currentMode == Mode.SESSION) paintSlotLed(ti, idx); }
+            });
+            slotBanks[ti].addIsPlaybackQueuedObserver((idx, v) -> {
+                if (idx < SESSION_SCENES) { clipIsPlayQueued[ti][idx] = v; if (currentMode == Mode.SESSION) paintSlotLed(ti, idx); }
+            });
+            slotBanks[ti].addIsRecordingQueuedObserver((idx, v) -> {
+                if (idx < SESSION_SCENES) { clipIsRecQueued[ti][idx] = v;  if (currentMode == Mode.SESSION) paintSlotLed(ti, idx); }
+            });
+        }
+
         setupLedOsc();
 
         // 300ms warten bis Launchpad MIDI-Verbindung bereit ist, dann LEDs setzen
         host.scheduleTask(() -> {
-            enterMode(Mode.CONTROL);
-            host.showPopupNotification("Launchpad Agent — Control Mode");
+            enterMode(Mode.SESSION);
+            host.showPopupNotification("Launchpad Agent — Session Mode");
         }, 300);
         host.println("[Launchpad] Controller gestartet");
     }
@@ -195,87 +223,148 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
         if (!pressed && !released && !ccPressed) return;
 
+        if ((pressed || ccPressed) && handleFunctionButton(data1)) return;
+
         // Top-Row CC-Buttons
         if (ccPressed) {
             switch (data1) {
-                case CC_BTN_SESSION: enterMode(Mode.CONTROL);                                    break;
+                case CC_BTN_SESSION: enterMode(Mode.SESSION);                                    break;
                 case CC_BTN_USER1:   enterMode(Mode.DRUM);                                       break;
                 case CC_BTN_USER2:   enterMode(Mode.INSTRUMENT);                                 break;
                 case CC_BTN_MIXER:   application.setPanelLayout(Application.PANEL_LAYOUT_MIX);  break;
-                case CC_BTN_UP:      executeAction("vol_up");                                    break;
-                case CC_BTN_DOWN:    executeAction("vol_down");                                  break;
-                case CC_BTN_LEFT:    executeAction("prev_track");                                break;
-                case CC_BTN_RIGHT:   executeAction("next_track");                                break;
+                case CC_BTN_UP:
+                    if (currentMode == Mode.SESSION) trackBank.scrollTracksUp();
+                    else executeAction("vol_up");    break;
+                case CC_BTN_DOWN:
+                    if (currentMode == Mode.SESSION) trackBank.scrollTracksDown();
+                    else executeAction("vol_down");  break;
+                case CC_BTN_LEFT:
+                    if (currentMode == Mode.SESSION) trackBank.scrollScenesUp();
+                    else executeAction("prev_track"); break;
+                case CC_BTN_RIGHT:
+                    if (currentMode == Mode.SESSION) trackBank.scrollScenesDown();
+                    else executeAction("next_track"); break;
             }
             return;
         }
 
-        // Rechte Spalte — globale Bitwig-Aktionen
-        if (pressed) {
-            switch (data1) {
-                case BTN_VOLUME:     cursorTrack.mute().set(false);  return; // Unmute
-                case BTN_MUTE:       cursorTrack.mute().set(true);   return; // Mute
-                case BTN_STOP_CLIP:  transport.stop();               return;
-                case BTN_RECORD_ARM: transport.record();             return;
-            }
-        }
-
         switch (currentMode) {
-            case CONTROL:    handleControl(data1, pressed);                   break;
-            case DRUM:       handleDrum(data1, data2, pressed, released);     break;
+            case SESSION:    handleSession(data1, pressed);                     break;
+            case DRUM:       handleDrum(data1, data2, pressed, released);       break;
             case INSTRUMENT: handleInstrument(data1, data2, pressed, released); break;
         }
     }
 
-    // ── Control Mode ─────────────────────────────────────────────────────────
+    private boolean handleFunctionButton(int noteOrCc) {
+        switch (noteOrCc) {
+            case BTN_RECORD_ARM:
+                cursorTrack.arm().toggle();
+                flashFunctionButton(BTN_RECORD_ARM, 63, 63, 63);
+                return true;
+            case BTN_TRACK_SELECT:
+                cursorTrack.selectNext();
+                flashFunctionButton(BTN_TRACK_SELECT, 63, 63, 63);
+                return true;
+            case BTN_MUTE:
+                cursorTrack.mute().toggle();
+                flashFunctionButton(BTN_MUTE, 63, 63, 63);
+                return true;
+            case BTN_SOLO:
+                cursorTrack.solo().toggle();
+                flashFunctionButton(BTN_SOLO, 63, 63, 63);
+                return true;
+            case BTN_STOP_CLIP:
+                transport.stop();
+                flashFunctionButton(BTN_STOP_CLIP, 63, 63, 63);
+                return true;
+            default:
+                return false;
+        }
+    }
 
-    private void handleControl(int note, boolean pressed) {
+    private void flashFunctionButton(int button, int r, int g, int b) {
+        setLed(button, r, g, b);
+        host.scheduleTask(this::paintModeButtons, 120);
+    }
+
+    // ── Session Mode ─────────────────────────────────────────────────────────
+
+    /** Berechnet den Launchpad-Pad-Note aus Track- und Scene-Index. */
+    private int sessionPadNote(int trackIdx, int sceneIdx) {
+        int row = SESSION_SCENES - sceneIdx;  // Zeile 8 = Scene 0 (oben)
+        int col = trackIdx + 1;
+        return row * 10 + col;
+    }
+
+    /** Leitet den Clip-Anzeigestatus aus den boolean Caches ab (keine API-Calls). */
+    private int deriveClipState(int t, int s) {
+        if (clipIsRecQueued[t][s])  return 5;
+        if (clipIsRecording[t][s])  return 4;
+        if (clipIsPlayQueued[t][s]) return 3;
+        if (clipIsPlaying[t][s])    return 2;
+        if (clipHasContent[t][s])   return 1;
+        return 0;
+    }
+
+    private void paintSlotLed(int trackIdx, int sceneIdx) {
+        int pad = sessionPadNote(trackIdx, sceneIdx);
+        int state = deriveClipState(trackIdx, sceneIdx);
+        int[] color;
+        switch (state) {
+            case 1:  color = SESSION_COLOR_STOPPED;   break;
+            case 2:  color = SESSION_COLOR_PLAYING;   break;
+            case 3:  color = SESSION_COLOR_QUEUED;    break;
+            case 4:  color = SESSION_COLOR_RECORDING; break;
+            case 5:  color = SESSION_COLOR_REC_QUEUE; break;
+            default: color = SESSION_COLOR_EMPTY;     break;
+        }
+        setLed(pad, color[0], color[1], color[2]);
+    }
+
+    private void handleSession(int note, boolean pressed) {
         if (!pressed) return;
         int row = note / 10;
-        int col = (note % 10) - 1; // 0-basiert
-        if (col < 0 || col > 7) return;
+        int col = note % 10;
+        if (row < 1 || row > 8 || col < 1 || col > 8) return;
+        int sceneIdx = SESSION_SCENES - row;
+        int trackIdx = col - 1;
+        if (trackIdx >= SESSION_TRACKS || sceneIdx >= SESSION_SCENES) return;
+        slotBanks[trackIdx].launch(sceneIdx);
+        // LED kurz weiß aufleuchten, dann zurück auf Clip-Status
+        setLed(note, 63, 63, 63);
+        host.scheduleTask(() -> paintSlotLed(trackIdx, sceneIdx), 150);
+    }
 
-        String action = null;
-        if (row == 1 && col < CONTROL_ROW1.length) action = CONTROL_ROW1[col];
-        if (row == 2 && col < CONTROL_ROW2.length) action = CONTROL_ROW2[col];
+    private boolean isSessionGridPad(int note) {
+        int row = note / 10;
+        int col = note % 10;
+        return row >= 1 && row <= 8 && col >= 1 && col <= 8;
+    }
 
-        if (action != null && !action.isEmpty()) {
-            executeAction(action);
-            flashLed(note, 63, 63, 63); // kurzes Weiß-Aufleuchten
+    private void repaintSessionPad(int note) {
+        int row = note / 10;
+        int col = note % 10;
+        int sceneIdx = SESSION_SCENES - row;
+        int trackIdx = col - 1;
+        if (trackIdx >= 0 && trackIdx < SESSION_TRACKS && sceneIdx >= 0 && sceneIdx < SESSION_SCENES) {
+            paintSlotLed(trackIdx, sceneIdx);
+        }
+    }
+
+    private void paintSessionMode() {
+        for (int t = 0; t < SESSION_TRACKS; t++) {
+            for (int s = 0; s < SESSION_SCENES; s++) {
+                paintSlotLed(t, s);
+            }
         }
     }
 
     private void executeAction(String action) {
         switch (action) {
-            case "play_stop":   transport.play();                                    break;
-            case "stop":        transport.stop();                                    break;
-            case "record":      transport.record();                                  break;
-            case "undo":        application.undo();                                  break;
-            case "loop_toggle": transport.isArrangerLoopEnabled().toggle();          break;
-            case "mute_toggle": cursorTrack.mute().toggle();                         break;
-            case "solo_toggle": cursorTrack.solo().toggle();                         break;
-            case "next_track":  cursorTrack.selectNext();                            break;
-            case "prev_track":  cursorTrack.selectPrevious();                        break;
-            case "vol_up":      cursorTrack.volume().inc(1.0 / 128.0, 128);          break;
-            case "vol_down":    cursorTrack.volume().inc(-1.0 / 128.0, 128);         break;
-            case "tempo_up":    transport.tempo().inc(1.0, 512);                     break;
-            case "tempo_down":  transport.tempo().inc(-1.0, 512);                    break;
-        }
-    }
-
-    private void paintControlMode() {
-        // Zeile 1
-        for (int c = 0; c < CONTROL_ROW1.length; c++) {
-            int note = 11 + c;
-            int[] col = LaunchpadPadLayout.actionColor(CONTROL_ROW1[c]);
-            setLed(note, col[0], col[1], col[2]);
-        }
-        // Zeile 2
-        for (int c = 0; c < CONTROL_ROW2.length; c++) {
-            int note = 21 + c;
-            if (CONTROL_ROW2[c].isEmpty()) { setLed(note, 0, 0, 0); continue; }
-            int[] col = LaunchpadPadLayout.actionColor(CONTROL_ROW2[c]);
-            setLed(note, col[0], col[1], col[2]);
+            case "vol_up":   cursorTrack.volume().inc(1.0 / 128.0, 128);   break;
+            case "vol_down": cursorTrack.volume().inc(-1.0 / 128.0, 128);  break;
+            case "next_track": cursorTrack.selectNext();                    break;
+            case "prev_track": cursorTrack.selectPrevious();                break;
         }
     }
 
@@ -315,7 +404,6 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     }
 
     private void paintDrumMode() {
-        clearAllLeds();
         for (int row = 0; row < 4; row++) {
             for (int col = 0; col < 4; col++) {
                 int idx = row * 4 + col;
@@ -328,7 +416,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     // ── Instrument Mode ───────────────────────────────────────────────────────
 
     private void handleInstrument(int note, int velocity, boolean pressed, boolean released) {
-        int midiNote = LaunchpadPadLayout.instNoteForPad(note, INST_ROOT_NOTE, INST_ROW_INTERVAL, INST_SCALE);
+        int midiNote = LaunchpadPadLayout.instNoteForPad(note, instRootNote, instRowInterval, instScale);
         if (midiNote < 0 || midiNote > 127) return;
 
         if (pressed) {
@@ -345,18 +433,17 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
 
     private int[] instPadColor(int midiNote) {
-        int interval = ((midiNote - INST_ROOT_NOTE) % 12 + 12) % 12;
+        int interval = ((midiNote - instRootNote) % 12 + 12) % 12;
         if (interval == 0) return INST_COLOR_ROOT;
-        for (int s : INST_SCALE) if (s == interval) return INST_COLOR_SCALE;
+        for (int s : instScale) if (s == interval) return INST_COLOR_SCALE;
         return INST_COLOR_OUTSIDE;
     }
 
     private void paintInstrumentMode() {
-        clearAllLeds();
         for (int row = 1; row <= 8; row++) {
             for (int col = 1; col <= 8; col++) {
                 int padNote  = row * 10 + col;
-                int midiNote = LaunchpadPadLayout.instNoteForPad(padNote, INST_ROOT_NOTE, INST_ROW_INTERVAL, INST_SCALE);
+                int midiNote = LaunchpadPadLayout.instNoteForPad(padNote, instRootNote, instRowInterval, instScale);
                 if (midiNote < 0 || midiNote > 127) continue;
                 int[] color = instPadColor(midiNote);
                 setLed(padNote, color[0], color[1], color[2]);
@@ -365,6 +452,35 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     }
 
     // ── Translation Tables für NoteInput ─────────────────────────────────────
+
+    private String midiNoteMask(int statusNibble, int note) {
+        return String.format("%X?%02X??", statusNibble, note & 0x7F);
+    }
+
+    private void addNoteInputMasks(java.util.List<String> masks, int note) {
+        masks.add(midiNoteMask(0x9, note));
+        masks.add(midiNoteMask(0x8, note));
+    }
+
+    private String[] buildDrumInputMasks() {
+        java.util.List<String> masks = new java.util.ArrayList<>();
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 4; col++) {
+                addNoteInputMasks(masks, LaunchpadPadLayout.DRUM_GRID_NOTES[row][col]);
+            }
+        }
+        return masks.toArray(new String[0]);
+    }
+
+    private String[] buildInstrumentInputMasks() {
+        java.util.List<String> masks = new java.util.ArrayList<>();
+        for (int row = 1; row <= 8; row++) {
+            for (int col = 1; col <= 8; col++) {
+                addNoteInputMasks(masks, row * 10 + col);
+            }
+        }
+        return masks.toArray(new String[0]);
+    }
 
     private void setDrumProfile(String pluginName) {
         String key = pluginName.toLowerCase().replace("-", "").replace(" ", "").replace("_", "");
@@ -388,6 +504,20 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         host.println("[Launchpad] Drum-Profil: " + profileName + " für '" + pluginName + "'");
     }
 
+    private void setInstrumentLayout(int rootNote, String scaleType) {
+        instRootNote = rootNote;
+        switch (scaleType.toLowerCase()) {
+            case "minor":      instScale = new int[]{0,2,3,5,7,8,10};          break;
+            case "pentatonic": instScale = new int[]{0,2,4,7,9};               break;
+            case "blues":      instScale = new int[]{0,3,5,6,7,10};            break;
+            case "chromatic":  instScale = new int[]{0,1,2,3,4,5,6,7,8,9,10,11}; break;
+            default:           instScale = new int[]{0,2,4,5,7,9,11};         break; // major
+        }
+        instNoteInput.setKeyTranslationTable(buildInstTranslationTable());
+        if (currentMode == Mode.INSTRUMENT) paintInstrumentMode();
+        host.println("[Launchpad] Instrument-Layout: root=" + rootNote + ", scale=" + scaleType);
+    }
+
     private Integer[] buildDrumTranslationTable() {
         Integer[] table = new Integer[128];
         java.util.Arrays.fill(table, -1); // alle blockieren
@@ -407,7 +537,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         for (int row = 1; row <= 8; row++) {
             for (int col = 1; col <= 8; col++) {
                 int padNote  = row * 10 + col;
-                int midiNote = LaunchpadPadLayout.instNoteForPad(padNote, INST_ROOT_NOTE, INST_ROW_INTERVAL, INST_SCALE);
+                int midiNote = LaunchpadPadLayout.instNoteForPad(padNote, instRootNote, instRowInterval, instScale);
                 if (padNote < 128 && midiNote >= 0 && midiNote <= 127)
                     table[padNote] = midiNote;
             }
@@ -419,17 +549,17 @@ public class LaunchpadControllerExtension extends ControllerExtension {
 
     private void enterMode(Mode mode) {
         currentMode = mode;
-        // NoteInput-Routing: nur aktiver Modus konsumiert MIDI vom Launchpad
         drumNoteInput.setShouldConsumeEvents(mode == Mode.DRUM);
         instNoteInput.setShouldConsumeEvents(mode == Mode.INSTRUMENT);
+        suggestionPads.clear();
         clearAllLeds();
-        paintModeButtons();
 
         switch (mode) {
-            case CONTROL:    paintControlMode();    break;
+            case SESSION:    paintSessionMode();    break;
             case DRUM:       paintDrumMode();       break;
             case INSTRUMENT: paintInstrumentMode(); break;
         }
+        paintModeButtons();
         safeSendReply("/launchpad/mode/changed", mode.name());
         host.println("[Launchpad] Modus: " + mode);
     }
@@ -449,9 +579,9 @@ public class LaunchpadControllerExtension extends ControllerExtension {
     private void paintModeButtons() {
         // Session/User1/User2: aktiver Modus hell, andere dunkel
         setLed(CC_BTN_SESSION,
-            currentMode == Mode.CONTROL    ? 63 : 8,
-            currentMode == Mode.CONTROL    ? 63 : 8,
-            currentMode == Mode.CONTROL    ? 63 : 8);
+            currentMode == Mode.SESSION    ? 63 : 8,
+            currentMode == Mode.SESSION    ? 63 : 8,
+            currentMode == Mode.SESSION    ? 63 : 8);
         setLed(CC_BTN_USER1,
             currentMode == Mode.DRUM       ? 63 : 8, 0, 0);
         setLed(CC_BTN_USER2,
@@ -463,11 +593,15 @@ public class LaunchpadControllerExtension extends ControllerExtension {
         setLed(CC_BTN_DOWN,  10, 20, 10);
         setLed(CC_BTN_LEFT,   0, 20, 40);
         setLed(CC_BTN_RIGHT,  0, 30, 50);
-        // Rechte Spalte: feste Aktionen
-        setLed(BTN_VOLUME,     0,  50,  0);  // grün = unmute
-        setLed(BTN_MUTE,      50,  15,  0);  // orange = mute
-        setLed(BTN_STOP_CLIP, 50,  20,  0);  // orange-rot = stop
-        setLed(BTN_RECORD_ARM, 63,  0,  0);  // rot = record
+        // Rechte Spalte: Original Launchpad MK2 Labels
+        setLed(BTN_RECORD_ARM,   63,  0,  0);  // Rot    = Record Arm
+        setLed(BTN_TRACK_SELECT,  0, 30, 63);  // Blau   = Track Select
+        setLed(BTN_MUTE,         50, 15,  0);  // Orange = Mute
+        setLed(BTN_SOLO,         63, 63,  0);  // Gelb   = Solo
+        setLed(49,                0,  0,  0);  // aus    = Volume (ungenutzt)
+        setLed(39,                0,  0,  0);  // aus    = Pan (ungenutzt)
+        setLed(29,                0,  0,  0);  // aus    = Sends (ungenutzt)
+        setLed(BTN_STOP_CLIP,    50, 20,  0);  // Orange-Rot = Stop Clip
     }
 
     // ── LED Hilfsmethoden ─────────────────────────────────────────────────────
@@ -502,6 +636,10 @@ public class LaunchpadControllerExtension extends ControllerExtension {
                     int r   = (int) oscFloat(msg, 1, 0f);
                     int g   = (int) oscFloat(msg, 2, 0f);
                     int b   = (int) oscFloat(msg, 3, 0f);
+                    if (currentMode == Mode.SESSION && isSessionGridPad(pad)) {
+                        repaintSessionPad(pad);
+                        return;
+                    }
                     setLed(pad, r, g, b);
                     if (r == 0 && g == 0 && b == 0) {
                         suggestionPads.remove(Integer.valueOf(pad));
@@ -513,14 +651,17 @@ public class LaunchpadControllerExtension extends ControllerExtension {
             // /launchpad/suggest/clear  — alle Suggestion-LEDs löschen
             space.registerMethod("/launchpad/suggest/clear", "*", "Clear suggestion LEDs",
                 (src, msg) -> {
-                    for (int pad : suggestionPads) setLed(pad, 0, 0, 0);
+                    for (int pad : suggestionPads) {
+                        if (currentMode == Mode.SESSION && isSessionGridPad(pad)) repaintSessionPad(pad);
+                        else setLed(pad, 0, 0, 0);
+                    }
                     suggestionPads.clear();
                     host.println("[Launchpad] Suggestion-LEDs gelöscht");
                 });
 
             // Modus per OSC wechseln — scheduleTask sorgt für Bitwig-Hauptthread
-            space.registerMethod("/launchpad/mode/control",    "*", "Enter CONTROL mode",
-                (src, msg) -> host.scheduleTask(() -> enterMode(Mode.CONTROL), 0));
+            space.registerMethod("/launchpad/mode/session",    "*", "Enter SESSION mode",
+                (src, msg) -> host.scheduleTask(() -> enterMode(Mode.SESSION), 0));
             space.registerMethod("/launchpad/mode/drum",       "*", "Enter DRUM mode",
                 (src, msg) -> host.scheduleTask(() -> enterMode(Mode.DRUM), 0));
             space.registerMethod("/launchpad/mode/instrument", "*", "Enter INSTRUMENT mode",
@@ -533,7 +674,7 @@ public class LaunchpadControllerExtension extends ControllerExtension {
                     final Mode m = currentMode;
                     host.scheduleTask(() -> {
                         if (m == Mode.DRUM) drumNoteInput.sendRawMidiEvent(0x99, note, vel);
-                        else                instNoteInput.sendRawMidiEvent(0x90, note, vel);
+                        else if (m == Mode.INSTRUMENT) instNoteInput.sendRawMidiEvent(0x90, note, vel);
                     }, 0);
                 });
             space.registerMethod("/launchpad/note/off", "*", "Stop note — main thread",
@@ -542,8 +683,17 @@ public class LaunchpadControllerExtension extends ControllerExtension {
                     final Mode m = currentMode;
                     host.scheduleTask(() -> {
                         if (m == Mode.DRUM) drumNoteInput.sendRawMidiEvent(0x89, note, 0);
-                        else                instNoteInput.sendRawMidiEvent(0x80, note, 0);
+                        else if (m == Mode.INSTRUMENT) instNoteInput.sendRawMidiEvent(0x80, note, 0);
                     }, 0);
+                });
+            // /launchpad/layout <root_midi_note> <scale_type>  — Instrument-Grid Layout setzen
+            space.registerMethod("/launchpad/layout", "*", "Set instrument layout root+scale",
+                (src, msg) -> {
+                    int root     = (int) oscFloat(msg, 0, 48f);
+                    String scale = msg.getString(1);
+                    if (scale == null || scale.isBlank()) scale = "major";
+                    final int r = root; final String s = scale;
+                    host.scheduleTask(() -> setInstrumentLayout(r, s), 0);
                 });
             space.registerMethod("/launchpad/track/arm", "*", "Arm/disarm cursor track — main thread",
                 (src, msg) -> {

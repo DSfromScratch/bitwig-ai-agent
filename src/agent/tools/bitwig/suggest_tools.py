@@ -1,8 +1,9 @@
 from __future__ import annotations
 import os
-import socket
 import time
 from langchain_core.tools import tool
+
+from src.agent.tools.bitwig import launchpad_state
 
 _INST_ROOT = 48                        # C3
 _INST_SCALE = [0, 2, 4, 5, 7, 9, 11]  # Major-Skala-Intervalle
@@ -13,7 +14,6 @@ OSC_LED_PORT     = int(os.getenv("LAUNCHPAD_LED_PORT", "8003"))
 MODE_REPLY_PORT  = int(os.getenv("LAUNCHPAD_REPLY_PORT", "9005"))
 
 _prev_pads: list[int] = []
-_current_mode: str = "UNKNOWN"
 
 
 _DRUM_NAMES = {
@@ -51,37 +51,12 @@ def listen_played_notes(duration: float = 3.0) -> str:
         duration: Lausch-Dauer in Sekunden (Standard 3.0, max 10.0)
     """
     duration = min(max(duration, 0.5), 10.0)
-    from src.agent.osc.client import configure_dgram_socket
-    sock = configure_dgram_socket(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
-    try:
-        sock.bind(("", MODE_REPLY_PORT))
-    except OSError as e:
-        return f"[listen_played_notes] Port {MODE_REPLY_PORT} belegt: {e}"
-
-    from pythonosc.osc_message import OscMessage
-    import time
-
-    played: list[tuple[int, int]] = []  # (midi_note, velocity)
-    sock.settimeout(0.2)
-    end = time.monotonic() + duration
-    try:
-        while time.monotonic() < end:
-            try:
-                data, _ = sock.recvfrom(512)
-                if b"/launchpad/note/played" not in data:
-                    continue
-                msg = OscMessage(data)
-                if len(msg.params) >= 1:
-                    note = int(msg.params[0])
-                    vel  = int(msg.params[1]) if len(msg.params) >= 2 else 100
-                    if (note, vel) not in played:
-                        played.append((note, vel))
-            except socket.timeout:
-                pass
-            except Exception:
-                pass
-    finally:
-        sock.close()
+    played_events = launchpad_state.listen_played_notes(duration)
+    played: list[tuple[int, int]] = []
+    for event in played_events:
+        note_vel = (event.note, event.velocity)
+        if note_vel not in played:
+            played.append(note_vel)
 
     if not played:
         return f"[listen_played_notes] Keine Noten in {duration}s gespielt."
@@ -94,35 +69,20 @@ def listen_played_notes(duration: float = 3.0) -> str:
 
 
 def get_launchpad_mode() -> str:
-    """Gibt den aktuellen Launchpad-Modus zurück: CONTROL, DRUM oder INSTRUMENT.
+    """Gibt den aktuellen Launchpad-Modus zurück: SESSION, DRUM oder INSTRUMENT.
 
     Fragt die LaunchpadControllerExtension via OSC ab (Port 8003 → Reply auf 9005).
     """
-    global _current_mode
-    from src.agent.osc.client import configure_dgram_socket
-    sock = configure_dgram_socket(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
     try:
-        sock.bind(("", MODE_REPLY_PORT))
-        sock.settimeout(2.0)
-    except OSError as e:
-        return f"[get_launchpad_mode] Port {MODE_REPLY_PORT} belegt: {e}"
-
-    try:
-        from pythonosc import udp_client
-        client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
-        client.send_message("/launchpad/mode/get", 1)
-        data, _ = sock.recvfrom(512)
-        for mode in ("CONTROL", "DRUM", "INSTRUMENT"):
-            if mode.encode() in data:
-                _current_mode = mode
-                return f"[get_launchpad_mode] Aktueller Modus: {mode}"
-        return "[get_launchpad_mode] UNKNOWN (unbekannte Antwort)"
-    except socket.timeout:
+        mode = launchpad_state.get_mode(force_query=True)
+        if mode in launchpad_state.VALID_MODES:
+            return f"[get_launchpad_mode] Aktueller Modus: {mode}"
+        status = launchpad_state.observer_status()
+        if status.startswith("ERROR:"):
+            return f"[get_launchpad_mode] Observer-Fehler auf Port {MODE_REPLY_PORT}: {status[7:].strip()}"
         return "[get_launchpad_mode] Timeout — Launchpad Controller nicht aktiv?"
     except Exception as e:
         return f"[get_launchpad_mode] Fehler: {e}"
-    finally:
-        sock.close()
 
 
 def midi_to_pads(midi_note: int) -> list[int]:
@@ -138,20 +98,19 @@ def midi_to_pads(midi_note: int) -> list[int]:
 
 
 def set_launchpad_mode(mode: str) -> str:
-    """Wechselt den Launchpad-Modus per OSC: CONTROL, DRUM oder INSTRUMENT.
+    """Wechselt den Launchpad-Modus per OSC: SESSION, DRUM oder INSTRUMENT.
 
     Args:
-        mode: "CONTROL", "DRUM" oder "INSTRUMENT"
+        mode: "SESSION", "DRUM" oder "INSTRUMENT". "CONTROL" wird als Legacy-Alias akzeptiert.
     """
-    mode = mode.upper().strip()
-    if mode not in ("CONTROL", "DRUM", "INSTRUMENT"):
+    mode = launchpad_state.normalize_mode(mode)
+    if mode not in launchpad_state.VALID_MODES:
         return f"[set_launchpad_mode] Ungültiger Modus: {mode}"
     try:
-        from pythonosc import udp_client
-        client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
-        client.send_message(f"/launchpad/mode/{mode.lower()}", 1)
-        time.sleep(0.3)
-        return get_launchpad_mode()
+        current = launchpad_state.set_mode(mode)
+        if current == mode:
+            return f"[set_launchpad_mode] Aktueller Modus: {current}"
+        return f"[set_launchpad_mode] Moduswechsel gesendet, aktueller Modus unbekannt: {current}"
     except Exception as exc:
         return f"[set_launchpad_mode] Fehler: {exc}"
 
@@ -220,6 +179,10 @@ def play_notes(notes: list[dict], bpm: float = 120.0) -> str:
         from pythonosc import udp_client
         client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
 
+        current_mode = launchpad_state.get_mode()
+        if current_mode not in {"DRUM", "INSTRUMENT"}:
+            return f"[play_notes] Übersprungen: Launchpad ist im {current_mode}-Modus; Playback nur in DRUM oder INSTRUMENT."
+
         played = []
         for n in notes:
             note = int(n.get("note", 60))
@@ -266,6 +229,10 @@ def suggest_notes(notes: list[int], r: int = 0, g: int = 50, b: int = 63) -> str
         from pythonosc import udp_client
         client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
 
+        current_mode = launchpad_state.get_mode()
+        if current_mode != "INSTRUMENT":
+            return f"[suggest_notes] Übersprungen: Launchpad ist im {current_mode}-Modus; Suggestions nur im INSTRUMENT-Modus."
+
         for pad in _prev_pads:
             client.send_message("/launchpad/led", [pad, 0, 0, 0])
 
@@ -288,9 +255,72 @@ def suggest_notes(notes: list[int], r: int = 0, g: int = 50, b: int = 63) -> str
         return f"[suggest_notes] OSC-Fehler: {exc}"
 
 
+_NOTE_OFFSETS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
+
+
+def _note_name_to_midi(s: str) -> int:
+    """Konvertiert Note-Namen zu MIDI-Nummer: 'E2'→40, 'C3'→48, 'A#1'→34."""
+    s = s.strip()
+    if not s or not s[0].isalpha():
+        return 48
+    note = _NOTE_OFFSETS.get(s[0].upper(), 0)
+    idx = 1
+    sharp = 0
+    if idx < len(s) and s[idx] in "#b+":
+        sharp = 1 if s[idx] in "#+" else -1
+        idx += 1
+    octave = int(s[idx]) if idx < len(s) and s[idx].isdigit() else 3
+    return max(0, min(127, (octave + 1) * 12 + note + sharp))
+
+
+def _detect_launchpad_layout(instrument_name: str) -> dict | None:
+    """Auto-detectiert das passende Instrument-Layout basierend auf dem Plugin-Namen.
+
+    Gibt None zurück für Drum-Instrumente (DRUM mode, gehandelt via set_drum_profile).
+    Gibt {root: int, scale: str} zurück für melodische Instrumente.
+    """
+    n = instrument_name.lower()
+    if any(k in n for k in ["drum", "beat", "808", "909", "kit", "schlagzeug", "clap", "kick"]):
+        return None  # DRUM mode — set_drum_profile() übernimmt
+    if any(k in n for k in ["bass", "vb-", "sub "]):
+        return {"root": 40, "scale": "minor"}       # E2 minor
+    if any(k in n for k in ["guitar", "gitarre"]):
+        return {"root": 40, "scale": "pentatonic"}  # E2 pentatonisch
+    if any(k in n for k in ["piano", "keys", "klavier", "ep "]):
+        return {"root": 48, "scale": "major"}       # C3 major
+    return {"root": 48, "scale": "major"}           # Default: C3 major
+
+
+def set_instrument_layout(root: int = 48, scale: str = "major") -> str:
+    """Setzt das Instrument-Grid-Layout auf dem Launchpad (Root-Note + Skala).
+
+    Ändert das 8×8-Pad-Grid dynamisch — LEDs werden sofort neu gezeichnet.
+
+    Args:
+        root:  MIDI-Root-Note (z.B. 48=C3, 40=E2 für Bass, 60=C4 für Keys)
+        scale: Skalentyp: "major", "minor", "pentatonic", "blues", "chromatic"
+    """
+    global _INST_ROOT, _INST_SCALE
+    try:
+        from pythonosc import udp_client
+        client = udp_client.SimpleUDPClient(OSC_HOST, OSC_LED_PORT)
+        client.send_message("/launchpad/layout", [root, scale])
+        _INST_ROOT = root
+        _INST_SCALE = {
+            "minor": [0, 2, 3, 5, 7, 8, 10],
+            "pentatonic": [0, 2, 4, 7, 9],
+            "blues": [0, 3, 5, 6, 7, 10],
+            "chromatic": list(range(12)),
+        }.get(scale.lower(), [0, 2, 4, 5, 7, 9, 11])
+        return f"[set_instrument_layout] root={root}, scale={scale}"
+    except Exception as exc:
+        return f"[set_instrument_layout] Fehler: {exc}"
+
+
 @tool
 def launchpad(
     action: str,
+    mode: str = "session",
     notes: list[int] | None = None,
     note_data: list[dict] | None = None,
     bpm: float = 120.0,
@@ -299,28 +329,38 @@ def launchpad(
     r: int = 0,
     g: int = 50,
     b: int = 63,
+    root: int | str = 48,
+    scale: str = "major",
 ) -> str:
     """Launchpad-Steuerung: Modus abfragen, Noten hervorheben, Aufnahme armen, lauschen, live spielen.
 
     action:
-      mode     → Aktuellen Launchpad-Modus abfragen (CONTROL/DRUM/INSTRUMENT)
+            mode     → Aktuellen Launchpad-Modus abfragen (SESSION/DRUM/INSTRUMENT)
+        set_mode → Launchpad-Modus wechseln (mode="session"|"drum"|"instrument")
       suggest  → MIDI-Noten auf dem Launchpad hervorheben (notes = MIDI-Noten, z.B. [48,52,55])
       arm      → Track für Aufnahme armen/disarmen (arm=1 armt, arm=0 disarmt)
       listen   → Auf gespielte Noten lauschen (duration = Sekunden, Standard 3.0)
       play     → Notensequenz über das Launchpad in Bitwig spielen
                  (note_data = [{note, vel, dur, gap}...], bpm = Tempo)
+      layout   → Instrument-Grid dynamisch konfigurieren (root=MIDI-Note, scale=Skalentyp)
+                 root: int (MIDI) oder str ("E2", "C3") — scale: "major","minor","pentatonic","blues","chromatic"
 
     Args:
+        mode:      Zielmodus für action=set_mode: session, drum oder instrument
         notes:     MIDI-Notennummern für action=suggest (z.B. [48, 52, 55])
         note_data: Notenliste für action=play, jede Note als Dict mit note/vel/dur/gap
         bpm:       Tempo für action=play (Standard 120)
         arm:       0 oder 1 für action=arm
         duration:  Lausch-Dauer in Sekunden für action=listen (Standard 3.0)
         r,g,b:     LED-Farbe 0-63 für action=suggest (Standard cyan)
+        root:      Root-Note für action=layout (MIDI int oder Name "E2")
+        scale:     Skalentyp für action=layout
     """
     act = (action or "").lower().strip()
     if act == "mode":
         return get_launchpad_mode()
+    if act in {"set_mode", "switch_mode"}:
+        return set_launchpad_mode(mode)
     if act == "suggest":
         return suggest_notes(notes or [], r=r, g=g, b=b)
     if act == "arm":
@@ -329,7 +369,10 @@ def launchpad(
         return listen_played_notes(duration)
     if act == "play":
         return play_notes(note_data or [], bpm=bpm)
+    if act == "layout":
+        root_midi = _note_name_to_midi(root) if isinstance(root, str) else int(root)
+        return set_instrument_layout(root_midi, scale)
     return (
         f"[launchpad] Unbekannte Aktion: '{action}'. "
-        "Gültig: mode, suggest, arm, listen, play"
+        "Gültig: mode, set_mode, suggest, arm, listen, play, layout"
     )
