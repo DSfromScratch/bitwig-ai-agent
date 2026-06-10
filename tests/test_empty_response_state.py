@@ -31,8 +31,8 @@ def test_no_nudge_when_tool_call_present():
     assert result.early_return is None
 
 
-def test_no_nudge_after_two_retries():
-    ctx = _make_ctx(content="Hier ist ein Plan.", intent="song_creation", retry=2)
+def test_no_nudge_after_three_retries():
+    ctx = _make_ctx(content="Hier ist ein Plan.", intent="song_creation", retry=3)
     result = EmptyResponseState().execute(ctx)
     assert result.early_return is None
 
@@ -87,8 +87,16 @@ def test_nudge_increments_retry_count():
     assert result.early_return["retry_count"] == 2
 
 
-def test_nudge_stops_at_retry_two():
-    """Third attempt (retry_count=2 already) → no more nudge."""
+def test_nudge_still_fires_at_retry_two():
+    """retry_count=2 → noch ein Nudge erlaubt (Grenze liegt bei 3)."""
     ctx = _make_ctx(content="Noch ein Plan.", intent="launchpad", retry=2)
+    result = EmptyResponseState().execute(ctx)
+    assert result.early_return is not None
+    assert result.early_return["retry_count"] == 3
+
+
+def test_nudge_stops_at_retry_three():
+    """retry_count=3 → kein weiterer Nudge."""
+    ctx = _make_ctx(content="Noch ein Plan.", intent="launchpad", retry=3)
     result = EmptyResponseState().execute(ctx)
     assert result.early_return is None

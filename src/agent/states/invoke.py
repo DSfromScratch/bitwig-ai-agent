@@ -7,7 +7,6 @@ from httpx import ConnectError
 from openai import APIConnectionError, BadRequestError
 from langchain_core.messages import SystemMessage
 from src.agent.llm_client import _get_llm, _log_token_usage
-from src.agent.prompts import PROMPT_CONTROL
 from src.agent.states.base import AgentPhaseState, PhaseContext
 
 log = logging.getLogger("bitwig-agent")
@@ -82,14 +81,15 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
     else:
         raise RuntimeError("LLM nach 3 Versuchen nicht erreichbar.")
 
-    # Fallback bei Kontextüberschreitung
+    # Fallback bei Kontextüberschreitung: System-Prompt aus dem aktuellen Kontext behalten,
+    # History auf letzte 4 Messages begrenzen (messages ist bereits slim_msgs)
     fallback_tools = [t for t in ALL_TOOLS
                       if getattr(t, "name", "") in {"get_bitwig_state", "execute_setup"}]
     fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)
     log.warning("LLM Kontextlimit — Fallback mit %d Tools, max_tokens=700",
                 len(fallback_tools or selected_tools))
     try:
-        response = fallback_llm.invoke([SystemMessage(content=PROMPT_CONTROL)] + messages[-6:])
+        response = fallback_llm.invoke([system] + messages[-4:])
         _log_token_usage(response, label="fallback")
         return response
     except Exception as fallback_exc:

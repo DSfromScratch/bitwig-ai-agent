@@ -73,13 +73,11 @@ def check_bitwig_connection() -> dict:
     }
 
 
-@tool
 def get_bitwig_track_state() -> str:
     """Liest den aktuellen Bitwig Track-Zustand via OSC aus.
 
-    Gibt Anzahl vorhandener Tracks, deren Namen und den nächsten freien
-    track_index zurück. Vor execute_result aufrufen wenn unklar ob Tracks
-    bereits vorhanden sind.
+    Internes Hilfsfunktion — wird von get_bitwig_state aufgerufen.
+    Nicht direkt vom LLM aufrufbar.
     """
     import struct
 

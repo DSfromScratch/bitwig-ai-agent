@@ -34,6 +34,7 @@ from src.agent.tools import ALL_TOOLS
 from src.agent.events import get_event_bus
 from src.agent.llm_client import _patch_langchain_tool_call_parser
 from src.agent.orchestrator import LLMOrchestrator
+from src.agent.router import _NUDGE_PREFIXES
 
 _patch_langchain_tool_call_parser()
 
@@ -88,15 +89,6 @@ def build_graph() -> StateGraph:
     return graph.compile()
 
 
-_NUDGE_PREFIXES = (
-    "Deine Antwort war leer.",
-    "Dein Tool-Call war ungültig",
-    "Deine Antwort war nur ein Plan.",
-    "Der Nutzer will",
-    "Die Notengenerierung braucht jetzt",
-)
-
-
 def _is_nudge_message(msg: "HumanMessage") -> bool:
     text = (msg.content or "").strip()
     return any(text.startswith(p) for p in _NUDGE_PREFIXES)
@@ -123,6 +115,10 @@ def _state_for_user_turn(session_state: "AgentState", user: str, ui_cfg: dict | 
     state = dict(session_state)
     state["messages"] = list(session_state.get("messages", [])) + [HumanMessage(content=user)]
     state["retry_count"] = 0
+    # Abgeschlossene/fehlerhafte Workflows auf idle zurücksetzen, damit neue Anfragen
+    # nicht fälschlicherweise im "done"/"error" Phase-Kontext starten.
+    if state.get("generation_phase") in ("done", "error"):
+        state["generation_phase"] = "idle"
     if ui_cfg is not None:
         state["ui_song_config"] = ui_cfg
     return state  # type: ignore[return-value]

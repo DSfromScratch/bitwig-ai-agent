@@ -248,9 +248,10 @@ def run_dpo(args: argparse.Namespace) -> None:
     # Format: {prompt, chosen, rejected}
     dpo_ds = Dataset.from_list(dpo_data)
 
+    dpo_steps = max(10, min(args.iters // 3, len(dpo_data) * 5))
     dpo_config = DPOConfig(
         output_dir=args.adapter_dir + "-dpo",
-        max_steps=min(args.iters // 3, len(dpo_data) * 5),
+        max_steps=dpo_steps,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         learning_rate=args.lr / 5,

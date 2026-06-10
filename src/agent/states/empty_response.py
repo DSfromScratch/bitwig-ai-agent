@@ -18,7 +18,7 @@ class EmptyResponseState(AgentPhaseState):
             return ctx
 
         retry = ctx.agent_state.get("retry_count", 0)
-        if retry >= 2:
+        if retry >= 3:
             return ctx
 
         has_content = bool((ctx.response.content or "").strip())

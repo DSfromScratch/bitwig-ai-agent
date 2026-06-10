@@ -20,4 +20,4 @@ def _append_policy_feedback(entry: dict) -> None:
         with open(POLICY_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:
-        log.debug("Policy-Feedback konnte nicht geschrieben werden: %s", exc)
+        log.warning("Policy-Feedback konnte nicht geschrieben werden: %s", exc)

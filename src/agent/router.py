@@ -20,14 +20,8 @@ _CONFIRMATIONS = frozenset([
 ])
 
 _NUDGE_PREFIXES = (
-    "Deine Antwort war leer.",
-    "Dein Tool-Call war ungültig",
-    "Deine Antwort war nur ein Plan.",
-    "Der Nutzer will einen Beat hören.",
-    "Der Nutzer will das Launchpad benutzen.",
-    "Der Nutzer fragt, welche Songs du kennst.",
-    "Der Nutzer fragt nach dem Bitwig-Status.",
-    "Die Notengenerierung braucht jetzt",
+    "Deine Antwort enthielt keinen Tool-Call.",  # EmptyResponseState
+    "Dein Tool-Call war ungültig",               # InvalidOutputState
 )
 
 _SETUP_DONE_TOOLS  = frozenset(["execute_setup", "create_track_from_recipe", "reconstruct_project"])

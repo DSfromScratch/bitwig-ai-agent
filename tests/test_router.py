@@ -56,13 +56,13 @@ def test_confirmation_keeps_incomplete_workflow_in_planning():
     assert _effective_generation_phase([], "idle", "ja") == "planning"
 
 
-def test_latest_user_text_ignores_launchpad_tool_nudge():
+def test_latest_user_text_ignores_empty_response_nudge():
     messages = [
         HumanMessage(content="spiele einen Beat auf dem Launchpad"),
         HumanMessage(content=(
-            "Der Nutzer will einen Beat hören. "
-            "Rufe jetzt direkt `play_notes` mit einem einfachen Drum-Beat auf. "
-            "Kein Freitext, keine Absichtserklärung, nur Tool-Call."
+            "Deine Antwort enthielt keinen Tool-Call. "
+            "Ruf jetzt direkt das passende Tool auf. "
+            "Kein Text, nur Tool-Call."
         )),
     ]
 
