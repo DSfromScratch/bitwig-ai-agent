@@ -1,4 +1,4 @@
-.PHONY: agent agent-service-install agent-service-logs agent-service-start agent-service-status agent-service-stop analyse analyze-grid analyze-grid-local build-extension clean container-neo4j-logs container-neo4j-start container-neo4j-stop container-status container-vllm-build container-vllm-logs container-vllm-start container-vllm-stop dashboard deploy deploy-local deploy-mac deploy-mac-http download-mf embed-server help ingest-arranger ingest-audio ingest-audio-dry ingest-midi ingest-project ingest-project-dry install ml-export ml-validate-test mlx-export mlx-ingest-scales mlx-rl-eval mlx-rl-pairs mlx-rl-train mlx-setup mlx-sync-data mlx-test mlx-train neo4j-import ollama-setup-mac ollama-test scan-vsts screenshot-server show-grids ssh-setup-mac stack-down stack-status stack-up start test test-all test-integration test-neo4j validate yt-ingest yt-ingest-dry
+.PHONY: agent agent-service-install agent-service-logs agent-service-start agent-service-status agent-service-stop analyse analyze-grid analyze-grid-local build-extension clean container-neo4j-logs container-neo4j-start container-neo4j-stop container-status container-vllm-build container-vllm-logs container-vllm-start container-vllm-stop dashboard deploy deploy-local deploy-mac deploy-mac-http download-mf embed-server help ingest-arranger ingest-audio ingest-audio-dry ingest-midi ingest-project ingest-project-dry install linux-setup linux-train linux-train-dpo linux-train-both ml-export ml-validate-test mlx-export mlx-ingest-scales mlx-rl-eval mlx-rl-pairs mlx-rl-train mlx-setup mlx-sync-data mlx-test mlx-train neo4j-import ollama-setup-mac ollama-test scan-vsts screenshot-server show-grids ssh-setup-mac stack-down stack-status stack-up start test test-all test-integration test-neo4j validate yt-ingest yt-ingest-dry
 
 .DEFAULT_GOAL := help
 
@@ -276,6 +276,63 @@ ml-export: ## ML Training-Daten exportieren (Patterns + Validator-Conversations)
 	print(export_patterns_to_jsonl()); \
 	print(export_validator_conversations()); \
 	print('Stats:', get_export_stats())"
+
+##@ Linux QLoRA Training
+
+# Linux Training-Konfiguration (überschreibbar per Env-Var oder CLI)
+LINUX_BASE_MODEL  ?= $(or $(TRAIN_BASE_MODEL),Qwen/Qwen3-14B)
+LINUX_ADAPTER_DIR ?= $(or $(TRAIN_ADAPTER_DIR),./adapters/bitwig-agent)
+LINUX_DATA_DIR    ?= $(or $(TRAIN_DATA_DIR),./training_data)
+LINUX_ITERS       ?= 300
+LINUX_LORA_R      ?= 16
+LINUX_BATCH       ?= 1
+LINUX_GRAD_ACC    ?= 8
+LINUX_LR          ?= 2e-4
+LINUX_HOST        ?= 192.168.0.3
+LINUX_USER        ?= sija
+LINUX_VENV        ?= ~/.venv-train
+
+linux-setup: ## Trainingsumgebung auf Linux GPU einrichten (Pakete installieren)
+	@echo ">>> Führe auf dem Linux-Rechner ($(LINUX_HOST)) aus:"
+	@echo ""
+	@echo "  scp scripts/setup_linux.sh $(LINUX_USER)@$(LINUX_HOST):~/"
+	@echo "  ssh $(LINUX_USER)@$(LINUX_HOST) 'bash ~/setup_linux.sh'"
+	@echo ""
+	@echo "Oder direkt via SSH:"
+	@echo "  ssh $(LINUX_USER)@$(LINUX_HOST) 'bash -s' < scripts/setup_linux.sh"
+
+linux-train: ## QLoRA SFT-Training auf Linux starten (SSH)
+	@[ -f "$(LINUX_DATA_DIR)/train.jsonl" ] || { echo "✗ train.jsonl fehlt"; exit 1; }
+	ssh -o StrictHostKeyChecking=no $(LINUX_USER)@$(LINUX_HOST) \
+	  "cd ~/bitwig-ai-agent && source $(LINUX_VENV)/bin/activate && \
+	   TRAIN_BASE_MODEL=$(LINUX_BASE_MODEL) \
+	   TRAIN_ADAPTER_DIR=$(LINUX_ADAPTER_DIR) \
+	   python scripts/train_linux.py \
+	     --mode sft \
+	     --iters $(LINUX_ITERS) \
+	     --lora-r $(LINUX_LORA_R) \
+	     --batch-size $(LINUX_BATCH) \
+	     --grad-accum $(LINUX_GRAD_ACC) \
+	     --lr $(LINUX_LR)"
+
+linux-train-dpo: ## DPO Fine-Tuning nach SFT auf Linux starten (SSH)
+	ssh -o StrictHostKeyChecking=no $(LINUX_USER)@$(LINUX_HOST) \
+	  "cd ~/bitwig-ai-agent && source $(LINUX_VENV)/bin/activate && \
+	   TRAIN_BASE_MODEL=$(LINUX_BASE_MODEL) \
+	   TRAIN_ADAPTER_DIR=$(LINUX_ADAPTER_DIR) \
+	   python scripts/train_linux.py --mode dpo"
+
+linux-train-both: ## SFT + DPO sequenziell auf Linux starten (SSH)
+	ssh -o StrictHostKeyChecking=no $(LINUX_USER)@$(LINUX_HOST) \
+	  "cd ~/bitwig-ai-agent && source $(LINUX_VENV)/bin/activate && \
+	   TRAIN_BASE_MODEL=$(LINUX_BASE_MODEL) \
+	   TRAIN_ADAPTER_DIR=$(LINUX_ADAPTER_DIR) \
+	   python scripts/train_linux.py \
+	     --mode both \
+	     --iters $(LINUX_ITERS) \
+	     --lora-r $(LINUX_LORA_R)"
+
+##@ Mac MLX Training
 
 mlx-sync-data: ## Trainingsdaten auf Mac übertragen (→ ~/mlx-training/)
 	@[ -f "$(MLX_DATA)/train.jsonl" ] || { echo "✗ Keine Daten — make mlx-export zuerst"; exit 1; }
