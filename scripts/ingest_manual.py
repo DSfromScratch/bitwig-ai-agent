@@ -16,7 +16,6 @@ Usage:
 from __future__ import annotations
 import argparse
 import json
-import os
 import re
 import sys
 import time
@@ -28,17 +27,17 @@ from pypdf import PdfReader
 from neo4j import GraphDatabase
 from openai import OpenAI
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.agent.config import config  # noqa: E402 — path manipulation required for script context
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 PDF_URL = "https://www.bitwig.com/media/bitwig_userguide/pdf/Bitwig_Studio_User_Guide_English_oPSjcZw.pdf"
 PDF_CACHE = Path(__file__).parent.parent / ".cache" / "bitwig_manual.pdf"
 
-VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8100")
-VLLM_MODEL    = os.getenv("VLLM_MODEL", "agent")
-
-NEO4J_URI      = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER     = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "neo4jllm")
+VLLM_BASE_URL = config.vllm_base_url
+VLLM_MODEL    = config.vllm_model
 
 CHUNK_PAGES = 4          # Seiten pro LLM-Aufruf
 LLM_TIMEOUT = 120        # Sekunden
@@ -175,14 +174,17 @@ def extract_knowledge(client: OpenAI, text: str) -> dict:
             model=VLLM_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": USER_TEMPLATE.format(text=text[:6000])},
+                {"role": "user", "content": "/no_think\n" + USER_TEMPLATE.format(text=text[:6000])},
             ],
             max_tokens=LLM_MAX_TOKENS,
             temperature=0.1,
             timeout=LLM_TIMEOUT,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
         raw = resp.choices[0].message.content.strip()
+
+        # <think>-Blöcke entfernen (Qwen3 denkt auch mit /no_think manchmal)
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        raw = re.sub(r"<think>.*", "", raw, flags=re.DOTALL).strip()
 
         # Strip markdown fences if present
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
@@ -311,14 +313,10 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=CHUNK_PAGES, help="Pages per LLM call")
     args = parser.parse_args()
 
-    # Load env
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent.parent / ".env")
-
     # Init clients
     llm = OpenAI(base_url=VLLM_BASE_URL + "/v1", api_key="dummy")
     driver = None if args.dry_run else GraphDatabase.driver(
-        NEO4J_URI, auth=(NEO4J_USER, os.getenv("NEO4J_PASSWORD", "neo4jllm"))
+        config.neo4j_uri, auth=(config.neo4j_user, config.neo4j_password)
     )
 
     # Download + parse PDF

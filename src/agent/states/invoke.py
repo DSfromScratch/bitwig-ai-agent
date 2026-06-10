@@ -1,11 +1,11 @@
 """InvokeState — ruft das LLM auf (mit Backend-Fallback und Kontext-Overflow-Fallback)."""
 from __future__ import annotations
 import logging
-import os
 import time
 from httpx import ConnectError
 from openai import APIConnectionError, BadRequestError
 from langchain_core.messages import SystemMessage
+from src.agent.config import config
 from src.agent.llm_client import _get_llm, _log_token_usage
 from src.agent.states.base import AgentPhaseState, PhaseContext
 
@@ -33,13 +33,14 @@ def _trim_tool_descriptions(tools: list, max_chars: int = 80) -> list:
     return trimmed
 
 
-def _trim_messages(messages: list, max_messages: int = 4, max_tool_result_chars: int = 600) -> list:
+def _trim_messages(messages: list, max_messages: int = 4, max_tool_result_chars: int | None = None) -> list:
     """Begrenzt History und kürzt lange Tool-Ergebnisse (OOM-Schutz).
 
     Ein führender SystemMessage-Eintrag enthält ggf. den kompakten Verlauf aus
     PreparationState und bleibt zusätzlich zum Recent-Window erhalten.
     """
     from langchain_core.messages import ToolMessage
+    max_tool_result_chars = max_tool_result_chars if max_tool_result_chars is not None else config.agent_tool_result_max_chars
     compact_context = messages[:1] if messages and isinstance(messages[0], SystemMessage) else []
     rest = messages[1:] if compact_context else messages
     recent = compact_context + rest[-max_messages:]
@@ -58,17 +59,17 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
     from src.agent.tools import ALL_TOOLS
     slim_tools = _trim_tool_descriptions(selected_tools) if selected_tools else []
     slim_msgs  = _trim_messages(messages)
-    llm = _get_llm(max_tokens=800).bind_tools(slim_tools) if slim_tools else _get_llm(max_tokens=800)
+    llm = _get_llm().bind_tools(slim_tools) if slim_tools else _get_llm()
     # Retry bei ConnectError (Server-OOM-Crash → LaunchAgent startet ihn neu)
-    for attempt in range(3):
+    for attempt in range(config.agent_max_retries):
         try:
             response = llm.invoke([system] + slim_msgs)
             _log_token_usage(response, label="main")
             return response
         except (ConnectError, APIConnectionError) as exc:
-            if attempt < 2:
-                wait = 5 * (attempt + 1)
-                log.warning("LLM nicht erreichbar (Versuch %d/3) — warte %ds: %s", attempt + 1, wait, exc)
+            if attempt < config.agent_max_retries - 1:
+                wait = config.agent_connect_retry_wait * (attempt + 1)
+                log.warning("LLM nicht erreichbar (Versuch %d/%d) — warte %ds: %s", attempt + 1, config.agent_max_retries, wait, exc)
                 time.sleep(wait)
                 continue
             # Alle Retries erschöpft → MLX-Fallback wenn vLLM primär war
@@ -79,15 +80,15 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
                 raise
             break  # Kontext-Fehler → Fallback
     else:
-        raise RuntimeError("LLM nach 3 Versuchen nicht erreichbar.")
+        raise RuntimeError(f"LLM nach {config.agent_max_retries} Versuchen nicht erreichbar.")
 
     # Fallback bei Kontextüberschreitung: System-Prompt aus dem aktuellen Kontext behalten,
     # History auf letzte 4 Messages begrenzen (messages ist bereits slim_msgs)
     fallback_tools = [t for t in ALL_TOOLS
                       if getattr(t, "name", "") in {"get_bitwig_state", "execute_setup"}]
-    fallback_llm = _get_llm(max_tokens=700).bind_tools(fallback_tools or selected_tools)
-    log.warning("LLM Kontextlimit — Fallback mit %d Tools, max_tokens=700",
-                len(fallback_tools or selected_tools))
+    fallback_llm = _get_llm(max_tokens=config.llm_fallback_max_tokens).bind_tools(fallback_tools or selected_tools)
+    log.warning("LLM Kontextlimit — Fallback mit %d Tools, max_tokens=%d",
+                len(fallback_tools or selected_tools), config.llm_fallback_max_tokens)
     try:
         response = fallback_llm.invoke([system] + messages[-4:])
         _log_token_usage(response, label="fallback")
@@ -107,13 +108,12 @@ def _invoke_with_retry(system: SystemMessage, messages: list, selected_tools: li
 
 def _backend_fallback(system: SystemMessage, messages: list, tools: list, original_exc: Exception):
     """Fällt auf MLX zurück wenn das primäre Backend (vLLM) nach 3 Versuchen nicht erreichbar ist."""
-    primary = os.getenv("LLM_BACKEND", "mlx").lower()
-    if primary == "mlx":
+    if config.llm_backend.lower() == "mlx":
         raise RuntimeError(f"MLX-Backend nicht erreichbar: {original_exc}") from original_exc
 
     log.warning("vLLM nicht erreichbar nach 3 Versuchen — MLX-Fallback: %s", original_exc)
     try:
-        fallback_llm = _get_llm(max_tokens=800, backend="mlx")
+        fallback_llm = _get_llm(max_tokens=config.llm_max_tokens, backend="mlx")
         if tools:
             fallback_llm = fallback_llm.bind_tools(tools)
         response = fallback_llm.invoke([system] + messages)
@@ -123,9 +123,9 @@ def _backend_fallback(system: SystemMessage, messages: list, tools: list, origin
         log.error("MLX-Fallback fehlgeschlagen: %s", mlx_exc)
         from langchain_core.messages import AIMessage
         return AIMessage(content=(
-            "⚠️ Kein LLM-Backend erreichbar.\n"
-            "• vLLM (192.168.0.3:8100): nicht verbunden\n"
-            "• MLX (localhost:8080): nicht erreichbar\n\n"
-            "Bitte vLLM starten: `vllm serve ... --served-model-name agent`\n"
-            "oder MLX starten: `mlx_lm.server --model ~/models/Qwen3-14B-4bit --port 8080`"
+            f"⚠️ Kein LLM-Backend erreichbar.\n"
+            f"• vLLM ({config.vllm_base_url}): nicht verbunden\n"
+            f"• MLX ({config.mac_mlx_url}): nicht erreichbar\n\n"
+            f"Bitte vLLM starten: `vllm serve ... --served-model-name {config.vllm_model}`\n"
+            f"oder MLX starten: `mlx_lm.server --model ... --port 8080`"
         ))

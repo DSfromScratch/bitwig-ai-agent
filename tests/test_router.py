@@ -8,6 +8,7 @@ from src.agent.router import (
     _latest_user_text,
     _phase_after_recent_tools,
     _select_tools_for_context,
+    _GREETINGS,
 )
 
 pytestmark = pytest.mark.unit
@@ -56,6 +57,13 @@ def test_confirmation_keeps_incomplete_workflow_in_planning():
     assert _effective_generation_phase([], "idle", "ja") == "planning"
 
 
+def test_greetings_classified_as_song_default():
+    """Begrüßungen dürfen nie als action intent landen — kein Tool-Call erforderlich."""
+    from src.agent.router import classify_intent_llm
+    for word in ["hallo", "hi", "hey", "hello", "servus"]:
+        assert classify_intent_llm(word) == "song_default", f"'{word}' sollte song_default sein"
+
+
 def test_latest_user_text_ignores_empty_response_nudge():
     messages = [
         HumanMessage(content="spiele einen Beat auf dem Launchpad"),
@@ -88,11 +96,11 @@ def test_neutral_tool_after_setup_keeps_verifying_phase():
     assert _phase_after_recent_tools([SetupMessage(), NeutralMessage()], "idle") == "verifying"
 
 
-def test_write_pattern_raw_advances_to_verifying():
+def test_write_pattern_raw_advances_to_done():
     class PatternMessage:
         tool_calls = [{"name": "write_pattern_raw", "args": {}, "id": "1"}]
 
-    assert _phase_after_recent_tools([PatternMessage()], "generating") == "verifying"
+    assert _phase_after_recent_tools([PatternMessage()], "generating") == "done"
 
 
 def test_effective_phase_drives_next_tool_selection_after_setup_to_verifying():

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from src.agent.config import config
 
 log = logging.getLogger("bitwig-agent")
 
@@ -10,6 +11,11 @@ log = logging.getLogger("bitwig-agent")
 _CONTROL_COMMANDS = frozenset([
     "/play", "/stop", "/tempo", "/select", "/mute", "/solo",
     "/volume", "/status", "/record", "/loop", "/undo",
+])
+
+_GREETINGS = frozenset([
+    "hallo", "hi", "hey", "hello", "servus", "moin", "guten morgen",
+    "guten tag", "guten abend", "na", "jo", "yo",
 ])
 
 # ── Sonstige Konstanten ───────────────────────────────────────────────────────
@@ -40,11 +46,11 @@ _INTENT_SYSTEM = (
     "Reply with ONLY the category name — no explanation, no punctuation.\n\n"
     "control      → /play /stop /tempo /mute /volume (explicit slash-command)\n"
     "knowledge    → question about theory, artists, songs, genres, style\n"
-    "status       → how many tracks, what is open in Bitwig, current state\n"
+    "status       → EXPLICIT question about Bitwig state: 'how many tracks?', 'what is open?'\n"
     "project      → scan project, reconstruct, recipe from existing project\n"
     "launchpad    → play notes live, arm track, listen to input\n"
     "song_creation → create / compose / write something new in Bitwig\n"
-    "song_default → anything else"
+    "song_default → greetings, chitchat, unclear requests, anything else"
 )
 
 
@@ -56,16 +62,18 @@ def classify_intent_llm(text: str) -> str:
     """
     if not text.strip():
         return "song_default"
+    if text.strip().lower() in _GREETINGS:
+        return "song_default"
     if text.strip().startswith("/") and text.strip().split()[0] in _CONTROL_COMMANDS:
         return "control"
 
     try:
         from src.agent.llm_client import _get_llm
         from langchain_core.messages import SystemMessage, HumanMessage as _HM
-        llm = _get_llm(max_tokens=15, temperature=0.0)
+        llm = _get_llm(max_tokens=config.llm_intent_max_tokens, temperature=0.0)
         response = llm.invoke([
             SystemMessage(content=_INTENT_SYSTEM),
-            _HM(content=text[:300]),
+            _HM(content="/no_think\n" + text[:300]),
         ])
         content = response.content or ""
         # <think>...</think> Block entfernen (Qwen3 denkt immer erst)
@@ -151,7 +159,7 @@ def _phase_after_recent_tools(messages: list, current_phase: str) -> str:
         if tool_names & _VERIFY_DONE_TOOLS:
             return "done"
         if tool_names & _NOTES_DONE_TOOLS:
-            return "verifying"
+            return "done"
         if tool_names & _SETUP_DONE_TOOLS:
             return "verifying"
     return current_phase

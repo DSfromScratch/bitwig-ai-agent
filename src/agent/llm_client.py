@@ -4,7 +4,6 @@ LLM-Backend: MockLLM, _get_llm, Token-Logging, LangChain-Patch.
 from __future__ import annotations
 
 import json
-import os
 import re
 import logging
 from typing import Any
@@ -14,8 +13,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs.chat_generation import ChatGeneration
 from langchain_core.outputs.llm_result import LLMResult
 from langchain_openai import ChatOpenAI
-from dotenv import load_dotenv
-load_dotenv()
+
+from src.agent.config import config
 
 log = logging.getLogger("bitwig-agent")
 
@@ -72,36 +71,40 @@ def _patch_langchain_tool_call_parser() -> None:
         log.debug("LangChain Tool-Parser Patch nicht angewendet: %s", exc)
 
 
+import os as _os
 def _get_llm(
-    max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "2000")),
+    max_tokens: int | None = None,
     backend: str | None = None,
     model: str | None = None,
     temperature: float | None = None,
 ) -> BaseChatModel:
-    if os.getenv("BITWIG_TEST_MODE", "").lower() == "mock":
+    if _os.getenv("BITWIG_TEST_MODE", "").lower() == "mock":
         log.info("TEST_MODE: Verwende Mock-LLM")
         return MockLLM()
 
-    backend = (backend or os.getenv("LLM_BACKEND", "mlx")).lower()
+    max_tokens = max_tokens if max_tokens is not None else config.llm_max_tokens
+    temp = temperature if temperature is not None else config.llm_temperature
+    backend = (backend or config.llm_backend).lower()
 
     if backend == "mlx":
-        base  = os.getenv("MAC_MLX_URL", "http://localhost:8080") + "/v1"
-        model = model or os.getenv("MLX_MODEL", "mlx-community/Qwen3-14B-4bit")
+        base  = config.mac_mlx_url + "/v1"
+        model = model or config.mlx_model
         log.info("MLX-Backend: %s / %s", base, model)
         return ChatOpenAI(
             base_url=base, api_key="mlx", model=model,
-            temperature=0.3 if temperature is None else temperature,
-            max_tokens=max_tokens, timeout=120,
+            temperature=temp, max_tokens=max_tokens,
+            timeout=config.llm_timeout,
         )
 
     if backend == "vllm":
-        base  = os.getenv("VLLM_BASE_URL", "http://192.168.0.3:8100") + "/v1"
-        model = model or os.getenv("VLLM_MODEL", "./models/Qwen3-14B-AWQ")
+        base  = config.vllm_base_url + "/v1"
+        model = model or config.vllm_model
         log.info("vLLM-Backend: %s / %s", base, model)
         return ChatOpenAI(
             base_url=base, api_key="vllm", model=model,
-            temperature=0.3 if temperature is None else temperature,
-            max_tokens=min(max_tokens, 1500), timeout=120,
+            temperature=temp,
+            max_tokens=min(max_tokens, config.llm_vllm_token_cap),
+            timeout=config.llm_timeout,
         )
 
     log.warning("Unbekanntes LLM_BACKEND '%s' — fallback auf mlx", backend)

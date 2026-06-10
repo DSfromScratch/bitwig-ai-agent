@@ -15,6 +15,9 @@ _PHASE_SIGNALS: list[tuple[list[str], str]] = [
     (["plan", "struktur", "bluep", "section", "akkord"], "planning"),
 ]
 
+# Phases may only advance — never regress (except → error)
+_PHASE_ORDER = {"idle": 0, "planning": 1, "setup": 2, "generating": 3, "verifying": 4, "done": 5}
+
 
 class ReasoningExtractionState(AgentPhaseState):
     def execute(self, ctx: PhaseContext) -> PhaseContext:
@@ -38,9 +41,14 @@ def _phase_from_reasoning(reasoning: str, current: str) -> str | None:
     if not reasoning or current in ("error", "done"):
         return None
     lower = reasoning.lower()
+    current_order = _PHASE_ORDER.get(current, 0)
     for keywords, phase in _PHASE_SIGNALS:
         if any(kw in lower for kw in keywords):
-            return phase if phase != current else None
+            if phase == current:
+                return None
+            # Always allow error; only allow forward advancement otherwise
+            if phase == "error" or _PHASE_ORDER.get(phase, 0) > current_order:
+                return phase
     return None
 
 

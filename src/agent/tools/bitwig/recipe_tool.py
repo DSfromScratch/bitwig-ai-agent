@@ -179,7 +179,6 @@ def create_track_from_recipe(
         lines.append(f"   • {typ:<25} {n}x")
 
     # Steps aufteilen: Phase 1 (Struktur) + Phase 2 (Noten)
-    note_steps = [s for s in steps if s.type == "write_notes"]
     setup_steps = [s for s in steps if s.type != "write_notes"]
 
     result_setup = BitwigResult(

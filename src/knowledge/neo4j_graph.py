@@ -17,9 +17,9 @@ Schema-Überblick:
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import contextmanager
 from neo4j import GraphDatabase
+from src.agent.config import config
 
 log = logging.getLogger("bitwig-agent")
 
@@ -27,17 +27,6 @@ from src.knowledge.bitwig_catalog import (  # noqa: F401  (re-export für extern
     SCHEMA_CONSTRAINTS, DEVICES, GENRES, SOUNDS, GENRE_DEVICES,
     RECOMMENDED_CHAINS, WORKFLOWS,
 )
-
-# ── Verbindung ────────────────────────────────────────────────────────────────
-
-NEO4J_URI      = os.getenv("NEO4J_URI",      "bolt://localhost:7687")
-NEO4J_USER     = os.getenv("NEO4J_USER",     "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD") or "neo4jllm"
-NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
-
-if not os.getenv("NEO4J_PASSWORD"):
-    import logging
-    logging.warning("⚠️  NEO4J_PASSWORD nicht gesetzt; verwende Default. Für Production: env-Variable setzen.")
 
 _driver = None
 _neo4j_available: bool | None = None  # None = ungeprüft
@@ -56,8 +45,8 @@ def is_available() -> bool:
     if _neo4j_available is not None:
         return _neo4j_available
     try:
-        driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-        with driver.session(database=NEO4J_DATABASE) as s:
+        driver = GraphDatabase.driver(config.neo4j_uri, auth=(config.neo4j_user, config.neo4j_password))
+        with driver.session(database=config.neo4j_database) as s:
             s.run("RETURN 1").single()
         driver.close()
         _neo4j_available = True
@@ -70,17 +59,25 @@ def get_driver():
     global _driver
     if not is_available():
         raise ConnectionError(
-            f"Neo4j nicht erreichbar ({NEO4J_URI}). "
-            "Starte Neo4j oder setze NEO4J_URI auf einen laufenden Server."
+            f"Neo4j nicht erreichbar ({config.neo4j_uri}). "
+            "Starte Neo4j oder setze config.neo4j_uri auf einen laufenden Server."
         )
     if _driver is None:
-        _driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+        _driver = GraphDatabase.driver(config.neo4j_uri, auth=(config.neo4j_user, config.neo4j_password))
     return _driver
 
 @contextmanager
 def session():
-    with get_driver().session(database=NEO4J_DATABASE) as s:
-        yield s
+    global _driver, _neo4j_available
+    try:
+        with get_driver().session(database=config.neo4j_database) as s:
+            yield s
+    except (BrokenPipeError, OSError):
+        # Stale connection after Neo4j restart — drop driver and retry once
+        _driver = None
+        _neo4j_available = None
+        with get_driver().session(database=config.neo4j_database) as s:
+            yield s
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 

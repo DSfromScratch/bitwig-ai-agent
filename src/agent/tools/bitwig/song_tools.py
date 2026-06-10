@@ -5,16 +5,14 @@ OSC-Kommunikation mit der BitwigStepPlugin (Port 8002).
 """
 
 from __future__ import annotations
-import os
 from langchain_core.tools import tool
 
 
-from dotenv import load_dotenv
-load_dotenv()
+from src.agent.config import config
 
-OSC_HOST = os.getenv("BITWIG_HOST", "127.0.0.1")
-OSC_PORT = int(os.getenv("BITWIG_PORT", "8002"))
-OSC_REPLY_PORT = int(os.getenv("BITWIG_REPLY_PORT", "9002"))
+OSC_HOST = config.bitwig_host
+OSC_PORT = config.bitwig_port
+OSC_REPLY_PORT = config.bitwig_reply_port
 
 # BitwigStepPlugin — Note-Counter + Track-Management (alias für Klarheit)
 OSC_STEP_PORT       = OSC_PORT
@@ -46,7 +44,7 @@ def check_bitwig_connection() -> dict:
     from src.agent.osc.client import configure_dgram_socket
     sock = configure_dgram_socket(
         socket.socket(socket.AF_INET, socket.SOCK_DGRAM),
-        timeout=2.0, reuse_port=True,
+        timeout=config.bitwig_socket_timeout, reuse_port=True,
     )
     try:
         sock.bind(("", OSC_STEP_REPLY_PORT))
@@ -88,7 +86,7 @@ def get_bitwig_track_state() -> str:
     from src.agent.osc.client import configure_dgram_socket
     step_sock = configure_dgram_socket(
         _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM),
-        timeout=2.0, reuse_port=True,
+        timeout=config.bitwig_socket_timeout, reuse_port=True,
     )
     try: step_sock.bind(("", OSC_STEP_REPLY_PORT))
     except OSError: pass
