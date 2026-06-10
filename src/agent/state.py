@@ -88,3 +88,6 @@ class AgentState(TypedDict):
     song_blueprint:     Optional[SongBlueprint]
     retry_count:        int
     ui_song_config:     Optional[dict]         # Strukturierte Song-Config aus Bitwig UI (OSC)
+    # Noten-Eingabe-Modus: None=noch nicht gefragt, "pending"=Frage gestellt,
+    # "launchpad"=User spielt selbst, "agent"=Agent generiert
+    note_input_mode:    Optional[str]

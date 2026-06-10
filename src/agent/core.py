@@ -107,6 +107,7 @@ def _default_state() -> "AgentState":
         "song_blueprint":    None,
         "retry_count":       0,
         "ui_song_config":    None,
+        "note_input_mode":   None,
     }
 
 
@@ -119,6 +120,7 @@ def _state_for_user_turn(session_state: "AgentState", user: str, ui_cfg: dict | 
     # nicht fälschlicherweise im "done"/"error" Phase-Kontext starten.
     if state.get("generation_phase") in ("done", "error"):
         state["generation_phase"] = "idle"
+        state["note_input_mode"] = None
     if ui_cfg is not None:
         state["ui_song_config"] = ui_cfg
     return state  # type: ignore[return-value]

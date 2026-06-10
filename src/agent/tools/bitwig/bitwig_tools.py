@@ -7,7 +7,6 @@ Kein separates DrivenByMoss / BitwigAgentBridgeExtension nötig.
 
 from __future__ import annotations
 
-import os
 import time
 from langchain_core.tools import tool
 
@@ -55,17 +54,18 @@ def control_bitwig(
             eq_freq|eq_gain|eq_q|launch_clip|create_clip
 
     Args:
-        host:  OSC-Host (Standard: BITWIG_HOST env, sonst 127.0.0.1)
-        port:  OSC-Port (Standard: BITWIG_DM_PORT env, sonst 8001)
+        host:  OSC-Host (Standard: config.bitwig_host)
+        port:  OSC-Port (Standard: config.bitwig_port = 8002)
     """
     try:
         from pythonosc import udp_client
     except ImportError:
         return {"error": "python-osc nicht installiert: uv pip install python-osc"}
 
-    _host = host or os.getenv("BITWIG_HOST", "127.0.0.1")
-    _port = port or int(os.getenv("BITWIG_DM_PORT", "8002"))
-    _reply_port = int(os.getenv("BITWIG_REPLY_PORT", "9002"))
+    from src.agent.config import config
+    _host = host or config.bitwig_host
+    _port = port or config.bitwig_port
+    _reply_port = config.bitwig_reply_port
     c = udp_client.SimpleUDPClient(_host, _port, allow_broadcast=False)
     # Festen Quellport setzen damit Bitwig's src.sendMessage() nicht auf Port 0 läuft
     try:

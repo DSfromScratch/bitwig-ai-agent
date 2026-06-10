@@ -10,6 +10,7 @@ from src.agent.router import (
     _latest_user_text,
     _route_request,
     classify_intent_llm,
+    classify_note_input_answer,
 )
 from src.agent.states.base import AgentPhaseState, PhaseContext
 
@@ -22,25 +23,64 @@ MAX_SUMMARY_ITEM_CHARS = 180
 MAX_PHASE_SUMMARY_CHARS = 700
 
 
+_NOTE_INPUT_QUESTION = (
+    "Möchtest du die Noten **selbst auf dem Launchpad** einspielen, "
+    "oder soll ich sie **automatisch generieren**?\n\n"
+    "• **Launchpad** — du spielst live ein, ich arme den Track\n"
+    "• **Agent** — ich generiere die Noten automatisch"
+)
+
+_NOTE_INPUT_HINTS = {
+    "launchpad": (
+        "HINWEIS: Der User möchte die Noten SELBST auf dem Launchpad einspielen.\n"
+        "→ Ruf launchpad(action='arm', arm=1) auf um den Track aufnahmebereit zu machen.\n"
+        "→ Danach launchpad(action='listen') um die gespielten Noten aufzunehmen.\n"
+        "NICHT generate_pattern oder write_pattern_raw aufrufen."
+    ),
+    "agent": (
+        "HINWEIS: Der User möchte dass der AGENT die Noten automatisch generiert.\n"
+        "→ Ruf execute_setup auf, danach generate_pattern mit den gewünschten Parametern.\n"
+        "NICHT launchpad(action='listen') aufrufen."
+    ),
+}
+
+
 class PreparationState(AgentPhaseState):
     def execute(self, ctx: PhaseContext) -> PhaseContext:
+        from langchain_core.messages import AIMessage
         from src.agent.tools import ALL_TOOLS
         from src.agent.router import _select_tools_for_context as _filter
 
         all_messages = ctx.agent_state["messages"]
         user_text = _latest_user_text(all_messages)
         current_phase = ctx.agent_state.get("generation_phase", "idle")
-        phase = _effective_generation_phase(
-            all_messages,
-            current_phase,
-            user_text,
-        )
-        ctx.messages = self._prepare_messages(all_messages, current_phase, phase)
-        if phase != current_phase:
-            ctx.updates["generation_phase"] = phase
+        note_input_mode = ctx.agent_state.get("note_input_mode")
+
+        phase = _effective_generation_phase(all_messages, current_phase, user_text)
 
         # Intent einmal per LLM klassifizieren — alle nachfolgenden States lesen ctx.intent
         ctx.intent = classify_intent_llm(user_text)
+
+        # ── Noten-Eingabe-Abfrage ────────────────────────────────────────────
+        if ctx.intent == "song_creation":
+            if note_input_mode is None:
+                # Frage stellen — kein LLM-Call nötig
+                ctx.early_return = {
+                    "messages": [AIMessage(content=_NOTE_INPUT_QUESTION)],
+                    "generation_phase": phase,
+                    "note_input_mode": "pending",
+                }
+                log.info("note_input_mode: Frage gestellt")
+                return ctx
+            elif note_input_mode == "pending":
+                # Antwort klassifizieren und speichern
+                note_input_mode = classify_note_input_answer(user_text)
+                ctx.updates["note_input_mode"] = note_input_mode
+                log.info("note_input_mode: %s (aus '%s')", note_input_mode, user_text[:40])
+
+        ctx.messages = self._prepare_messages(all_messages, current_phase, phase, note_input_mode)
+        if phase != current_phase:
+            ctx.updates["generation_phase"] = phase
 
         ctx.selected_tools = _filter(all_messages, lambda: ALL_TOOLS, phase, intent=ctx.intent)
         mode = _route_request(user_text)
@@ -54,6 +94,7 @@ class PreparationState(AgentPhaseState):
         all_messages: list,
         current_phase: str = "idle",
         effective_phase: str | None = None,
+        note_input_mode: str | None = None,
     ) -> list:
         effective_phase = effective_phase or current_phase
         recent = all_messages[-RECENT_MESSAGES:]
@@ -66,6 +107,9 @@ class PreparationState(AgentPhaseState):
         if summary:
             messages.append(SystemMessage(content=summary))
         messages.extend(_trim_recent_messages(recent))
+        # Modus-Hint als ersten Kontext einfügen damit das LLM weiß was zu tun ist
+        if note_input_mode in _NOTE_INPUT_HINTS:
+            messages.insert(0, SystemMessage(content=_NOTE_INPUT_HINTS[note_input_mode]))
         return messages
 
 

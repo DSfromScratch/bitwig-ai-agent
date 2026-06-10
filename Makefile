@@ -1,4 +1,4 @@
-.PHONY: agent agent-service-install agent-service-logs agent-service-start agent-service-status agent-service-stop analyse analyze-grid analyze-grid-local build-extension clean container-neo4j-logs container-neo4j-start container-neo4j-stop container-status container-vllm-build container-vllm-logs container-vllm-start container-vllm-stop dashboard deploy deploy-local deploy-mac deploy-mac-http download-mf embed-server help ingest-arranger ingest-audio ingest-audio-dry ingest-midi ingest-project ingest-project-dry install linux-setup linux-train linux-train-dpo linux-train-both ml-export ml-validate-test mlx-export mlx-ingest-scales mlx-rl-eval mlx-rl-pairs mlx-rl-train mlx-setup mlx-sync-data mlx-test mlx-train neo4j-import ollama-setup-mac ollama-test scan-vsts screenshot-server show-grids ssh-setup-mac stack-down stack-status stack-up start test test-all test-integration test-neo4j validate yt-ingest yt-ingest-dry
+.PHONY: agent agent-service-install agent-service-logs agent-service-start agent-service-status agent-service-stop analyse analyze-grid analyze-grid-local build-extension clean cli container-neo4j-logs container-neo4j-start container-neo4j-stop container-status container-vllm-build container-vllm-logs container-vllm-start container-vllm-stop deploy deploy-local deploy-mac deploy-mac-http download-mf embed-server help ingest-arranger ingest-audio ingest-audio-dry ingest-midi ingest-project ingest-project-dry install linux-setup linux-train linux-train-dpo linux-train-both ml-export ml-validate-test mlx-export mlx-ingest-scales mlx-rl-eval mlx-rl-pairs mlx-rl-train mlx-setup mlx-sync-data mlx-test mlx-train neo4j-import ollama-setup-mac ollama-test scan-vsts screenshot-server show-grids ssh-setup-mac stack-down stack-status stack-up start test test-all test-integration test-neo4j validate yt-ingest yt-ingest-dry
 
 .DEFAULT_GOAL := help
 
@@ -6,7 +6,6 @@
 VENV      := .venv
 PYTHON    := $(shell if [ -e "$(VENV)/bin/python" ] && "$(VENV)/bin/python" --version >/dev/null 2>&1; then printf '%s' "$(VENV)/bin/python"; elif command -v python3.11 >/dev/null 2>&1; then command -v python3.11; elif command -v python3 >/dev/null 2>&1; then command -v python3; else command -v python; fi)
 UV        := $(shell command -v uv 2>/dev/null || echo $$HOME/.local/bin/uv)
-STREAMLIT := $(PYTHON) -m streamlit
 PYTEST    := $(PYTHON) -m pytest
 
 # JDK 25 (nur für build-extension nötig; lazy ausgewertet). Sucht Homebrew,
@@ -69,8 +68,8 @@ agent: ## Interaktiven CLI-Agent starten (vLLM nötig)
 embed-server: ## Lokalen Embedding-Server starten (Port 8080)
 	$(PYTHON) start_agent.py --embed-server-up
 
-dashboard: ## Streamlit Dashboard starten (Port 8501)
-	$(STREAMLIT) run dashboard/app.py --server.port 8501
+cli: ## Console Interface starten (Textual TUI)
+	$(PYTHON) cli.py
 
 stack-up: ## Vollen Stack starten (Neo4j + vLLM + Agent)
 	systemctl --user start neo4j.service vllm@agent.service

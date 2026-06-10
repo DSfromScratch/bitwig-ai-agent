@@ -57,8 +57,10 @@ Pillow>=10.0
 
 # Visualisierung
 matplotlib>=3.9
-streamlit>=1.40
 plotly>=5.24
+
+# Terminal UI
+textual>=0.80
 
 # Neo4j Graph Database
 neo4j>=6.0

@@ -90,6 +90,22 @@ def classify_intent_llm(text: str) -> str:
     return "song_default"
 
 
+_NOTE_INPUT_LAUNCHPAD_KW = frozenset([
+    "launchpad", "selbst", "selber", "live", "einspielen", "manuell",
+    "ich spiel", "ich möchte spielen", "ich mach", "von mir",
+])
+
+def classify_note_input_answer(text: str) -> str:
+    """Klassifiziert die User-Antwort auf die Noten-Eingabe-Frage.
+
+    Gibt "launchpad" zurück wenn der User selbst spielen will, sonst "agent".
+    """
+    lower = text.lower()
+    if any(kw in lower for kw in _NOTE_INPUT_LAUNCHPAD_KW):
+        return "launchpad"
+    return "agent"
+
+
 def _classify_task(text: str, intent: str | None = None) -> str:
     """Gibt Task-Kategorie zurück. Nutzt pre-computed intent wenn vorhanden."""
     if intent and intent in _INTENT_CATEGORIES:

@@ -118,25 +118,7 @@
           <skipIfEmpty>true</skipIfEmpty>
         </configuration>
         <executions>
-          <!-- 1. BitwigAgentBridge (legacy — Agent + Launchpad kombiniert) -->
-          <execution>
-            <id>jar-agent-bridge</id>
-            <phase>package</phase>
-            <goals><goal>jar</goal></goals>
-            <configuration>
-              <classifier>agent-bridge</classifier>
-              <excludes>
-                <exclude>com/bitwigagent/BitwigOscBridge*.class</exclude>
-                <exclude>com/bitwigagent/LaunchpadController*.class</exclude>
-              </excludes>
-              <archive>
-                <manifest>
-                  <mainClass>com.bitwigagent.BitwigAgentBridgeDefinition</mainClass>
-                </manifest>
-              </archive>
-            </configuration>
-          </execution>
-          <!-- 2. BitwigOscBridge (pure OSC, kein MIDI, kein Agent-UI) -->
+          <!-- 1. BitwigOscBridge (pure OSC, kein MIDI, kein Agent-UI) -->
           <execution>
             <id>jar-osc-bridge</id>
             <phase>package</phase>
@@ -172,7 +154,7 @@
               </archive>
             </configuration>
           </execution>
-          <!-- 4. BitwigStepPlugin — State Machine + Step Executor (Port 8001) -->
+          <!-- 3. BitwigStepPlugin — State Machine + Step Executor (Port 8002) -->
           <execution>
             <id>jar-step-plugin</id>
             <phase>package</phase>
@@ -207,11 +189,7 @@
                 <property name="build.dir"  value="${project.build.directory}"/>
                 <property name="art.ver"    value="${project.artifactId}-${project.version}"/>
 
-                <!-- 1. BitwigAgentBridge — services unverändert -->
-                <copy file="${build.dir}/${art.ver}-agent-bridge.jar"
-                      tofile="${project.basedir}/dist/BitwigAgentBridge.bwextension"/>
-
-                <!-- 2. BitwigOscBridge — services auf OscBridgeDefinition korrigieren -->
+                <!-- 1. BitwigOscBridge — services auf OscBridgeDefinition korrigieren -->
                 <copy file="${build.dir}/${art.ver}-osc-bridge.jar"
                       tofile="${build.dir}/BitwigOscBridge-fix.jar"/>
                 <echo file="${build.dir}/osc-service.txt"
@@ -223,7 +201,7 @@
                 <copy file="${build.dir}/BitwigOscBridge-fix.jar"
                       tofile="${project.basedir}/dist/BitwigOscBridge.bwextension"/>
 
-                <!-- 3. LaunchpadController — services auf LaunchpadControllerDefinition korrigieren -->
+                <!-- 2. LaunchpadController — services auf LaunchpadControllerDefinition korrigieren -->
                 <copy file="${build.dir}/${art.ver}-launchpad.jar"
                       tofile="${build.dir}/LaunchpadController-fix.jar"/>
                 <echo file="${build.dir}/lp-service.txt"
@@ -235,7 +213,7 @@
                 <copy file="${build.dir}/LaunchpadController-fix.jar"
                       tofile="${project.basedir}/dist/LaunchpadController.bwextension"/>
 
-                <!-- 4. BitwigStepPlugin — services auf BitwigStepPluginDefinition -->
+                <!-- 3. BitwigStepPlugin — services auf BitwigStepPluginDefinition -->
                 <copy file="${build.dir}/${art.ver}-step-plugin.jar"
                       tofile="${build.dir}/BitwigStepPlugin-fix.jar"/>
                 <echo file="${build.dir}/step-service.txt"
@@ -249,10 +227,9 @@
 
                 <echo>
 Extensions gebaut:
-  dist/BitwigAgentBridge.bwextension   (legacy)
   dist/BitwigOscBridge.bwextension     (pure OSC Bridge)
   dist/LaunchpadController.bwextension (Launchpad: Control/Drum/Instrument)
-  dist/BitwigStepPlugin.bwextension    (Step Executor — Port 8001)
+  dist/BitwigStepPlugin.bwextension    (Step Executor — Port 8002)
                 </echo>
               </target>
             </configuration>
